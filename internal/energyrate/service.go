@@ -69,28 +69,31 @@ const cacheBackoff = time.Minute
 type StaticRate struct {
 	USDPerKWh float64   // <= 0 disables the static fallback
 	AsOf      time.Time // first day of the period the value describes
+	SourceURL string
 }
 
 // Options configures a Service.
 type Options struct {
-	Fetcher  RateFetcher // nil or keyless → cache-only
-	HasKey   bool        // false: never call Fetcher (no EIA key configured)
-	Cache    Cache
-	CacheTTL time.Duration
-	Static   StaticRate
-	Now      func() time.Time
-	Logger   *slog.Logger
+	Fetcher      RateFetcher // nil or keyless → cache-only
+	HasKey       bool        // false: never call Fetcher (no EIA key configured)
+	Cache        Cache
+	CacheTTL     time.Duration
+	Static       StaticRate
+	StaticStates map[string]StaticRate
+	Now          func() time.Time
+	Logger       *slog.Logger
 }
 
 // Service resolves rates and serves the HTTP route.
 type Service struct {
-	fetcher RateFetcher
-	hasKey  bool
-	cache   Cache
-	ttl     time.Duration
-	static  StaticRate
-	now     func() time.Time
-	log     *slog.Logger
+	fetcher      RateFetcher
+	hasKey       bool
+	cache        Cache
+	ttl          time.Duration
+	static       StaticRate
+	staticStates map[string]StaticRate
+	now          func() time.Time
+	log          *slog.Logger
 
 	mu             sync.Mutex
 	failUntil      map[string]time.Time // region → no refetch before this instant
@@ -123,16 +126,17 @@ func NewService(o Options) *Service {
 		o.Logger = slog.Default()
 	}
 	return &Service{
-		fetcher:   o.Fetcher,
-		hasKey:    o.HasKey && o.Fetcher != nil,
-		cache:     o.Cache,
-		ttl:       o.CacheTTL,
-		static:    o.Static,
-		now:       o.Now,
-		log:       o.Logger,
-		failUntil: map[string]time.Time{},
-		inflight:  map[string]*call{},
-		lastGood:  map[string]Rate{},
+		fetcher:      o.Fetcher,
+		hasKey:       o.HasKey && o.Fetcher != nil,
+		cache:        o.Cache,
+		ttl:          o.CacheTTL,
+		static:       o.Static,
+		staticStates: o.StaticStates,
+		now:          o.Now,
+		log:          o.Logger,
+		failUntil:    map[string]time.Time{},
+		inflight:     map[string]*call{},
+		lastGood:     map[string]Rate{},
 	}
 }
 
@@ -155,6 +159,7 @@ type Resolved struct {
 	SourceLabel   string  `json:"source_label"`
 	AsOf          string  `json:"as_of"`
 	Region        *string `json:"region"`
+	SourceURL     string  `json:"source_url,omitempty"`
 }
 
 // Resolve runs the §3.4 fallback chain. country must be an upper-case ISO
@@ -172,6 +177,17 @@ func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, e
 				SourceLabel:   stateNames[st] + " average (EIA)",
 				AsOf:          r.Period.Format(time.DateOnly),
 				Region:        &region,
+			}, nil
+		}
+		if fallback, ok := s.staticStates[st]; ok && fallback.USDPerKWh > 0 {
+			region := st
+			return Resolved{
+				RateUSDPerKWh: fallback.USDPerKWh,
+				Source:        SourceState,
+				SourceLabel:   stateNames[st] + " average (EIA, published table)",
+				AsOf:          fallback.AsOf.Format(time.DateOnly),
+				Region:        &region,
+				SourceURL:     fallback.SourceURL,
 			}, nil
 		}
 	} else {
