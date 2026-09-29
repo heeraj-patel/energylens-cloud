@@ -53,6 +53,10 @@ const MinCacheTTL = 24 * time.Hour
 // monthly publication cadence (§4 task 1.6: "refreshed monthly").
 const DefaultCacheTTL = 30 * 24 * time.Hour
 
+// MaxSourceAge bounds how long a fetched EIA value may be used, even when
+// refresh is unavailable. Static published fallbacks have no fetch timestamp.
+const MaxSourceAge = 30 * 24 * time.Hour
+
 // failureBackoff stops a down EIA from being hit on every request: after a
 // failed fetch for a region, no new fetch is attempted for this long (the
 // stale/national fallback is served meanwhile).
@@ -154,12 +158,15 @@ var ErrTemporarilyUnavailable = errors.New("energyrate: rate temporarily unavail
 
 // Resolved is the response body (cloud-openapi.yaml EnergyRate).
 type Resolved struct {
-	RateUSDPerKWh float64 `json:"rate_usd_per_kwh"`
-	Source        string  `json:"source"`
-	SourceLabel   string  `json:"source_label"`
-	AsOf          string  `json:"as_of"`
-	Region        *string `json:"region"`
-	SourceURL     string  `json:"source_url,omitempty"`
+	RateUSDPerKWh float64    `json:"rate_usd_per_kwh"`
+	Source        string     `json:"source"`
+	SourceLabel   string     `json:"source_label"`
+	AsOf          string     `json:"as_of"`
+	Region        *string    `json:"region"`
+	SourceURL     string     `json:"source_url,omitempty"`
+	FetchedAt     *time.Time `json:"fetched_at"`
+	IsStale       bool       `json:"is_stale"`
+	IsStatic      bool       `json:"is_static"`
 }
 
 // Resolve runs the §3.4 fallback chain. country must be an upper-case ISO
@@ -169,7 +176,7 @@ func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, e
 		return Resolved{}, ErrUnavailable
 	}
 	if st := StateForZIP(zip); st != "" {
-		if r, ok := s.regionRate(ctx, st); ok {
+		if r, stale, ok := s.regionRate(ctx, st); ok {
 			region := st
 			return Resolved{
 				RateUSDPerKWh: r.USDPerKWh,
@@ -177,6 +184,8 @@ func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, e
 				SourceLabel:   stateNames[st] + " average (EIA)",
 				AsOf:          r.Period.Format(time.DateOnly),
 				Region:        &region,
+				FetchedAt:     &r.FetchedAt,
+				IsStale:       stale,
 			}, nil
 		}
 		if fallback, ok := s.staticStates[st]; ok && fallback.USDPerKWh > 0 {
@@ -188,6 +197,7 @@ func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, e
 				AsOf:          fallback.AsOf.Format(time.DateOnly),
 				Region:        &region,
 				SourceURL:     fallback.SourceURL,
+				IsStatic:      true,
 			}, nil
 		}
 	} else {
@@ -195,11 +205,16 @@ func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, e
 		// The ZIP itself stays out of logs above debug level.
 		s.log.Debug("energyrate: ZIP prefix has no state mapping; using national average", "zip", zip)
 	}
-	if r, ok := s.regionRate(ctx, NationalRegion); ok {
-		return national(r.USDPerKWh, r.Period), nil
+	if r, stale, ok := s.regionRate(ctx, NationalRegion); ok {
+		resolved := national(r.USDPerKWh, r.Period)
+		resolved.FetchedAt = &r.FetchedAt
+		resolved.IsStale = stale
+		return resolved, nil
 	}
 	if s.static.USDPerKWh > 0 {
-		return national(s.static.USDPerKWh, s.static.AsOf), nil
+		resolved := national(s.static.USDPerKWh, s.static.AsOf)
+		resolved.IsStatic = true
+		return resolved, nil
 	}
 	return Resolved{}, ErrTemporarilyUnavailable
 }
@@ -215,25 +230,32 @@ func national(rate float64, asOf time.Time) Resolved {
 }
 
 // regionRate returns a fresh cached rate, else a newly fetched one, else a
-// stale cached one. ok=false only when nothing at all is available.
-func (s *Service) regionRate(ctx context.Context, region string) (Rate, bool) {
+// stale cached one within the source-age ceiling. Static fallbacks are handled
+// by Resolve and have no EIA fetch timestamp.
+func (s *Service) regionRate(ctx context.Context, region string) (Rate, bool, bool) {
 	cached, found := s.cachedRate(ctx, region)
-	if found && s.now().Sub(cached.FetchedAt) < s.ttl {
-		return cached, true
+	age := s.now().Sub(cached.FetchedAt)
+	valid := found && !cached.FetchedAt.IsZero() && age >= 0 && age <= MaxSourceAge
+	if valid && age < s.ttl {
+		return cached, false, true
 	}
 	if !s.hasKey {
-		return cached, found // no key: serve whatever is cached, however old
+		return cached, valid, valid
 	}
 	fresh, err := s.fetch(ctx, region)
 	if err == nil {
-		return fresh, true
+		freshAge := s.now().Sub(fresh.FetchedAt)
+		if !fresh.FetchedAt.IsZero() && freshAge >= 0 && freshAge <= MaxSourceAge {
+			return fresh, freshAge >= s.ttl, true
+		}
+		err = errors.New("energyrate: fetched EIA rate has invalid source age")
 	}
-	if found {
+	if valid {
 		s.log.Warn("energyrate: EIA refresh failed; serving stale cached rate",
 			"region", region, "fetched_at", cached.FetchedAt, "err", err)
-		return cached, true
+		return cached, true, true
 	}
-	return Rate{}, false
+	return Rate{}, false, false
 }
 
 // cachedRate returns the newer of the Cache's row and the in-memory
