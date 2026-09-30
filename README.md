@@ -12,10 +12,12 @@ Copied and adapted from `../kernel-cloud` at commit `2912c371267a54591978f13a47e
 - `internal/apierror/apierror.go`
 - `migrations/0016_energy_rate_cache.sql`
 
-The rate service's JSON response now uses the standard library, so it does not need Kernel's wider HTTP middleware. The copied package still includes its optional Postgres cache type; this development entry point uses memory only. Production authentication, tariff storage, and household-specific rates remain to be designed.
+The rate service's JSON response uses the standard library, so it does not need Kernel's wider HTTP middleware. The copied package includes an optional Postgres cache type; this development entry point uses memory only. Production authentication, tariff storage, and household-specific rates remain to be designed.
+
+`migrations/0017_energy_rating_catalog.sql` and `internal/energyrating` add a separate Postgres storage seam for candidate and reviewed device ratings. The schema keeps EPA exact, OEM exact, and OEM family evidence distinct, preserves source and review metadata, and prevents candidate writes from changing reviewed rows. This is internal storage only: the cloud service does not ingest KB candidates, expose a rating API, or distribute catalog entries to the hub. Apply and validate the migration in the intended Postgres environment before using it. Set `ENERGYLENS_CLOUD_TEST_DATABASE_URL` to run its isolated-schema integration test.
 
 ```sh
 EIA_API_KEY=... go run ./cmd/energylens-cloud
 ```
 
-Verified locally with `go test ./...` (the initial copied package has no transferred test files yet).
+Verify with `go test ./...`; the suite covers the rate service and rating-store behavior. The rating migration integration test skips when its Postgres test URL is not configured.
