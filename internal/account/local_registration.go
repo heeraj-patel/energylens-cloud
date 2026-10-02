@@ -61,7 +61,7 @@ func (s LocalRegistrationService) RequestRegistration(ctx context.Context, email
 		return RegistrationAccepted{}, errors.New("local registration is not configured")
 	}
 	normalized, err := NormalizeLocalEmail(email)
-	if err != nil || !validPassword(password) || source == "" || len(source) > 128 || now.IsZero() {
+	if err != nil || !validPassword(password) || !validLocalAuthSource(source) || now.IsZero() {
 		return RegistrationAccepted{}, ErrInvalidCredential
 	}
 	tx, err := s.DB.Begin(ctx)
