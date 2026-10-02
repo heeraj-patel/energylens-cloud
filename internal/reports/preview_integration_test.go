@@ -241,8 +241,8 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if processed, err := (DeliveryWorker{DB: pool, Provider: provider}).DeliverOne(ctx, now); !errors.Is(err, ErrDeliveryDisabled) || processed || provider.calls != 0 {
 		t.Fatalf("delivery enabled by default: %v %v", processed, err)
 	}
-	// A tombstone update locks the home row. Delivery holds that row through
-	// the provider call, so deletion cannot commit midway through a send.
+	// Delivery holds the home and preview dependencies through the provider
+	// call. A tombstone, appliance edit, or estimate invalidation must wait.
 	blocking := &blockingReportProvider{started: make(chan struct{}), release: make(chan struct{})}
 	workerResult := make(chan error, 1)
 	go func() {
@@ -251,22 +251,63 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	}()
 	select {
 	case <-blocking.started:
+	case workerErr := <-workerResult:
+		close(blocking.release)
+		t.Fatalf("delivery failed before provider: %v", workerErr)
 	case <-time.After(5 * time.Second):
 		close(blocking.release)
 		t.Fatal("delivery did not reach fake provider")
 	}
-	lockTx, lockErr := pool.Begin(ctx)
-	if lockErr != nil {
-		close(blocking.release)
-		t.Fatal(lockErr)
+	for _, lock := range []struct {
+		name  string
+		query string
+		id    uuid.UUID
+	}{
+		{"home tombstone", `SELECT id FROM homes WHERE id=$1 FOR UPDATE NOWAIT`, home},
+		{"appliance edit", `SELECT id FROM appliances WHERE id=$1 FOR UPDATE NOWAIT`, appliance},
+		{"estimate invalidation", `SELECT id FROM estimate_runs WHERE id=$1 FOR KEY SHARE NOWAIT`, run},
+	} {
+		lockTx, lockErr := pool.Begin(ctx)
+		if lockErr != nil {
+			close(blocking.release)
+			t.Fatal(lockErr)
+		}
+		var lockedID string
+		lockErr = lockTx.QueryRow(ctx, lock.query, lock.id).Scan(&lockedID)
+		_ = lockTx.Rollback(ctx)
+		var pgErr *pgconn.PgError
+		if !errors.As(lockErr, &pgErr) || pgErr.Code != "55P03" {
+			close(blocking.release)
+			t.Fatalf("%s escaped delivery transaction: %v", lock.name, lockErr)
+		}
 	}
-	var lockedHome string
-	lockErr = lockTx.QueryRow(ctx, `SELECT id FROM homes WHERE id=$1 FOR UPDATE NOWAIT`, home).Scan(&lockedHome)
-	_ = lockTx.Rollback(ctx)
-	var pgErr *pgconn.PgError
-	if !errors.As(lockErr, &pgErr) || pgErr.Code != "55P03" {
-		close(blocking.release)
-		t.Fatalf("home lock escaped delivery transaction: %v", lockErr)
+	for _, mutation := range []struct {
+		name  string
+		query string
+		id    uuid.UUID
+	}{
+		{"home tombstone", `UPDATE homes SET deleted_at=$2,version=version+1 WHERE id=$1`, home},
+		{"estimate invalidation", `INSERT INTO estimate_run_invalidations(run_id,reason) VALUES($1,'dependency_changed')`, run},
+	} {
+		mutationTx, mutationErr := pool.Begin(ctx)
+		if mutationErr != nil {
+			close(blocking.release)
+			t.Fatal(mutationErr)
+		}
+		_, mutationErr = mutationTx.Exec(ctx, `SET LOCAL lock_timeout='100ms'`)
+		if mutationErr == nil {
+			if mutation.name == "home tombstone" {
+				_, mutationErr = mutationTx.Exec(ctx, mutation.query, mutation.id, now)
+			} else {
+				_, mutationErr = mutationTx.Exec(ctx, mutation.query, mutation.id)
+			}
+		}
+		_ = mutationTx.Rollback(ctx)
+		var pgErr *pgconn.PgError
+		if !errors.As(mutationErr, &pgErr) || pgErr.Code != "55P03" {
+			close(blocking.release)
+			t.Fatalf("%s committed during provider call: %v", mutation.name, mutationErr)
+		}
 	}
 	close(blocking.release)
 	if workerErr := <-workerResult; workerErr != nil {
@@ -361,6 +402,14 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	}
 	if _, err = pool.Exec(ctx, `UPDATE homes SET deleted_at=$2,version=version+1 WHERE id=$1`, home, now.Add(2*time.Hour)); err != nil {
 		t.Fatal(err)
+	}
+	// A pending row can survive a tombstone; the worker must never send it.
+	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL WHERE id=$1`, queued.ID); err != nil {
+		t.Fatal(err)
+	}
+	providerCalls := provider.calls
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(2*time.Hour)); err != nil || processed || provider.calls != providerCalls {
+		t.Fatalf("tombstoned pending delivery reached provider: %v %v calls=%d", processed, err, provider.calls)
 	}
 	if _, err = s.QueueDelivery(ctx, owner.String(), home.String(), delivery, now.Add(2*time.Hour)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("tombstoned home replayed delivery: %v", err)

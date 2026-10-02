@@ -56,6 +56,29 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 	if err != nil {
 		return false, err
 	}
+	// Keep dependency changes from committing between validation and the
+	// provider call. An appliance update conflicts with FOR SHARE; an
+	// invalidation insert needs a key-share lock on its estimate run, which
+	// conflicts with FOR UPDATE. The later stale query sees any change that
+	// committed while these locks were being acquired.
+	for _, query := range []string{
+		`SELECT a.id FROM report_preview_items i JOIN appliances a ON a.id=i.appliance_id AND a.home_id=$2
+		 WHERE i.preview_id=$1 ORDER BY a.id FOR SHARE OF a`,
+		`SELECT e.id FROM report_preview_items i JOIN estimate_runs e ON e.id=i.estimate_run_id AND e.home_id=$2
+		 WHERE i.preview_id=$1 ORDER BY e.id FOR UPDATE OF e`,
+	} {
+		rows, queryErr := tx.Query(ctx, query, previewID, home)
+		if queryErr != nil {
+			return false, queryErr
+		}
+		for rows.Next() {
+		}
+		queryErr = rows.Err()
+		rows.Close()
+		if queryErr != nil {
+			return false, queryErr
+		}
+	}
 	var preview Preview
 	if err = json.Unmarshal(raw, &preview); err != nil {
 		return false, err
