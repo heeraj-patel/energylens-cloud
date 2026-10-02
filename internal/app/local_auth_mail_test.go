@@ -52,3 +52,27 @@ func TestLocalAuthMailConfigIsSeparateAndDefaultsOff(t *testing.T) {
 		t.Fatal("invalid auth mail flag accepted")
 	}
 }
+
+func TestLocalAuthTrustedProxyConfig(t *testing.T) {
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_TRUSTED_PROXY_CIDRS", "10.20.0.0/16")
+	loaded, err := LoadConfig("api")
+	if err != nil || loaded.LocalAuthProxyCIDRs != "10.20.0.0/16" {
+		t.Fatalf("trusted proxy setting not loaded: %q %v", loaded.LocalAuthProxyCIDRs, err)
+	}
+	proxy := Config{Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", LocalAuthProxyCIDRs: "10.20.0.0/16"}
+	if err = proxy.Validate(); err != nil {
+		t.Fatalf("valid trusted proxy config: %v", err)
+	}
+	if _, err = proxy.LocalAuthSourcePolicy(); err != nil {
+		t.Fatal(err)
+	}
+	proxy.LocalAuthProxyCIDRs = "0.0.0.0/0"
+	if err = proxy.Validate(); err == nil {
+		t.Fatal("broad trusted proxy config accepted")
+	}
+	proxy.Role = RoleWorker
+	proxy.LocalAuthProxyCIDRs = "10.20.0.0/16"
+	if err = proxy.Validate(); err == nil {
+		t.Fatal("worker accepted auth proxy config")
+	}
+}

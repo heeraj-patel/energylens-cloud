@@ -46,6 +46,7 @@ type Config struct {
 	LocalAuthResendAPIKey  string
 	LocalAuthResendFrom    string
 	LocalAuthLinkOrigin    string
+	LocalAuthProxyCIDRs    string
 	KBScanPython           string
 	KBScanSources          string
 	KBScanCandidateIndex   string
@@ -60,7 +61,7 @@ func LoadConfig(role string) (Config, error) {
 		DatabaseURL: os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"), EIAAPIKey: os.Getenv("EIA_API_KEY"),
 		OIDCIssuer: os.Getenv("ENERGYLENS_CLOUD_OIDC_ISSUER"), OIDCAudience: os.Getenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE"), OIDCJWKSURL: os.Getenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL"),
 		ResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_RESEND_API_KEY"), ResendFrom: os.Getenv("ENERGYLENS_CLOUD_RESEND_FROM"),
-		LocalAuthResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY"), LocalAuthResendFrom: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM"), LocalAuthLinkOrigin: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN"),
+		LocalAuthResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY"), LocalAuthResendFrom: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM"), LocalAuthLinkOrigin: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN"), LocalAuthProxyCIDRs: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_TRUSTED_PROXY_CIDRS"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_ALLOW_EPA"); raw != "" {
@@ -120,6 +121,14 @@ func (c Config) Validate() error {
 	}
 	if c.APIListen == "" {
 		return errors.New("API listen address required")
+	}
+	if c.LocalAuthProxyCIDRs != "" {
+		if c.Role != RoleAPI && c.Role != RoleAll {
+			return errors.New("local auth trusted proxies require API or all role")
+		}
+		if _, err := account.ParseLocalAuthSourcePolicy(c.LocalAuthProxyCIDRs); err != nil {
+			return err
+		}
 	}
 	if c.MeteredRollupEnabled {
 		if c.Role != RoleWorker && c.Role != RoleAll {
@@ -244,6 +253,10 @@ func (c Config) BuildLocalAuthSender() (*account.ResendLocalSender, error) {
 		return nil, errors.New("local auth mail is unavailable for this role")
 	}
 	return account.NewResendLocalSender(c.LocalAuthResendAPIKey, c.LocalAuthResendFrom, c.LocalAuthLinkOrigin)
+}
+
+func (c Config) LocalAuthSourcePolicy() (account.LocalAuthSourcePolicy, error) {
+	return account.ParseLocalAuthSourcePolicy(c.LocalAuthProxyCIDRs)
 }
 
 func (c Config) hubTLSConfig() (*tls.Config, error) {

@@ -125,6 +125,28 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM auth_registration_rate_limits WHERE scope='source_hour' AND key_hash=$1`, h.Registration.rateHash("source", "198.51.100.45")).Scan(&count); err != nil || count != 0 {
 		t.Fatal("spoofed forwarding header used")
 	}
+	proxyPolicy, policyErr := ParseLocalAuthSourcePolicy("10.20.0.0/16")
+	if policyErr != nil {
+		t.Fatal(policyErr)
+	}
+	proxied := h
+	proxied.SourcePolicy = proxyPolicy
+	proxiedAPI := router(proxied)
+	if rec := request(proxiedAPI, path, map[string]string{"email": "proxy@example.test", "password": "original long password"}, "10.20.1.2:1000"); rec.Code != 202 {
+		t.Fatalf("trusted proxy single-hop request: %d", rec.Code)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM auth_registration_rate_limits WHERE scope='source_hour' AND key_hash=$1`, h.Registration.rateHash("source", "198.51.100.45")).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("trusted proxy client rate key missing: %d %v", count, err)
+	}
+	chainReq := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"email":"spoof@example.test","password":"original long password"}`))
+	chainReq.Header.Set("Content-Type", "application/json")
+	chainReq.Header.Set("X-Forwarded-For", "203.0.113.5, 198.51.100.45")
+	chainReq.RemoteAddr = "10.20.1.2:1000"
+	chainRec := httptest.NewRecorder()
+	proxiedAPI.ServeHTTP(chainRec, chainReq)
+	if chainRec.Code != 401 {
+		t.Fatalf("prepopulated proxy chain accepted: %d", chainRec.Code)
+	}
 	post("/v1/auth/local/verify-email", map[string]string{"token": sender.verification[0]}, 204)
 	login := post("/v1/auth/local/login", map[string]string{"email": "person@example.test", "password": "original long password"}, 200)
 	var tokens struct {

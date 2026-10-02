@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
-	"net/netip"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +19,7 @@ type LocalAuthHTTP struct {
 	Login        LocalLoginService
 	Refresh      LocalRefreshService
 	Recovery     LocalRecoveryService
+	SourcePolicy LocalAuthSourcePolicy
 }
 
 func (h LocalAuthHTTP) ready() bool {
@@ -79,20 +78,6 @@ func localAuthDecode(w http.ResponseWriter, r *http.Request, out any) bool {
 	return true
 }
 
-// The immediate socket peer is the only currently trusted rate source. An
-// ALB/proxy deployment needs reviewed peer extraction before activation.
-func localAuthPeer(r *http.Request) (string, error) {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return "", ErrInvalidCredential
-	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil || ip.Zone() != "" {
-		return "", ErrInvalidCredential
-	}
-	return ip.Unmap().String(), nil
-}
-
 func localAuthError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrInvalidCredential) {
 		fail(w, 401, "invalid_credential", "invalid credential")
@@ -110,7 +95,7 @@ func (h LocalAuthHTTP) registration(w http.ResponseWriter, r *http.Request) {
 	if !localAuthDecode(w, r, &in) {
 		return
 	}
-	source, err := localAuthPeer(r)
+	source, err := h.SourcePolicy.Source(r)
 	if err != nil {
 		localAuthError(w, err)
 		return
@@ -143,7 +128,7 @@ func (h LocalAuthHTTP) login(w http.ResponseWriter, r *http.Request) {
 	if !localAuthDecode(w, r, &in) {
 		return
 	}
-	source, err := localAuthPeer(r)
+	source, err := h.SourcePolicy.Source(r)
 	if err != nil {
 		localAuthError(w, err)
 		return
@@ -189,7 +174,7 @@ func (h LocalAuthHTTP) recovery(w http.ResponseWriter, r *http.Request) {
 	if !localAuthDecode(w, r, &in) {
 		return
 	}
-	source, err := localAuthPeer(r)
+	source, err := h.SourcePolicy.Source(r)
 	if err != nil {
 		localAuthError(w, err)
 		return
