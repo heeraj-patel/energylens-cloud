@@ -21,25 +21,26 @@ const (
 )
 
 type Config struct {
-	Role                 Role
-	Environment          string
-	APIListen            string
-	HubListen            string
-	HubCertFile          string
-	HubKeyFile           string
-	HubCAFile            string
-	HubSignCertFile      string
-	HubSignKeyFile       string
-	DatabaseURL          string
-	EIAAPIKey            string
-	OIDCIssuer           string
-	OIDCAudience         string
-	OIDCJWKSURL          string
-	MeteredRollupEnabled bool
-	KBScanPython         string
-	KBScanSources        string
-	KBScanCandidateIndex string
-	KBScanAllowEPA       bool
+	Role                   Role
+	Environment            string
+	APIListen              string
+	HubListen              string
+	HubCertFile            string
+	HubKeyFile             string
+	HubCAFile              string
+	HubSignCertFile        string
+	HubSignKeyFile         string
+	DatabaseURL            string
+	EIAAPIKey              string
+	OIDCIssuer             string
+	OIDCAudience           string
+	OIDCJWKSURL            string
+	MeteredRollupEnabled   bool
+	ReportRetentionEnabled bool
+	KBScanPython           string
+	KBScanSources          string
+	KBScanCandidateIndex   string
+	KBScanAllowEPA         bool
 }
 
 func LoadConfig(role string) (Config, error) {
@@ -64,6 +65,13 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_METERED_ROLLUP_ENABLED %q: %w", raw, err)
 		}
 		c.MeteredRollupEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_REPORT_RETENTION_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_RETENTION_ENABLED %q: %w", raw, err)
+		}
+		c.ReportRetentionEnabled = enabled
 	}
 	if c.Environment == "" {
 		c.Environment = "dev"
@@ -94,6 +102,14 @@ func (c Config) Validate() error {
 		}
 		if c.DatabaseURL == "" {
 			return errors.New("metered rollup requires ENERGYLENS_CLOUD_DATABASE_URL")
+		}
+	}
+	if c.ReportRetentionEnabled {
+		if c.Role != RoleWorker && c.Role != RoleAll {
+			return errors.New("report retention requires worker or all role")
+		}
+		if c.DatabaseURL == "" {
+			return errors.New("report retention requires ENERGYLENS_CLOUD_DATABASE_URL")
 		}
 	}
 	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA {

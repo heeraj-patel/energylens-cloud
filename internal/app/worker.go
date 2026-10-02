@@ -10,11 +10,14 @@ import (
 )
 
 const (
-	rollupInterval    = time.Minute
-	rollupDeadline    = 30 * time.Second
-	rollupBatchLimit  = 10
-	rollupBucketLimit = 100
-	rollupPurgeLimit  = 100
+	rollupInterval          = time.Minute
+	rollupDeadline          = 30 * time.Second
+	rollupBatchLimit        = 10
+	rollupBucketLimit       = 100
+	rollupPurgeLimit        = 100
+	reportRetentionInterval = time.Hour
+	reportRetentionDeadline = 30 * time.Second
+	reportRetentionLimit    = 100
 )
 
 type rollupJob interface {
@@ -23,6 +26,33 @@ type rollupJob interface {
 
 type identityScanJob interface {
 	Run(context.Context, identityscan.Scanner, bool, int, time.Time) (int, error)
+}
+
+type reportRetentionJob interface {
+	RunOnce(context.Context, time.Time, int) (int64, error)
+}
+
+func runReportRetention(ctx context.Context, job reportRetentionJob, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, reportRetentionDeadline)
+		deleted, err := job.RunOnce(runCtx, time.Now().UTC(), reportRetentionLimit)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			slog.Error("report retention pass failed", "error", err)
+		} else if deleted > 0 {
+			slog.Info("report retention pass complete", "snapshots_deleted", deleted)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func nightlyScanDue(now time.Time, last string) bool {

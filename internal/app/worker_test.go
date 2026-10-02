@@ -159,3 +159,62 @@ func TestRollupEnvironmentFlag(t *testing.T) {
 		t.Fatalf("default should be disabled: enabled=%v err=%v", c.MeteredRollupEnabled, err)
 	}
 }
+
+type waitingReportRetention struct {
+	started chan struct{}
+	t       *testing.T
+}
+
+func (j waitingReportRetention) RunOnce(ctx context.Context, now time.Time, limit int) (int64, error) {
+	if limit != reportRetentionLimit || now.Location() != time.UTC {
+		j.t.Errorf("unexpected retention pass arguments: limit=%d now=%v", limit, now)
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		j.t.Error("retention pass missing deadline")
+	}
+	close(j.started)
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+func TestReportRetentionWorkerConfigurationAndShutdown(t *testing.T) {
+	base := Config{Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", ReportRetentionEnabled: true}
+	if err := base.Validate(); err == nil {
+		t.Fatal("API role accepted report retention")
+	}
+	base.Role = RoleWorker
+	if err := base.Validate(); err == nil {
+		t.Fatal("retention accepted missing database")
+	}
+	base.DatabaseURL = "postgres://user:pass@localhost:5432/db?sslmode=disable"
+	if err := base.Validate(); err != nil {
+		t.Fatalf("worker rejected retention: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	job := waitingReportRetention{started: make(chan struct{}), t: t}
+	done := make(chan struct{})
+	go func() { runReportRetention(ctx, job, time.Minute); close(done) }()
+	select {
+	case <-job.started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("retention did not run at startup")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("retention did not stop on cancellation")
+	}
+}
+
+func TestReportRetentionEnvironmentFlag(t *testing.T) {
+	t.Setenv("ENERGYLENS_CLOUD_REPORT_RETENTION_ENABLED", "maybe")
+	if _, err := LoadConfig("worker"); err == nil {
+		t.Fatal("invalid retention flag accepted")
+	}
+	t.Setenv("ENERGYLENS_CLOUD_REPORT_RETENTION_ENABLED", "")
+	if c, err := LoadConfig("worker"); err != nil || c.ReportRetentionEnabled {
+		t.Fatalf("default retention should be disabled: enabled=%v err=%v", c.ReportRetentionEnabled, err)
+	}
+}
