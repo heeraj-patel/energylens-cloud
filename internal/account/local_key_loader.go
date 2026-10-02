@@ -98,3 +98,16 @@ func readLocalKeyFile(path string, private bool) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// LoadLocalRateKey reads one independently provisioned binary HMAC key with
+// the same ownership and permission checks as a private signing key.
+func LoadLocalRateKey(path string) ([]byte, error) {
+	key, err := readLocalKeyFile(path, true)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) != 32 {
+		return nil, errors.New("local rate key must contain exactly 32 bytes")
+	}
+	return key, nil
+}

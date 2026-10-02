@@ -3,9 +3,11 @@ package app
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -47,6 +49,14 @@ type Config struct {
 	LocalAuthResendFrom    string
 	LocalAuthLinkOrigin    string
 	LocalAuthProxyCIDRs    string
+	LocalAuthEnabled       bool
+	LocalAuthActiveKeyID   string
+	LocalAuthPrivateKey    string
+	LocalAuthPublicKeys    string
+	LocalAuthAudience      string
+	LocalAuthRegisterKey   string
+	LocalAuthLoginKey      string
+	LocalAuthRecoveryKey   string
 	KBScanPython           string
 	KBScanSources          string
 	KBScanCandidateIndex   string
@@ -62,6 +72,8 @@ func LoadConfig(role string) (Config, error) {
 		OIDCIssuer: os.Getenv("ENERGYLENS_CLOUD_OIDC_ISSUER"), OIDCAudience: os.Getenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE"), OIDCJWKSURL: os.Getenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL"),
 		ResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_RESEND_API_KEY"), ResendFrom: os.Getenv("ENERGYLENS_CLOUD_RESEND_FROM"),
 		LocalAuthResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY"), LocalAuthResendFrom: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM"), LocalAuthLinkOrigin: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN"), LocalAuthProxyCIDRs: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_TRUSTED_PROXY_CIDRS"),
+		LocalAuthActiveKeyID: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ACTIVE_KEY_ID"), LocalAuthPrivateKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PRIVATE_KEY_FILE"), LocalAuthPublicKeys: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PUBLIC_KEY_FILES"), LocalAuthAudience: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_AUDIENCE"),
+		LocalAuthRegisterKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_REGISTER_RATE_KEY_FILE"), LocalAuthLoginKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LOGIN_RATE_KEY_FILE"), LocalAuthRecoveryKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RECOVERY_RATE_KEY_FILE"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_ALLOW_EPA"); raw != "" {
@@ -99,6 +111,13 @@ func LoadConfig(role string) (Config, error) {
 		}
 		c.LocalAuthMailEnabled = enabled
 	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED: %w", err)
+		}
+		c.LocalAuthEnabled = enabled
+	}
 	if c.Environment == "" {
 		c.Environment = "dev"
 	}
@@ -128,6 +147,26 @@ func (c Config) Validate() error {
 		}
 		if _, err := account.ParseLocalAuthSourcePolicy(c.LocalAuthProxyCIDRs); err != nil {
 			return err
+		}
+	}
+	if c.LocalAuthEnabled {
+		if c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || c.OIDCIssuer == "" || c.OIDCAudience == "" || c.OIDCJWKSURL == "" || !c.LocalAuthMailEnabled {
+			return errors.New("local auth requires API role, database, OIDC and enabled local mail")
+		}
+		if c.OIDCIssuer == account.LocalIssuer || c.LocalAuthAudience == "" || c.LocalAuthActiveKeyID == "" || c.LocalAuthPrivateKey == "" || c.LocalAuthRegisterKey == "" || c.LocalAuthLoginKey == "" || c.LocalAuthRecoveryKey == "" {
+			return errors.New("local auth signing and rate key configuration incomplete")
+		}
+		paths, err := c.localAuthKeyFiles()
+		if err != nil || len(paths.PublicPaths) == 0 {
+			return errors.New("invalid local auth public key configuration")
+		}
+		for _, path := range []string{c.LocalAuthPrivateKey, c.LocalAuthRegisterKey, c.LocalAuthLoginKey, c.LocalAuthRecoveryKey} {
+			if !filepath.IsAbs(path) {
+				return errors.New("local auth key paths must be absolute")
+			}
+		}
+		if c.LocalAuthRegisterKey == c.LocalAuthLoginKey || c.LocalAuthRegisterKey == c.LocalAuthRecoveryKey || c.LocalAuthLoginKey == c.LocalAuthRecoveryKey {
+			return errors.New("local auth rate keys must use separate files")
 		}
 	}
 	if c.MeteredRollupEnabled {
@@ -257,6 +296,22 @@ func (c Config) BuildLocalAuthSender() (*account.ResendLocalSender, error) {
 
 func (c Config) LocalAuthSourcePolicy() (account.LocalAuthSourcePolicy, error) {
 	return account.ParseLocalAuthSourcePolicy(c.LocalAuthProxyCIDRs)
+}
+
+func (c Config) localAuthKeyFiles() (account.LocalKeyFiles, error) {
+	if len(c.LocalAuthPublicKeys) > 4096 {
+		return account.LocalKeyFiles{}, errors.New("local auth public key configuration too long")
+	}
+	var paths map[string]string
+	if err := json.Unmarshal([]byte(c.LocalAuthPublicKeys), &paths); err != nil || len(paths) == 0 || len(paths) > 8 {
+		return account.LocalKeyFiles{}, errors.New("invalid local auth public key configuration")
+	}
+	for _, path := range paths {
+		if !filepath.IsAbs(path) {
+			return account.LocalKeyFiles{}, errors.New("local auth public key paths must be absolute")
+		}
+	}
+	return account.LocalKeyFiles{ActiveKeyID: c.LocalAuthActiveKeyID, PrivatePath: c.LocalAuthPrivateKey, PublicPaths: paths, Audience: c.LocalAuthAudience}, nil
 }
 
 func (c Config) hubTLSConfig() (*tls.Config, error) {

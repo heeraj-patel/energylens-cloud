@@ -95,3 +95,32 @@ func TestLocalKeyLoaderAndRotation(t *testing.T) {
 		t.Fatal("relative key path accepted")
 	}
 }
+
+func TestLocalRateKeyLoaderRequiresPrivateBinaryKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rate.key")
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, key, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LoadLocalRateKey(path); err != nil || len(got) != 32 {
+		t.Fatalf("private rate key rejected: %v", err)
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadLocalRateKey(path); err == nil {
+		t.Fatal("world-readable rate key accepted")
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, key[:31], 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadLocalRateKey(path); err == nil {
+		t.Fatal("short rate key accepted")
+	}
+}

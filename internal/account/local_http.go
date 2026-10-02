@@ -11,8 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// LocalAuthHTTP is not mounted by app.Build. Activation must install the full
-// service set, mail sender, trusted edge source, and client flows together.
+// LocalAuthHTTP registers routes only when the complete service set is ready.
 type LocalAuthHTTP struct {
 	Enabled      bool
 	Registration LocalRegistrationService

@@ -123,7 +123,17 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		})
 		modules = append(modules, Module{Name: "energy-rates", Mount: rates.Routes})
 		if rt.Pool != nil && c.OIDCIssuer != "" {
-			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Verifier: &account.OIDCVerifier{Issuer: c.OIDCIssuer, Audience: c.OIDCAudience, JWKSURL: c.OIDCJWKSURL}}
+			var verifier account.Verifier = &account.OIDCVerifier{Issuer: c.OIDCIssuer, Audience: c.OIDCAudience, JWKSURL: c.OIDCJWKSURL}
+			if c.LocalAuthEnabled {
+				localHTTP, localVerifier, err := buildLocalAuth(c, rt.Pool)
+				if err != nil {
+					rt.Close()
+					return nil, err
+				}
+				verifier = account.DualVerifier{OIDCIssuer: c.OIDCIssuer, OIDC: verifier, Local: localVerifier}
+				modules = append(modules, Module{Name: "local-auth", Mount: localHTTP.Routes})
+			}
+			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Verifier: verifier}
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
 			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
@@ -224,15 +234,17 @@ func hubRouter(ready func(context.Context) error, hub *hubtrust.Service, pools .
 	r := chi.NewRouter()
 	probes(r, ready)
 	if hub != nil {
-		r.Route("/v1", hub.HubRoutes)
-		if len(pools) > 0 && pools[0] != nil {
-			sensorModule := sensors.Service{Store: sensors.Store{Pool: pools[0]}}
-			r.Route("/v1", sensorModule.HubRoutes)
-			ingest := telemetry.Service{Store: telemetry.Store{Pool: pools[0]}}
-			r.Route("/v1", ingest.HubRoutes)
-			runtimeModule := kasaruntime.Service{Store: kasaruntime.Store{Pool: pools[0]}}
-			r.Route("/v1", runtimeModule.HubRoutes)
-		}
+		r.Route("/v1", func(v chi.Router) {
+			hub.HubRoutes(v)
+			if len(pools) > 0 && pools[0] != nil {
+				sensorModule := sensors.Service{Store: sensors.Store{Pool: pools[0]}}
+				sensorModule.HubRoutes(v)
+				ingest := telemetry.Service{Store: telemetry.Store{Pool: pools[0]}}
+				ingest.HubRoutes(v)
+				runtimeModule := kasaruntime.Service{Store: kasaruntime.Store{Pool: pools[0]}}
+				runtimeModule.HubRoutes(v)
+			}
+		})
 	}
 	return r
 }

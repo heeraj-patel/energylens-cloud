@@ -7,7 +7,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// DualVerifier is inactive until the local route and client activation gate.
 // The untrusted issuer selects exactly one fully validating verifier; a failed
 // selected verifier never falls back to the other trust domain.
 type DualVerifier struct {
