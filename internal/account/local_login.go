@@ -104,13 +104,14 @@ func (s LocalLoginService) Login(ctx context.Context, email, password, source st
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
 	var userID, stored string
+	var accessVersion int64
 	var credentialVerified, deleted *time.Time
 	var profileVerified bool
-	err = tx.QueryRow(ctx, `SELECT c.user_id,c.password_hash,c.verified_at,u.email_verified,u.deleted_at
+	err = tx.QueryRow(ctx, `SELECT c.user_id,c.password_hash,c.verified_at,u.email_verified,u.deleted_at,c.access_version
 		FROM auth_password_credentials c
 		JOIN users u ON u.id=c.user_id
 		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
-		WHERE c.email_normalized=$1 FOR UPDATE OF c,u`, normalized, LocalIssuer).Scan(&userID, &stored, &credentialVerified, &profileVerified, &deleted)
+		WHERE c.email_normalized=$1 FOR UPDATE OF c,u`, normalized, LocalIssuer).Scan(&userID, &stored, &credentialVerified, &profileVerified, &deleted, &accessVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		stored = unknownAccountHash()
 	} else if err != nil {
@@ -127,7 +128,7 @@ func (s LocalLoginService) Login(ctx context.Context, email, password, source st
 		}
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
-	access, err := s.Codec.signVerified(userID, now)
+	access, err := s.Codec.signVerified(userID, accessVersion, now)
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}

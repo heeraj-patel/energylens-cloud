@@ -1,13 +1,13 @@
 package account
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -67,19 +67,19 @@ func TestLocalAccessTokenIssuerAudienceSignatureAndExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	codec := LocalAccessCodec{Private: private, Public: public, Audience: "energylens-cloud"}
+	codec := LocalAccessCodec{Private: private, ActiveKeyID: "key-1", Keys: map[string]ed25519.PublicKey{"key-1": public}, Audience: "energylens-cloud"}
 	userID := uuid.NewString()
-	token, err := codec.signVerified(userID, time.Now().UTC())
+	token, err := codec.signVerified(userID, 1, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := codec.Verify(context.Background(), token)
-	if err != nil || identity.Issuer != LocalIssuer || identity.Subject != userID || identity.EmailVerified {
-		t.Fatalf("verified token identity: %+v %v", identity, err)
+	subject, version, err := codec.verifySignature(token)
+	if err != nil || subject != userID || version != 1 {
+		t.Fatalf("verified token identity: %q %d %v", subject, version, err)
 	}
 	wrongAudience := codec
 	wrongAudience.Audience = "other-service"
-	if _, err := wrongAudience.Verify(context.Background(), token); err == nil {
+	if _, _, err := wrongAudience.verifySignature(token); err == nil {
 		t.Fatal("wrong audience accepted")
 	}
 	otherPublic, _, err := ed25519.GenerateKey(rand.Reader)
@@ -87,18 +87,66 @@ func TestLocalAccessTokenIssuerAudienceSignatureAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrongKey := codec
-	wrongKey.Public = otherPublic
-	if _, err := wrongKey.Verify(context.Background(), token); err == nil {
+	wrongKey.Keys = map[string]ed25519.PublicKey{"key-1": otherPublic}
+	if _, _, err := wrongKey.verifySignature(token); err == nil {
 		t.Fatal("wrong signature key accepted")
 	}
-	expired, err := codec.signVerified(userID, time.Now().Add(-time.Hour))
+	expired, err := codec.signVerified(userID, 1, time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := codec.Verify(context.Background(), expired); err == nil {
+	if _, _, err := codec.verifySignature(expired); err == nil {
 		t.Fatal("expired access token accepted")
 	}
-	if _, err := codec.signVerified("not-a-user", time.Now()); err == nil {
+	if _, err := codec.signVerified("not-a-user", 1, time.Now()); err == nil {
 		t.Fatal("noncanonical subject accepted")
+	}
+}
+
+func TestLocalAccessKeyRotationRequiresExplicitTrustedKey(t *testing.T) {
+	oldPublic, oldPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPublic, newPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := LocalAccessCodec{Private: oldPrivate, ActiveKeyID: "old", Keys: map[string]ed25519.PublicKey{"old": oldPublic}, Audience: "energylens-cloud"}
+	token, err := old.signVerified(uuid.NewString(), 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated := LocalAccessCodec{Private: newPrivate, ActiveKeyID: "new", Keys: map[string]ed25519.PublicKey{"old": oldPublic, "new": newPublic}, Audience: "energylens-cloud"}
+	if _, _, err = rotated.verifySignature(token); err != nil {
+		t.Fatalf("overlap rejected old key: %v", err)
+	}
+	publicOnly := rotated
+	publicOnly.Private = nil
+	if _, _, err = publicOnly.verifySignature(token); err != nil {
+		t.Fatalf("public-only verifier rejected old key: %v", err)
+	}
+	retired := rotated
+	retired.Keys = map[string]ed25519.PublicKey{"new": newPublic}
+	if _, _, err = retired.verifySignature(token); err == nil {
+		t.Fatal("retired key accepted")
+	}
+	rotated.ActiveKeyID = "old"
+	if _, err = rotated.signVerified(uuid.NewString(), 1, time.Now()); err == nil {
+		t.Fatal("mismatched active private key accepted")
+	}
+	if _, err = old.signVerified(uuid.NewString(), 0, time.Now()); err == nil {
+		t.Fatal("missing auth version accepted")
+	}
+	missingKid := jwt.NewWithClaims(jwt.SigningMethodEdDSA, localAccessClaims{Version: 1, RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: LocalIssuer, Subject: uuid.NewString(), Audience: jwt.ClaimStrings{"energylens-cloud"}, ID: uuid.NewString(),
+		IssuedAt: jwt.NewNumericDate(time.Now()), NotBefore: jwt.NewNumericDate(time.Now()), ExpiresAt: jwt.NewNumericDate(time.Now().Add(localAccessLifetime)),
+	}})
+	noKidToken, err := missingKid.SignedString(oldPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = old.verifySignature(noKidToken); err == nil {
+		t.Fatal("valid signature without kid accepted")
 	}
 }

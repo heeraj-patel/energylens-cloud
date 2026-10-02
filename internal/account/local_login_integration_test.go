@@ -56,7 +56,7 @@ func TestLocalLoginVerifiedOnlyGenericFailuresAndHashedRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := LocalLoginService{DB: pool, Codec: LocalAccessCodec{Private: private, Public: public, Audience: "energylens-cloud"}, RateKey: []byte(strings.Repeat("r", 32))}
+	service := LocalLoginService{DB: pool, Codec: LocalAccessCodec{Private: private, ActiveKeyID: "key-1", Keys: map[string]ed25519.PublicKey{"key-1": public}, Audience: "energylens-cloud"}, RateKey: []byte(strings.Repeat("r", 32))}
 	now := time.Now().UTC()
 	passwordHash, err := HashLocalPassword("correct long password")
 	if err != nil {
@@ -100,7 +100,7 @@ func TestLocalLoginVerifiedOnlyGenericFailuresAndHashedRefresh(t *testing.T) {
 	if err != nil || tokens.AccessToken == "" || tokens.RefreshToken == "" || tokens.AccessExpiresAt.Sub(now) != localAccessLifetime || tokens.RefreshExpiresAt.Sub(now) != localRefreshLifetime {
 		t.Fatalf("verified login: %+v %v", tokens, err)
 	}
-	identity, err := service.Codec.Verify(ctx, tokens.AccessToken)
+	identity, err := (LocalAccessVerifier{DB: pool, Codec: service.Codec}).Verify(ctx, tokens.AccessToken)
 	if err != nil || identity.Issuer != LocalIssuer || identity.Subject != ids["verified"] {
 		t.Fatalf("local access identity: %+v %v", identity, err)
 	}

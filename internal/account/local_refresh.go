@@ -99,10 +99,11 @@ func (s LocalRefreshService) Rotate(ctx context.Context, raw string, now time.Ti
 	}
 	var deleted, verified *time.Time
 	var profileVerified bool
-	err = tx.QueryRow(ctx, `SELECT u.deleted_at,c.verified_at,u.email_verified
+	var accessVersion int64
+	err = tx.QueryRow(ctx, `SELECT u.deleted_at,c.verified_at,u.email_verified,c.access_version
 		FROM users u JOIN auth_password_credentials c ON c.user_id=u.id
 		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
-		WHERE u.id=$1 FOR UPDATE OF u,c`, row.UserID, LocalIssuer).Scan(&deleted, &verified, &profileVerified)
+		WHERE u.id=$1 FOR UPDATE OF u,c`, row.UserID, LocalIssuer).Scan(&deleted, &verified, &profileVerified, &accessVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
@@ -120,7 +121,7 @@ func (s LocalRefreshService) Rotate(ctx context.Context, raw string, now time.Ti
 	if !now.Before(absoluteExpiry) {
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
-	access, err := s.Codec.signVerified(row.UserID, now)
+	access, err := s.Codec.signVerified(row.UserID, accessVersion, now)
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}

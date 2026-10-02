@@ -2,6 +2,8 @@ package account
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"os"
 	"strings"
@@ -65,6 +67,12 @@ func TestLocalRecoveryResetsAndRevokesSessions(t *testing.T) {
 	defer pool.Close()
 	now := time.Now().UTC()
 	userID, unverifiedID, deletedID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := LocalAccessCodec{Private: private, ActiveKeyID: "key-1", Keys: map[string]ed25519.PublicKey{"key-1": public}, Audience: "energylens-cloud"}
+	verifier := LocalAccessVerifier{DB: pool, Codec: codec}
 	oldHash, err := HashLocalPassword("original long password")
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +99,15 @@ func TestLocalRecoveryResetsAndRevokesSessions(t *testing.T) {
 		}
 		if _, err = pool.Exec(ctx, `INSERT INTO auth_password_credentials(user_id,email_normalized,password_hash,verified_at) VALUES($1,$2,$3,$4)`, fixture.id, fixture.name+"@example.com", oldHash, verifiedAt); err != nil {
 			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{unverifiedID, deletedID} {
+		access, signErr := codec.signVerified(id, 1, now)
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		if _, verifyErr := verifier.Verify(ctx, access); !errors.Is(verifyErr, ErrInvalidCredential) {
+			t.Fatalf("ineligible local identity accepted: %v", verifyErr)
 		}
 	}
 	sender := &capturedRecovery{fail: true}
@@ -138,8 +155,25 @@ func TestLocalRecoveryResetsAndRevokesSessions(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO auth_refresh_sessions(user_id,family_id,token_hash,created_at,expires_at) VALUES($1,$2,$3,$4,$5)`, userID, uuid.NewString(), refreshHash[:], now, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	access, err := codec.signVerified(userID, 1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = verifier.Verify(ctx, access); err != nil {
+		t.Fatalf("pre-reset access rejected: %v", err)
+	}
 	if err = svc.ResetPassword(ctx, current, "new secure password", now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
+	}
+	if _, err = verifier.Verify(ctx, access); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("pre-reset access survived: %v", err)
+	}
+	newAccess, err := codec.signVerified(userID, 2, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = verifier.Verify(ctx, newAccess); err != nil {
+		t.Fatalf("new-version access rejected: %v", err)
 	}
 	var stored string
 	var active int

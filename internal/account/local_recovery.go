@@ -183,7 +183,7 @@ func (s LocalRecoveryService) ResetPassword(ctx context.Context, raw, password s
 	if verified == nil || deleted != nil || !profileVerified || consumed != nil || !now.Before(expires) {
 		return ErrInvalidCredential
 	}
-	if _, err = tx.Exec(ctx, `UPDATE auth_password_credentials SET password_hash=$2,updated_at=$3 WHERE user_id=$1`, userID, newHash, now.UTC()); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE auth_password_credentials SET password_hash=$2,access_version=access_version+1,updated_at=$3 WHERE user_id=$1`, userID, newHash, now.UTC()); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE auth_password_reset_tokens SET consumed_at=$2 WHERE user_id=$1 AND consumed_at IS NULL`, userID, now.UTC()); err != nil {
