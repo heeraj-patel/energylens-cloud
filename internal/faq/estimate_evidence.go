@@ -1,0 +1,74 @@
+package faq
+
+import (
+	"encoding/json"
+	"math/big"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+var decimalAmount = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?$`)
+
+// OperatingCostFromEstimate accepts only a current, sourced Cloud operating
+// estimate for the requested appliance. It is a narrow bridge from the
+// persisted estimate result; it never turns annual energy into useful cost.
+func OperatingCostFromEstimate(raw json.RawMessage, applianceID string) (*OperatingCost, bool) {
+	var result struct {
+		ApplianceID string `json:"appliance_id"`
+		Kind        string `json:"kind"`
+		Period      struct {
+			Start string `json:"start"`
+			End   string `json:"end"`
+		} `json:"period"`
+		Cost *struct {
+			Value    string `json:"value"`
+			Currency string `json:"currency"`
+		} `json:"cost"`
+		Evidence []Evidence `json:"evidence_refs"`
+	}
+	if json.Unmarshal(raw, &result) != nil || result.ApplianceID != applianceID || result.Kind != "estimated_operating_cost" || result.Cost == nil {
+		return nil, false
+	}
+	start, err := time.Parse("2006-01-02", result.Period.Start)
+	if err != nil {
+		return nil, false
+	}
+	end, err := time.Parse("2006-01-02", result.Period.End)
+	if err != nil || !end.After(start) {
+		return nil, false
+	}
+	amount, ok := new(big.Rat).SetString(result.Cost.Value)
+	if !decimalAmount.MatchString(result.Cost.Value) || !ok || amount.Sign() < 0 || len(result.Cost.Value) > 32 {
+		return nil, false
+	}
+	currency := result.Cost.Currency
+	if len(currency) != 3 || strings.ToUpper(currency) != currency {
+		return nil, false
+	}
+	for _, r := range currency {
+		if r < 'A' || r > 'Z' {
+			return nil, false
+		}
+	}
+	var hasFact, hasRate bool
+	for _, ref := range result.Evidence {
+		if _, err := uuid.Parse(ref.ID); err != nil || ref.Revision < 1 {
+			return nil, false
+		}
+		switch ref.Kind {
+		case "catalog_fact":
+			hasFact = true
+		case "tariff":
+			hasRate = true
+		default:
+			return nil, false
+		}
+	}
+	if !hasFact || !hasRate {
+		return nil, false
+	}
+	return &OperatingCost{Amount: result.Cost.Value, Currency: currency, PeriodStart: result.Period.Start, PeriodEnd: result.Period.End, Evidence: result.Evidence}, true
+}

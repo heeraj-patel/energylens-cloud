@@ -2,6 +2,7 @@ package energyrating
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,8 +72,8 @@ func TestRatingCatalogMigrationAndPersistence(t *testing.T) {
 		t.Fatalf("case-insensitive Review = (%v, %v)", promoted, err)
 	}
 	updated := 999.0
-	if err := store.SaveCandidate(ctx, Candidate{Brand: "LENOVO", Model: "20XLS1H500", Category: "computer", SourceKind: "epa_exact", AnnualKWh: &updated, SourceRef: "https://catalog.example/replacement", SourceRowID: ptr("row-2"), ContractVersion: "energy-v2"}); err != nil {
-		t.Fatalf("candidate save over reviewed row: %v", err)
+	if err := store.SaveCandidate(ctx, Candidate{Brand: "LENOVO", Model: "20XLS1H500", Category: "computer", SourceKind: "epa_exact", AnnualKWh: &updated, SourceRef: "https://catalog.example/replacement", SourceRowID: ptr("row-2"), ContractVersion: "energy-v2"}); !errors.Is(err, ErrReviewedRatingProtected) {
+		t.Fatalf("candidate save over reviewed row returned %v, want ErrReviewedRatingProtected", err)
 	}
 	got, ok, err := store.FindReviewed(ctx, "LeNoVo", "20XLS1H500", "computer")
 	if err != nil || !ok || got.SourceKind != "epa_exact" || got.AnnualKWh == nil || *got.AnnualKWh != 319 || got.SourceRowID == nil || *got.SourceRowID != "row-pre-review" {
