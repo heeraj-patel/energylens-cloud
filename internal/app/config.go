@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"energylens.local/cloud/internal/account"
 	"energylens.local/cloud/internal/reports"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -41,6 +42,10 @@ type Config struct {
 	ReportDeliveryEnabled  bool
 	ResendAPIKey           string
 	ResendFrom             string
+	LocalAuthMailEnabled   bool
+	LocalAuthResendAPIKey  string
+	LocalAuthResendFrom    string
+	LocalAuthLinkOrigin    string
 	KBScanPython           string
 	KBScanSources          string
 	KBScanCandidateIndex   string
@@ -55,6 +60,7 @@ func LoadConfig(role string) (Config, error) {
 		DatabaseURL: os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"), EIAAPIKey: os.Getenv("EIA_API_KEY"),
 		OIDCIssuer: os.Getenv("ENERGYLENS_CLOUD_OIDC_ISSUER"), OIDCAudience: os.Getenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE"), OIDCJWKSURL: os.Getenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL"),
 		ResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_RESEND_API_KEY"), ResendFrom: os.Getenv("ENERGYLENS_CLOUD_RESEND_FROM"),
+		LocalAuthResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY"), LocalAuthResendFrom: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM"), LocalAuthLinkOrigin: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_ALLOW_EPA"); raw != "" {
@@ -84,6 +90,13 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED %q: %w", raw, err)
 		}
 		c.ReportDeliveryEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_MAIL_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_LOCAL_AUTH_MAIL_ENABLED: %w", err)
+		}
+		c.LocalAuthMailEnabled = enabled
 	}
 	if c.Environment == "" {
 		c.Environment = "dev"
@@ -141,6 +154,17 @@ func (c Config) Validate() error {
 		}
 		if c.DatabaseURL == "" || c.ResendAPIKey == "" || c.ResendFrom == "" {
 			return errors.New("report delivery requires database, Resend API key and sender")
+		}
+	}
+	if c.LocalAuthMailEnabled || c.LocalAuthResendAPIKey != "" || c.LocalAuthResendFrom != "" || c.LocalAuthLinkOrigin != "" {
+		if c.Role != RoleAPI && c.Role != RoleAll {
+			return errors.New("local auth mail requires API or all role")
+		}
+		if c.DatabaseURL == "" || c.LocalAuthResendAPIKey == "" || c.LocalAuthResendFrom == "" || c.LocalAuthLinkOrigin == "" {
+			return errors.New("local auth mail requires database, dedicated API key, sender and HTTPS link origin")
+		}
+		if _, err := account.NewResendLocalSender(c.LocalAuthResendAPIKey, c.LocalAuthResendFrom, c.LocalAuthLinkOrigin); err != nil {
+			return err
 		}
 	}
 	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA {
@@ -208,6 +232,18 @@ func (c Config) Validate() error {
 		return errors.New("hub TLS settings require ENERGYLENS_CLOUD_HUB_BIND")
 	}
 	return nil
+}
+
+// BuildLocalAuthSender is the sole runtime construction gate for the future
+// local-auth routes. Disabled configuration has no provider or network client.
+func (c Config) BuildLocalAuthSender() (*account.ResendLocalSender, error) {
+	if !c.LocalAuthMailEnabled {
+		return nil, nil
+	}
+	if c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" {
+		return nil, errors.New("local auth mail is unavailable for this role")
+	}
+	return account.NewResendLocalSender(c.LocalAuthResendAPIKey, c.LocalAuthResendFrom, c.LocalAuthLinkOrigin)
 }
 
 func (c Config) hubTLSConfig() (*tls.Config, error) {
