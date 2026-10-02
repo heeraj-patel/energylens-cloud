@@ -15,7 +15,7 @@ var ErrDeliveryDisabled = errors.New("report delivery is disabled")
 // DeliveryProvider must deduplicate on requestID; a provider success followed
 // by a database commit failure can otherwise produce a second email on retry.
 type DeliveryProvider interface {
-	SendReport(context.Context, string, []string, Preview) error
+	SendReport(context.Context, string, []string, RenderedReport) error
 }
 
 type DeliveryWorker struct {
@@ -106,8 +106,12 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 		}
 		return true, tx.Commit(ctx)
 	}
+	report, err := RenderApprovedHTML(preview, approved)
+	if err != nil {
+		return false, err
+	}
 	providerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	err = w.Provider.SendReport(providerCtx, id, recipients, preview)
+	err = w.Provider.SendReport(providerCtx, id, recipients, report)
 	cancel()
 	if err != nil {
 		_, updateErr := tx.Exec(ctx, `UPDATE report_delivery_requests SET attempts=attempts+1,

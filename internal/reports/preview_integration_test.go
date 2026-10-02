@@ -26,7 +26,7 @@ type reportVerifier struct{}
 
 type fakeReportProvider struct {
 	calls int
-	last  Preview
+	last  RenderedReport
 }
 
 type blockingReportProvider struct {
@@ -35,7 +35,7 @@ type blockingReportProvider struct {
 	id      string
 }
 
-func (p *blockingReportProvider) SendReport(ctx context.Context, id string, _ []string, _ Preview) error {
+func (p *blockingReportProvider) SendReport(ctx context.Context, id string, _ []string, _ RenderedReport) error {
 	p.id = id
 	close(p.started)
 	select {
@@ -46,9 +46,9 @@ func (p *blockingReportProvider) SendReport(ctx context.Context, id string, _ []
 	}
 }
 
-func (p *fakeReportProvider) SendReport(_ context.Context, _ string, _ []string, preview Preview) error {
+func (p *fakeReportProvider) SendReport(_ context.Context, _ string, _ []string, report RenderedReport) error {
 	p.calls++
-	p.last = preview
+	p.last = report
 	return nil
 }
 
@@ -317,7 +317,7 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL WHERE id=$1`, blocking.id); err != nil {
 		t.Fatal(err)
 	}
-	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now); err != nil || !processed || provider.calls != 1 || provider.last.ID != p.ID {
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now); err != nil || !processed || provider.calls != 1 || provider.last.SnapshotSHA256 != p.SnapshotSHA256 || !strings.Contains(provider.last.HTML, p.ID) {
 		t.Fatalf("fake delivery: %v %v %+v", processed, err, provider)
 	}
 	var sentCount int
@@ -331,6 +331,9 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	for _, secret := range []string{"SECRET-123", "Secret home label", "private@example.com", "78732", "Austin", "Travis", "123 Main St"} {
 		if bytes.Contains(stored, []byte(secret)) {
 			t.Fatalf("private value %q entered preview", secret)
+		}
+		if strings.Contains(provider.last.HTML, secret) {
+			t.Fatalf("private value %q entered rendered email", secret)
 		}
 	}
 	if _, err = s.Get(ctx, other.String(), home.String(), p.ID, now); !errors.Is(err, ErrNotFound) {
