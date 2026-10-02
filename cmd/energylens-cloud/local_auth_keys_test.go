@@ -44,9 +44,9 @@ func TestCheckLocalAuthKeysCommandDoesNotContactDatabase(t *testing.T) {
 	}
 	t.Setenv("ENERGYLENS_CLOUD_ENV", "test")
 	t.Setenv("ENERGYLENS_CLOUD_DATABASE_URL", "postgres://user:pass@127.0.0.1:1/unreachable?sslmode=disable")
-	t.Setenv("ENERGYLENS_CLOUD_OIDC_ISSUER", "https://id.example/")
-	t.Setenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE", "external")
-	t.Setenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL", "https://id.example/jwks")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_ISSUER", "")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE", "")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL", "")
 	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED", "true")
 	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_MAIL_ENABLED", "true")
 	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY", "test-key")
@@ -65,7 +65,16 @@ func TestCheckLocalAuthKeysCommandDoesNotContactDatabase(t *testing.T) {
 		t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_"+name+"_RATE_KEY_FILE", path)
 	}
 	if err := run(context.Background(), []string{"check-local-auth-keys", "--retain-key-id", "current", "--retain-public-key-file", pinnedPath}); err != nil {
-		t.Fatalf("key check failed without database: %v", err)
+		t.Fatalf("local-only key check failed without database: %v", err)
+	}
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_ISSUER", "https://id.example/")
+	if err := run(context.Background(), []string{"check-local-auth-keys"}); err == nil {
+		t.Fatal("preflight accepted incomplete OIDC configuration")
+	}
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE", "external")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL", "https://id.example/jwks")
+	if err := run(context.Background(), []string{"check-local-auth-keys"}); err != nil {
+		t.Fatalf("dual-mode key check failed without database: %v", err)
 	}
 	if err := run(context.Background(), []string{"check-local-auth-keys", "--retain-key-id", "missing", "--retain-public-key-file", pinnedPath}); err == nil {
 		t.Fatal("command accepted missing retained key")

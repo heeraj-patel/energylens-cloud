@@ -122,15 +122,22 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			}},
 		})
 		modules = append(modules, Module{Name: "energy-rates", Mount: rates.Routes})
-		if rt.Pool != nil && c.OIDCIssuer != "" {
-			var verifier account.Verifier = &account.OIDCVerifier{Issuer: c.OIDCIssuer, Audience: c.OIDCAudience, JWKSURL: c.OIDCJWKSURL}
+		if rt.Pool != nil && (c.OIDCIssuer != "" || c.LocalAuthEnabled) {
+			var verifier account.Verifier
+			if c.OIDCIssuer != "" {
+				verifier = &account.OIDCVerifier{Issuer: c.OIDCIssuer, Audience: c.OIDCAudience, JWKSURL: c.OIDCJWKSURL}
+			}
 			if c.LocalAuthEnabled {
 				localHTTP, localVerifier, err := buildLocalAuth(c, rt.Pool)
 				if err != nil {
 					rt.Close()
 					return nil, err
 				}
-				verifier = account.DualVerifier{OIDCIssuer: c.OIDCIssuer, OIDC: verifier, Local: localVerifier}
+				if verifier == nil {
+					verifier = localVerifier
+				} else {
+					verifier = account.DualVerifier{OIDCIssuer: c.OIDCIssuer, OIDC: verifier, Local: localVerifier}
+				}
 				modules = append(modules, Module{Name: "local-auth", Mount: localHTTP.Routes})
 			}
 			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Verifier: verifier}

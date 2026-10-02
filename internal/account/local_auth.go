@@ -116,7 +116,7 @@ func HashLocalOpaqueToken(purpose, raw string) ([32]byte, error) {
 }
 
 // LocalAccessCodec signs with one active key and verifies only explicit key IDs
-// in a bounded ring. Key material is provisioned outside this inactive service.
+// in a bounded ring. Key material is provisioned outside the service.
 type LocalAccessCodec struct {
 	Private     ed25519.PrivateKey
 	ActiveKeyID string

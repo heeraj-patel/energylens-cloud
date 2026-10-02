@@ -29,21 +29,43 @@ func TestLocalAuthGateRequiresCompleteConfiguration(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatalf("complete configuration rejected: %v", err)
 	}
+	localOnly := base
+	localOnly.OIDCIssuer, localOnly.OIDCAudience, localOnly.OIDCJWKSURL = "", "", ""
+	if err := localOnly.Validate(); err != nil {
+		t.Fatalf("local-only configuration rejected: %v", err)
+	}
+	oidcOnly := base
+	oidcOnly.LocalAuthEnabled = false
+	oidcOnly.OIDCIssuer = "urn:energylens:local:v1"
+	if err := oidcOnly.Validate(); err == nil {
+		t.Fatal("OIDC-only configuration accepted reserved local issuer")
+	}
 	for name, alter := range map[string]func(*Config){
-		"disabled mail": func(c *Config) { c.LocalAuthMailEnabled = false },
-		"missing OIDC":  func(c *Config) { c.OIDCIssuer = "" },
-		"same issuer":   func(c *Config) { c.OIDCIssuer = "urn:energylens:local:v1" },
-		"missing rate":  func(c *Config) { c.LocalAuthLoginKey = "" },
-		"shared rate":   func(c *Config) { c.LocalAuthLoginKey = c.LocalAuthRegisterKey },
-		"relative key":  func(c *Config) { c.LocalAuthRecoveryKey = "recovery" },
-		"bad ring":      func(c *Config) { c.LocalAuthPublicKeys = `{"active":"relative.pem"}` },
-		"worker":        func(c *Config) { c.Role = RoleWorker },
+		"disabled mail":  func(c *Config) { c.LocalAuthMailEnabled = false },
+		"partial OIDC":   func(c *Config) { c.OIDCIssuer = "" },
+		"same issuer":    func(c *Config) { c.OIDCIssuer = "urn:energylens:local:v1" },
+		"same audience":  func(c *Config) { c.OIDCAudience = c.LocalAuthAudience },
+		"blank audience": func(c *Config) { c.LocalAuthAudience = " " },
+		"missing rate":   func(c *Config) { c.LocalAuthLoginKey = "" },
+		"shared rate":    func(c *Config) { c.LocalAuthLoginKey = c.LocalAuthRegisterKey },
+		"relative key":   func(c *Config) { c.LocalAuthRecoveryKey = "recovery" },
+		"bad ring":       func(c *Config) { c.LocalAuthPublicKeys = `{"active":"relative.pem"}` },
+		"worker":         func(c *Config) { c.Role = RoleWorker },
+		"bad proxy":      func(c *Config) { c.LocalAuthProxyCIDRs = "0.0.0.0/0" },
 	} {
 		c := base
 		alter(&c)
 		if err := c.Validate(); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+	production := localOnly
+	production.Environment = "production"
+	production.DatabaseURL = "postgres://user:pass@localhost:5432/db?sslmode=verify-full"
+	production.HubListen, production.HubCertFile, production.HubKeyFile, production.HubCAFile = ":8081", "server.crt", "server.key", "client-ca.crt"
+	production.HubSignCertFile, production.HubSignKeyFile = "signer.crt", "signer.key"
+	if err := production.Validate(); err != nil {
+		t.Fatalf("production local-only configuration rejected: %v", err)
 	}
 	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED", "maybe")
 	if _, err := LoadConfig("api"); err == nil {

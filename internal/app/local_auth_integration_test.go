@@ -14,9 +14,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"energylens.local/cloud/internal/account"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -134,10 +137,61 @@ func TestLocalAuthRuntimeGate(t *testing.T) {
 	if err := CheckLocalAuthKeys(c, "active", ""); err == nil {
 		t.Fatal("unpaired previous key reference accepted")
 	}
+	userID := uuid.NewString()
+	if _, err := conn.Exec(ctx, `INSERT INTO users(id,email,email_verified) VALUES($1,'person@example.test',true)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO auth_identities(user_id,issuer,subject) VALUES($1,$2,$3)`, userID, account.LocalIssuer, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO auth_password_credentials(user_id,email_normalized,password_hash,verified_at) VALUES($1,'person@example.test',$2,now())`, userID, strings.Repeat("x", 60)); err != nil {
+		t.Fatal(err)
+	}
+	sign := func(issuer, audience string) string {
+		t.Helper()
+		now := time.Now().UTC().Truncate(time.Second)
+		token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{
+			"iss": issuer, "sub": userID, "aud": []string{audience}, "jti": uuid.NewString(),
+			"iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(15 * time.Minute).Unix(), "ver": 1,
+		})
+		token.Header["kid"] = "active"
+		raw, err := token.SignedString(private)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	localToken := sign(account.LocalIssuer, c.LocalAuthAudience)
+	checkMe := func(rt *Runtime, token string, want int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		rt.API.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("/v1/me status %d, want %d: %s", rec.Code, want, rec.Body.String())
+		}
+	}
+	localOnly := c
+	localOnly.OIDCIssuer, localOnly.OIDCAudience, localOnly.OIDCJWKSURL = "", "", ""
+	if err := CheckLocalAuthKeys(localOnly, "", ""); err != nil {
+		t.Fatalf("local-only preflight rejected: %v", err)
+	}
+	localRT, err := Build(ctx, localOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkMe(localRT, localToken, http.StatusOK)
+	checkMe(localRT, sign("https://unknown.example/", c.LocalAuthAudience), http.StatusUnauthorized)
+	checkMe(localRT, sign(account.LocalIssuer, "wrong-audience"), http.StatusUnauthorized)
+	localRT.Close()
 	rt, err := Build(ctx, c)
 	if err != nil {
 		t.Fatal(err)
 	}
+	checkMe(rt, localToken, http.StatusOK)
+	checkMe(rt, sign("https://unknown.example/", c.LocalAuthAudience), http.StatusUnauthorized)
+	checkMe(rt, sign(account.LocalIssuer, "wrong-audience"), http.StatusUnauthorized)
 	rec := httptest.NewRecorder()
 	rt.API.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/auth/local/login", nil))
 	rt.Close()

@@ -150,10 +150,10 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.LocalAuthEnabled {
-		if c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || c.OIDCIssuer == "" || c.OIDCAudience == "" || c.OIDCJWKSURL == "" || !c.LocalAuthMailEnabled {
-			return errors.New("local auth requires API role, database, OIDC and enabled local mail")
+		if c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || !c.LocalAuthMailEnabled {
+			return errors.New("local auth requires API role, database and enabled local mail")
 		}
-		if c.OIDCIssuer == account.LocalIssuer || c.LocalAuthAudience == "" || c.LocalAuthActiveKeyID == "" || c.LocalAuthPrivateKey == "" || c.LocalAuthRegisterKey == "" || c.LocalAuthLoginKey == "" || c.LocalAuthRecoveryKey == "" {
+		if c.LocalAuthAudience == "" || c.LocalAuthAudience != strings.TrimSpace(c.LocalAuthAudience) || len(c.LocalAuthAudience) > 256 || c.LocalAuthActiveKeyID == "" || c.LocalAuthPrivateKey == "" || c.LocalAuthRegisterKey == "" || c.LocalAuthLoginKey == "" || c.LocalAuthRecoveryKey == "" {
 			return errors.New("local auth signing and rate key configuration incomplete")
 		}
 		paths, err := c.localAuthKeyFiles()
@@ -230,8 +230,14 @@ func (c Config) Validate() error {
 	if configured && (c.OIDCIssuer == "" || c.OIDCAudience == "" || c.OIDCJWKSURL == "") {
 		return errors.New("OIDC issuer, audience, and JWKS URL must be configured together")
 	}
-	if c.Environment == "production" && c.Role != RoleWorker && !configured {
-		return errors.New("production API requires OIDC issuer, audience, and JWKS URL")
+	if configured && (c.OIDCIssuer == account.LocalIssuer || c.OIDCIssuer != strings.TrimSpace(c.OIDCIssuer) || c.OIDCAudience != strings.TrimSpace(c.OIDCAudience) || c.OIDCAudience == "") {
+		return errors.New("OIDC issuer and audience must be distinct and canonical")
+	}
+	if configured && c.LocalAuthEnabled && c.OIDCAudience == c.LocalAuthAudience {
+		return errors.New("OIDC and local auth audiences must differ")
+	}
+	if c.Environment == "production" && c.Role != RoleWorker && !configured && !c.LocalAuthEnabled {
+		return errors.New("production API requires OIDC or enabled local auth")
 	}
 	if configured && c.Environment != "dev" && c.Environment != "test" {
 		if !strings.HasPrefix(c.OIDCIssuer, "https://") || !strings.HasPrefix(c.OIDCJWKSURL, "https://") {
@@ -282,8 +288,8 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// BuildLocalAuthSender is the sole runtime construction gate for the future
-// local-auth routes. Disabled configuration has no provider or network client.
+// BuildLocalAuthSender is the runtime construction gate for local-auth mail.
+// Disabled configuration has no provider or network client.
 func (c Config) BuildLocalAuthSender() (*account.ResendLocalSender, error) {
 	if !c.LocalAuthMailEnabled {
 		return nil, nil
