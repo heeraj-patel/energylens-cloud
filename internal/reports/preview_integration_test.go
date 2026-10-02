@@ -324,6 +324,14 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM report_delivery_requests WHERE state='sent'`).Scan(&sentCount); err != nil || sentCount != 1 {
 		t.Fatalf("sent count %d %v", sentCount, err)
 	}
+	// The provider's documented idempotency window is 24 hours. Once the
+	// preview's shorter-or-equal lifetime ends, even a pending retry must stop.
+	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL WHERE id=$1`, queued.ID); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(25*time.Hour)); err != nil || !processed || provider.calls != 1 {
+		t.Fatalf("expired retry reached provider: processed=%v err=%v calls=%d", processed, err, provider.calls)
+	}
 	stored, err := json.Marshal(p)
 	if err != nil {
 		t.Fatal(err)

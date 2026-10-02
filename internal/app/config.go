@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"energylens.local/cloud/internal/reports"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -37,6 +38,8 @@ type Config struct {
 	OIDCJWKSURL            string
 	MeteredRollupEnabled   bool
 	ReportRetentionEnabled bool
+	ResendAPIKey           string
+	ResendFrom             string
 	KBScanPython           string
 	KBScanSources          string
 	KBScanCandidateIndex   string
@@ -50,6 +53,7 @@ func LoadConfig(role string) (Config, error) {
 		HubCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_TLS_CERT"), HubKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_TLS_KEY"), HubCAFile: os.Getenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA"), HubSignCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_CERT"), HubSignKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_KEY"),
 		DatabaseURL: os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"), EIAAPIKey: os.Getenv("EIA_API_KEY"),
 		OIDCIssuer: os.Getenv("ENERGYLENS_CLOUD_OIDC_ISSUER"), OIDCAudience: os.Getenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE"), OIDCJWKSURL: os.Getenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL"),
+		ResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_RESEND_API_KEY"), ResendFrom: os.Getenv("ENERGYLENS_CLOUD_RESEND_FROM"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_ALLOW_EPA"); raw != "" {
@@ -110,6 +114,17 @@ func (c Config) Validate() error {
 		}
 		if c.DatabaseURL == "" {
 			return errors.New("report retention requires ENERGYLENS_CLOUD_DATABASE_URL")
+		}
+	}
+	if c.ResendAPIKey != "" || c.ResendFrom != "" {
+		if c.Role != RoleWorker && c.Role != RoleAll {
+			return errors.New("report provider configuration requires worker or all role")
+		}
+		if c.ResendAPIKey == "" || c.ResendFrom == "" || c.DatabaseURL == "" {
+			return errors.New("report provider requires API key, sender and database")
+		}
+		if _, err := reports.NewResendProvider(c.ResendAPIKey, c.ResendFrom); err != nil {
+			return err
 		}
 	}
 	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA {

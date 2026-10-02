@@ -218,3 +218,24 @@ func TestReportRetentionEnvironmentFlag(t *testing.T) {
 		t.Fatalf("default retention should be disabled: enabled=%v err=%v", c.ReportRetentionEnabled, err)
 	}
 }
+
+func TestResendConfigurationIsWorkerOnlyAndDoesNotEnableDelivery(t *testing.T) {
+	base := Config{Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=disable", ResendAPIKey: "test-key", ResendFrom: "reports@example.test"}
+	if err := base.Validate(); err == nil {
+		t.Fatal("API role accepted email provider credentials")
+	}
+	base.Role = RoleWorker
+	if err := base.Validate(); err != nil {
+		t.Fatalf("worker rejected paired provider configuration: %v", err)
+	}
+	base.ResendFrom = ""
+	if err := base.Validate(); err == nil {
+		t.Fatal("worker accepted partial provider configuration")
+	}
+	t.Setenv("ENERGYLENS_CLOUD_RESEND_API_KEY", "")
+	t.Setenv("ENERGYLENS_CLOUD_RESEND_FROM", "")
+	loaded, err := LoadConfig("worker")
+	if err != nil || loaded.ResendAPIKey != "" || loaded.ResendFrom != "" {
+		t.Fatalf("provider should default unconfigured: %+v %v", loaded, err)
+	}
+}
