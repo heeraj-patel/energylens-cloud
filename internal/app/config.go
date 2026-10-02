@@ -38,6 +38,7 @@ type Config struct {
 	OIDCJWKSURL            string
 	MeteredRollupEnabled   bool
 	ReportRetentionEnabled bool
+	ReportDeliveryEnabled  bool
 	ResendAPIKey           string
 	ResendFrom             string
 	KBScanPython           string
@@ -76,6 +77,13 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_RETENTION_ENABLED %q: %w", raw, err)
 		}
 		c.ReportRetentionEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED %q: %w", raw, err)
+		}
+		c.ReportDeliveryEnabled = enabled
 	}
 	if c.Environment == "" {
 		c.Environment = "dev"
@@ -125,6 +133,14 @@ func (c Config) Validate() error {
 		}
 		if _, err := reports.NewResendProvider(c.ResendAPIKey, c.ResendFrom); err != nil {
 			return err
+		}
+	}
+	if c.ReportDeliveryEnabled {
+		if c.Role != RoleWorker && c.Role != RoleAll {
+			return errors.New("report delivery requires worker or all role")
+		}
+		if c.DatabaseURL == "" || c.ResendAPIKey == "" || c.ResendFrom == "" {
+			return errors.New("report delivery requires database, Resend API key and sender")
 		}
 	}
 	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA {

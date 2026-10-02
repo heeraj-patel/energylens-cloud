@@ -18,6 +18,8 @@ const (
 	reportRetentionInterval = time.Hour
 	reportRetentionDeadline = 30 * time.Second
 	reportRetentionLimit    = 100
+	reportDeliveryInterval  = 10 * time.Second
+	reportDeliveryDeadline  = 20 * time.Second
 )
 
 type rollupJob interface {
@@ -30,6 +32,34 @@ type identityScanJob interface {
 
 type reportRetentionJob interface {
 	RunOnce(context.Context, time.Time, int) (int64, error)
+}
+
+type reportDeliveryJob interface {
+	DeliverOne(context.Context, time.Time) (bool, error)
+}
+
+// runReportDeliveries only consumes manually approved pending requests. A
+// pass processes at most one row and cannot start another before it finishes.
+func runReportDeliveries(ctx context.Context, job reportDeliveryJob, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, reportDeliveryDeadline)
+		_, err := job.DeliverOne(runCtx, time.Now().UTC())
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			// Provider/SQL errors may carry private content; keep routine logs redacted.
+			slog.Error("report delivery pass failed")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func runReportRetention(ctx context.Context, job reportRetentionJob, interval time.Duration) {

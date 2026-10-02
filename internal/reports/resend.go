@@ -18,8 +18,8 @@ const resendEmailsURL = "https://api.resend.com/emails"
 
 // ResendProvider uses Resend's 24-hour Idempotency-Key window. Report
 // previews expire within 24 hours, so an approved request cannot be retried
-// after the provider's duplicate-suppression window. This adapter is not
-// installed or scheduled by the Cloud runtime.
+// after the provider's duplicate-suppression window. The Cloud runtime only
+// installs this adapter when report delivery is explicitly enabled.
 // API: https://resend.com/docs/dashboard/emails/idempotency-keys
 // Retention: https://resend.com/security/gdpr
 type ResendProvider struct {

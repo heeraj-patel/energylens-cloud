@@ -21,7 +21,7 @@ type DeliveryProvider interface {
 type DeliveryWorker struct {
 	DB       *pgxpool.Pool
 	Provider DeliveryProvider
-	Enabled  bool // false by default; no app role schedules this worker
+	Enabled  bool // false by default; the Cloud runtime requires an explicit flag
 }
 
 // DeliverOne processes at most one manually queued request. It checks the

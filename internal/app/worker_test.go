@@ -239,3 +239,90 @@ func TestResendConfigurationIsWorkerOnlyAndDoesNotEnableDelivery(t *testing.T) {
 		t.Fatalf("provider should default unconfigured: %+v %v", loaded, err)
 	}
 }
+
+type waitingReportDelivery struct {
+	started chan struct{}
+	stopped chan struct{}
+	t       *testing.T
+}
+
+func (j waitingReportDelivery) DeliverOne(ctx context.Context, now time.Time) (bool, error) {
+	if now.Location() != time.UTC {
+		j.t.Errorf("delivery timestamp is not UTC: %v", now)
+	}
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > reportDeliveryDeadline {
+		j.t.Error("delivery pass missing bounded deadline")
+	}
+	close(j.started)
+	<-ctx.Done()
+	close(j.stopped)
+	return false, ctx.Err()
+}
+
+func TestReportDeliveryRequiresExplicitWorkerConfiguration(t *testing.T) {
+	base := Config{Role: RoleWorker, Environment: "dev", APIListen: "127.0.0.1:0"}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("disabled delivery rejected: %v", err)
+	}
+	base.ReportDeliveryEnabled = true
+	if err := base.Validate(); err == nil {
+		t.Fatal("delivery accepted missing database and provider")
+	}
+	base.DatabaseURL = "postgres://user:pass@localhost:5432/db?sslmode=disable"
+	base.ResendAPIKey = "test-key"
+	base.ResendFrom = "reports@example.test"
+	if err := base.Validate(); err != nil {
+		t.Fatalf("configured worker delivery rejected: %v", err)
+	}
+	base.Role = RoleAPI
+	if err := base.Validate(); err == nil {
+		t.Fatal("API role accepted enabled delivery")
+	}
+	base.Role = RoleWorker
+	base.ResendFrom = "bad sender"
+	if err := base.Validate(); err == nil {
+		t.Fatal("delivery accepted invalid provider sender")
+	}
+}
+
+func TestReportDeliveryEnvironmentFlagAndShutdown(t *testing.T) {
+	t.Setenv("ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED", "maybe")
+	if _, err := LoadConfig("worker"); err == nil {
+		t.Fatal("invalid delivery flag accepted")
+	}
+	t.Setenv("ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED", "")
+	if c, err := LoadConfig("worker"); err != nil || c.ReportDeliveryEnabled {
+		t.Fatalf("delivery should default disabled: enabled=%v err=%v", c.ReportDeliveryEnabled, err)
+	}
+	t.Setenv("ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED", "true")
+	t.Setenv("ENERGYLENS_CLOUD_DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
+	t.Setenv("ENERGYLENS_CLOUD_RESEND_API_KEY", "test-key")
+	t.Setenv("ENERGYLENS_CLOUD_RESEND_FROM", "reports@example.test")
+	if c, err := LoadConfig("worker"); err != nil || !c.ReportDeliveryEnabled {
+		t.Fatalf("configured worker delivery flag rejected: enabled=%v err=%v", c.ReportDeliveryEnabled, err)
+	}
+	if _, err := LoadConfig("api"); err == nil {
+		t.Fatal("API role accepted delivery flag")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	job := waitingReportDelivery{started: make(chan struct{}), stopped: make(chan struct{}), t: t}
+	done := make(chan struct{})
+	go func() { runReportDeliveries(ctx, job, time.Minute); close(done) }()
+	select {
+	case <-job.started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("delivery did not run at startup")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("delivery did not stop on cancellation")
+	}
+	select {
+	case <-job.stopped:
+	default:
+		t.Fatal("delivery scheduler returned before pass stopped")
+	}
+}

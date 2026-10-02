@@ -248,6 +248,13 @@ func Serve(ctx context.Context, c Config) error {
 		return err
 	}
 	defer rt.Close()
+	var reportProvider reports.DeliveryProvider
+	if c.ReportDeliveryEnabled {
+		reportProvider, err = reports.NewResendProvider(c.ResendAPIKey, c.ResendFrom)
+		if err != nil {
+			return err
+		}
+	}
 	apiListener, err := net.Listen("tcp", c.APIListen)
 	if err != nil {
 		return fmt.Errorf("listen API: %w", err)
@@ -276,7 +283,7 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
-	if c.MeteredRollupEnabled || c.ReportRetentionEnabled || c.KBScanPython != "" {
+	if c.MeteredRollupEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.KBScanPython != "" {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -298,6 +305,14 @@ func Serve(ctx context.Context, c Config) error {
 				go func() {
 					defer close(finished)
 					runReportRetention(workerCtx, reports.RetentionJob{DB: rt.Pool}, reportRetentionInterval)
+				}()
+			}
+			if c.ReportDeliveryEnabled {
+				finished := make(chan struct{})
+				jobs = append(jobs, finished)
+				go func() {
+					defer close(finished)
+					runReportDeliveries(workerCtx, reports.DeliveryWorker{DB: rt.Pool, Provider: reportProvider, Enabled: true}, reportDeliveryInterval)
 				}()
 			}
 			if c.KBScanPython != "" {
