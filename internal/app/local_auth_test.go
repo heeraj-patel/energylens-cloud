@@ -16,6 +16,9 @@ func TestLocalAuthGateRequiresCompleteConfiguration(t *testing.T) {
 	if _, verifier, err := buildLocalAuth(loaded, nil); err != nil || verifier != nil {
 		t.Fatalf("disabled local auth constructed verifier: %v", err)
 	}
+	if err := CheckLocalAuthKeys(loaded, "", ""); err == nil {
+		t.Fatal("operator check accepted disabled local auth")
+	}
 	base := Config{
 		Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=disable",
 		OIDCIssuer: "https://id.example/", OIDCAudience: "external", OIDCJWKSURL: "https://id.example/jwks",

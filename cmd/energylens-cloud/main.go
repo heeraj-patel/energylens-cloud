@@ -30,6 +30,22 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "check-local-auth-keys" {
+		fs := flag.NewFlagSet("check-local-auth-keys", flag.ContinueOnError)
+		previousID := fs.String("retain-key-id", "", "previous key ID that must remain trusted")
+		previousPath := fs.String("retain-public-key-file", "", "pinned previous public key PEM")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return errors.New("unexpected check-local-auth-keys argument")
+		}
+		cfg, err := app.LoadConfig("api")
+		if err != nil {
+			return err
+		}
+		return app.CheckLocalAuthKeys(cfg, *previousID, *previousPath)
+	}
 	if len(args) > 0 && args[0] == "deletion-journal" {
 		return deletionJournalOperator(ctx, args[1:])
 	}

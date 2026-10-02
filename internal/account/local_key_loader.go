@@ -46,18 +46,9 @@ func LoadLocalAccessCodec(files LocalKeyFiles) (LocalAccessCodec, error) {
 		if !validLocalKeyID(id) {
 			return LocalAccessCodec{}, errors.New("invalid local public key ID")
 		}
-		data, err := readLocalKeyFile(path, false)
+		key, err := LoadLocalPublicKey(path)
 		if err != nil {
 			return LocalAccessCodec{}, err
-		}
-		block, rest := pem.Decode(data)
-		if block == nil || block.Type != "PUBLIC KEY" || len(block.Headers) != 0 || len(bytes.TrimSpace(rest)) != 0 {
-			return LocalAccessCodec{}, errors.New("invalid local public key PEM")
-		}
-		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
-		key, ok := parsed.(ed25519.PublicKey)
-		if err != nil || !ok || len(key) != ed25519.PublicKeySize {
-			return LocalAccessCodec{}, errors.New("local public key must be Ed25519 PKIX")
 		}
 		keys[id] = key
 	}
@@ -66,6 +57,24 @@ func LoadLocalAccessCodec(files LocalKeyFiles) (LocalAccessCodec, error) {
 		return LocalAccessCodec{}, errors.New("local active signing key does not match trusted public key")
 	}
 	return codec, nil
+}
+
+// LoadLocalPublicKey applies the runtime file checks to a rotation reference.
+func LoadLocalPublicKey(path string) (ed25519.PublicKey, error) {
+	data, err := readLocalKeyFile(path, false)
+	if err != nil {
+		return nil, err
+	}
+	block, rest := pem.Decode(data)
+	if block == nil || block.Type != "PUBLIC KEY" || len(block.Headers) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return nil, errors.New("invalid local public key PEM")
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	key, ok := parsed.(ed25519.PublicKey)
+	if err != nil || !ok || len(key) != ed25519.PublicKeySize {
+		return nil, errors.New("local public key must be Ed25519 PKIX")
+	}
+	return key, nil
 }
 
 func readLocalKeyFile(path string, private bool) ([]byte, error) {

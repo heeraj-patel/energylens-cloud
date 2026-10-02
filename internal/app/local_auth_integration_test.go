@@ -99,6 +99,41 @@ func TestLocalAuthRuntimeGate(t *testing.T) {
 		LocalAuthActiveKeyID: "active", LocalAuthPrivateKey: privatePath, LocalAuthPublicKeys: string(publicFiles), LocalAuthAudience: "energylens-cloud",
 		LocalAuthRegisterKey: keys[0], LocalAuthLoginKey: keys[1], LocalAuthRecoveryKey: keys[2],
 	}
+	if err := CheckLocalAuthKeys(c, "", ""); err != nil {
+		t.Fatalf("operator key check rejected valid material: %v", err)
+	}
+	pinnedPath := write("pinned.pub", mustRead(t, publicPath), 0644)
+	if err := CheckLocalAuthKeys(c, "active", pinnedPath); err != nil {
+		t.Fatalf("pinned current key rejected: %v", err)
+	}
+	if err := CheckLocalAuthKeys(c, "active", publicPath); err == nil {
+		t.Fatal("candidate public key used as its own rotation reference")
+	}
+	hardLink := filepath.Join(keyDir, "hard-linked-reference.pub")
+	if err := os.Link(publicPath, hardLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckLocalAuthKeys(c, "active", hardLink); err == nil {
+		t.Fatal("hard-linked candidate used as its own rotation reference")
+	}
+	otherPublic, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDER, err := x509.MarshalPKIXPublicKey(otherPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPath := write("other.pub", pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: otherDER}), 0644)
+	if err := CheckLocalAuthKeys(c, "active", otherPath); err == nil {
+		t.Fatal("changed public key under previous ID accepted")
+	}
+	if err := CheckLocalAuthKeys(c, "retired", pinnedPath); err == nil {
+		t.Fatal("missing previous key accepted")
+	}
+	if err := CheckLocalAuthKeys(c, "active", ""); err == nil {
+		t.Fatal("unpaired previous key reference accepted")
+	}
 	rt, err := Build(ctx, c)
 	if err != nil {
 		t.Fatal(err)
@@ -111,6 +146,9 @@ func TestLocalAuthRuntimeGate(t *testing.T) {
 	}
 	if err := os.WriteFile(keys[2], mustRead(t, keys[1]), 0600); err != nil {
 		t.Fatal(err)
+	}
+	if err := CheckLocalAuthKeys(c, "", ""); err == nil {
+		t.Fatal("operator check accepted duplicate rate key material")
 	}
 	if rt, err := Build(ctx, c); err == nil {
 		rt.Close()

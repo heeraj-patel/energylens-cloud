@@ -20,6 +20,8 @@ Run `ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL=... energylens-cloud migrate` with 
 
 `go test ./...` covers rate behavior, the rating store, OIDC verification, account routes, role policy, listener isolation, header stripping, and migration file IDs. Set `ENERGYLENS_CLOUD_TEST_DATABASE_URL` to run the account fresh/upgrade, tenancy, and rating-store Postgres integration tests. The runtime has not been deployed or tested against a production RDS instance.
 
+First-party auth remains disabled by default. The [local auth foundation](internal/account/LOCAL_AUTH_FOUNDATION.md) documents the file-backed key gate, a database-free `energylens-cloud check-local-auth-keys` operator check, and the signing key rotation sequence. The check validates proposed material; it does not enable routes or change a deployment.
+
 ## Hub device trust and ownership
 
 Hub keys are registered only through an operator action using the dedicated migration/provisioning PostgreSQL role. There is no HTTP key-registration endpoint. After applying migrations, run:
