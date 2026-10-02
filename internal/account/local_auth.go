@@ -90,7 +90,7 @@ func VerifyLocalPassword(stored, password string) bool {
 // NewLocalOpaqueToken returns an unguessable bearer value and a domain-separated
 // hash for database storage. Only the hash belongs in verification/session rows.
 func NewLocalOpaqueToken(purpose string) (string, [32]byte, error) {
-	if purpose != "verify_email" && purpose != "refresh" {
+	if purpose != "verify_email" && purpose != "refresh" && purpose != "reset_password" {
 		return "", [32]byte{}, ErrInvalidCredential
 	}
 	secret := make([]byte, 32)
@@ -103,7 +103,7 @@ func NewLocalOpaqueToken(purpose string) (string, [32]byte, error) {
 }
 
 func HashLocalOpaqueToken(purpose, raw string) ([32]byte, error) {
-	if purpose != "verify_email" && purpose != "refresh" || len(raw) != 43 {
+	if purpose != "verify_email" && purpose != "refresh" && purpose != "reset_password" || len(raw) != 43 {
 		return [32]byte{}, ErrInvalidCredential
 	}
 	secret, err := base64.RawURLEncoding.DecodeString(raw)
