@@ -43,7 +43,7 @@ func usageQuestion(category string) (kind, question string) {
 func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, start, end, timezone string) (usageEvidence, error) {
 	var out usageEvidence
 	kind, question := usageQuestion(a.Category)
-	if kind == "" || a.Quality != "confirmed_exact" || a.Fuel != "electricity" || a.Brand == "" || a.Model == "" || a.Variant == nil || strings.TrimSpace(*a.Variant) == "" {
+	if kind == "" || a.Quality != "confirmed_exact" || (a.Fuel != "electricity" && !(a.Fuel == "natural_gas" && a.Category == "dryer")) || a.Brand == "" || a.Model == "" || a.Variant == nil || strings.TrimSpace(*a.Variant) == "" {
 		return out, nil
 	}
 	// Count all facts at this exact appliance identity, including rows whose
@@ -68,7 +68,8 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	if quality != "confirmed_exact" || scope != a.Model || matched != a.Model || (sourceKind != "oem_pdf" && sourceKind != "epa_row") {
 		return out, nil
 	}
-	if out.Kind == "cycle_energy" && out.Unit != "kWh/cycle" || out.Kind == "hourly_energy" && out.Unit != "kWh/hour" {
+	if a.Fuel == "electricity" && (out.Kind == "cycle_energy" && out.Unit != "kWh/cycle" || out.Kind == "hourly_energy" && out.Unit != "kWh/hour") ||
+		a.Fuel == "natural_gas" && (out.Kind != "cycle_energy" || out.Unit != "therm/cycle") {
 		return out, nil
 	}
 	if out.Kind == "hourly_energy" {

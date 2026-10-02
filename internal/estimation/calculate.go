@@ -14,7 +14,8 @@ var decimal = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]+)?$`)
 
 type Fact struct {
 	Kind     string // annual_energy, cycle_energy, or hour_energy
-	Unit     string // kWh, kWh/cycle, or kWh/hour; must agree with Kind
+	Unit     string // kWh, kWh/cycle, kWh/hour, or exact gas therm/cycle
+	Fuel     string // empty/electricity, or natural_gas for exact therm/cycle evidence
 	Value    string // positive decimal
 	Reviewed bool
 	Source   string // reviewed_exact or reviewed_family
@@ -28,6 +29,7 @@ type Input struct {
 	WeeklyUsage     *string // confirmed weekly cycles or hours; projected over exact calendar days
 	Hours           *string // confirmed decimal hours in the requested period; nil means unknown
 	RatePerKWh      string  // positive decimal; empty means unavailable
+	RatePerTherm    string  // nonnegative decimal; only for natural_gas
 	RateKind        string  // user_tariff, official_tariff, regional_average
 	StartDate       string  // inclusive YYYY-MM-DD in Timezone
 	EndDate         string  // exclusive YYYY-MM-DD in Timezone
@@ -37,6 +39,7 @@ type Input struct {
 type Result struct {
 	Kind               string
 	EnergyKWh          string
+	EnergyTherms       string
 	Cost               string
 	Currency           string
 	Waste              string
@@ -98,9 +101,14 @@ func Calculate(in Input) (Result, error) {
 	if in.Fact.Kind != "annual_energy" && in.Fact.Kind != "cycle_energy" && in.Fact.Kind != "hour_energy" {
 		return Result{}, ErrInvalidInput
 	}
-	if (in.Fact.Kind == "annual_energy" && in.Fact.Unit != "kWh") ||
-		(in.Fact.Kind == "cycle_energy" && in.Fact.Unit != "kWh/cycle") ||
-		(in.Fact.Kind == "hour_energy" && in.Fact.Unit != "kWh/hour") {
+	gas := in.Fact.Fuel == "natural_gas"
+	if in.Fact.Fuel != "" && in.Fact.Fuel != "electricity" && !gas {
+		return Result{}, ErrInvalidInput
+	}
+	if gas && (in.Fact.Kind != "cycle_energy" || in.Fact.Unit != "therm/cycle") ||
+		!gas && ((in.Fact.Kind == "annual_energy" && in.Fact.Unit != "kWh") ||
+			(in.Fact.Kind == "cycle_energy" && in.Fact.Unit != "kWh/cycle") ||
+			(in.Fact.Kind == "hour_energy" && in.Fact.Unit != "kWh/hour")) {
 		return Result{}, ErrInvalidInput
 	}
 	fact, err := number(in.Fact.Value, false)
@@ -135,6 +143,10 @@ func Calculate(in Input) (Result, error) {
 	if in.Identity != "confirmed_exact" && in.Identity != "documented_variant_family" {
 		return Result{}, ErrInvalidInput
 	}
+	if gas && (in.Identity != "confirmed_exact" || in.Fact.Source != "reviewed_exact") {
+		result.UnavailableReason = "basis_incomparable"
+		return result, nil
+	}
 	if !in.Fact.Reviewed || (in.Fact.Source != "reviewed_exact" && in.Fact.Source != "reviewed_family") {
 		result.UnavailableReason = "source_unreviewed"
 		return result, nil
@@ -144,14 +156,23 @@ func Calculate(in Input) (Result, error) {
 		result.UnavailableReason = "usage_unknown"
 		return result, nil
 	}
-	if in.RatePerKWh == "" {
+	rateValue := in.RatePerKWh
+	if gas {
+		rateValue = in.RatePerTherm
+		if in.RatePerKWh != "" {
+			return Result{}, ErrInvalidInput
+		}
+	} else if in.RatePerTherm != "" {
+		return Result{}, ErrInvalidInput
+	}
+	if rateValue == "" {
 		result.UnavailableReason = "rate_unavailable"
 		return result, nil
 	}
 	if in.RateKind != "user_tariff" && in.RateKind != "official_tariff" && in.RateKind != "regional_average" {
 		return Result{}, ErrInvalidInput
 	}
-	rate, err := number(in.RatePerKWh, true)
+	rate, err := number(rateValue, true)
 	if err != nil {
 		return Result{}, err
 	}
@@ -179,7 +200,11 @@ func Calculate(in Input) (Result, error) {
 			energy.Mul(fact, hours)
 		}
 	}
-	result.EnergyKWh = energy.FloatString(6)
+	if gas {
+		result.EnergyTherms = energy.FloatString(6)
+	} else {
+		result.EnergyKWh = energy.FloatString(6)
+	}
 	result.Cost = new(big.Rat).Mul(energy, rate).FloatString(6)
 	result.Currency = "USD"
 	return result, nil

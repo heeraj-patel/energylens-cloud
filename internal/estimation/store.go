@@ -111,7 +111,7 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 		return nil, err
 	}
 	var f factEvidence
-	if a.ProductID != nil {
+	if a.Fuel == "electricity" && a.ProductID != nil {
 		err := tx.QueryRow(ctx, `SELECT count(*),count(DISTINCT (value,test_basis,included_energy)),count(*) FILTER (WHERE source_kind NOT IN ('epa_exact','oem_exact')) FROM catalog_fact_revisions WHERE product_id=$1 AND kind='annual_energy' AND unit='kWh'`, *a.ProductID).Scan(&f.Count, &f.Distinct, &f.NonExact)
 		if err != nil {
 			return nil, err
@@ -127,13 +127,17 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM tariff_revisions WHERE home_id=$1`, home).Scan(&rate.Count); err != nil {
 		return nil, err
 	}
-	if a.Fuel == "electricity" {
+	if a.Fuel == "electricity" || a.Fuel == "natural_gas" {
+		rateUnit := "kWh"
+		if a.Fuel == "natural_gas" {
+			rateUnit = "therm"
+		}
 		err = tx.QueryRow(ctx, `SELECT id,revision,rate::text,currency,rate_kind FROM tariff_revisions
-      WHERE home_id=$1 AND fuel='electricity' AND effective_from <= $2
+      WHERE home_id=$1 AND fuel=$5 AND rate_unit=$6 AND effective_from <= $2
         AND (effective_to IS NULL OR effective_to >= $3)
         AND source_as_of >= $4::timestamptz - interval '18 months'
       ORDER BY CASE rate_kind WHEN 'user_tariff' THEN 0 WHEN 'official_tariff' THEN 1 ELSE 2 END,
-               effective_from DESC,revision DESC,id DESC LIMIT 1`, home, startTime, endTime, now).Scan(&rate.ID, &rate.Revision, &rate.Rate, &rate.Currency, &rate.Kind)
+               effective_from DESC,revision DESC,id DESC LIMIT 1`, home, startTime, endTime, now, a.Fuel, rateUnit).Scan(&rate.ID, &rate.Revision, &rate.Rate, &rate.Currency, &rate.Kind)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, err
 		}
@@ -150,7 +154,7 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 	if usage.FactCount > 0 && !usage.Selected && f.Count == 0 {
 		unavailable = "basis_incomparable"
 	}
-	if unavailable == "" && a.Fuel != "electricity" {
+	if unavailable == "" && a.Fuel != "electricity" && a.Fuel != "natural_gas" {
 		unavailable = "basis_incomparable"
 	}
 	if unavailable == "" && f.Count == 0 && !usage.Selected {
@@ -188,8 +192,12 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 	if unavailable == "" {
 		input := Input{Fact: Fact{Kind: "annual_energy", Unit: "kWh", Value: f.Value, Reviewed: true, Source: "reviewed_exact"}, Identity: "confirmed_exact", RatePerKWh: rate.Rate, RateKind: rate.Kind, StartDate: start, EndDate: end, Timezone: timezone}
 		if usage.Selected {
-			input.Fact = Fact{Kind: usage.Kind, Unit: usage.Unit, Value: usage.Value, Reviewed: true, Source: "reviewed_exact"}
+			input.Fact = Fact{Kind: usage.Kind, Unit: usage.Unit, Fuel: a.Fuel, Value: usage.Value, Reviewed: true, Source: "reviewed_exact"}
 			input.WeeklyUsage = &usage.Weekly
+			if a.Fuel == "natural_gas" {
+				input.RatePerKWh = ""
+				input.RatePerTherm = rate.Rate
+			}
 		}
 		calc, err = Calculate(input)
 		if err != nil {
@@ -228,7 +236,11 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 		result["unavailable_reason"] = unavailable
 	} else {
 		result["kind"] = calc.Kind
-		result["energy"] = map[string]any{"value": calc.EnergyKWh, "unit": "kWh", "fuel": "electricity"}
+		if a.Fuel == "natural_gas" {
+			result["energy"] = map[string]any{"value": calc.EnergyTherms, "unit": "therm", "fuel": "natural_gas"}
+		} else {
+			result["energy"] = map[string]any{"value": calc.EnergyKWh, "unit": "kWh", "fuel": "electricity"}
+		}
 		result["cost"] = map[string]any{"value": calc.Cost, "currency": rate.Currency, "rate_kind": rate.Kind}
 	}
 	body, err := json.Marshal(result)

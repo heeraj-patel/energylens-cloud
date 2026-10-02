@@ -230,4 +230,47 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 	if annualResult.Kind != "estimated_operating_cost" || annualResult.Cost == nil {
 		t.Fatalf("family usage suppressed annual estimate: %+v", annualResult)
 	}
+	gasDryer := uuid.NewString()
+	gasFact := uuid.NewString()
+	gasIdentity := `{"brand":"Acme","full_model":"G123","variant":"US-GAS","fuel":"natural_gas","match_quality":"confirmed_exact"}`
+	if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Gas dryer','dryer',$3)`, gasDryer, home, gasIdentity); err != nil {
+		t.Fatal(err)
+	}
+	gasRead := func() estimateBody {
+		t.Helper()
+		runs, readErr := store.ListRuns(ctx, owner, home, &gasDryer, now)
+		if readErr != nil || len(runs) != 1 {
+			t.Fatalf("gas estimate: %d %v", len(runs), readErr)
+		}
+		return decodeEstimate(t, runs[0])
+	}
+	if got := gasRead(); got.Kind != "unavailable" || got.Energy != nil || got.Cost != nil {
+		t.Fatalf("gas electrical nameplate became consumption: %+v", got)
+	}
+	gasHash := strings.Repeat("e", 64)
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_publications(payload_sha256,key_id,envelope_sha256,imported_by,fact_count) VALUES($1,$1,$1,'operator',1)`, gasHash); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_facts
+		(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
+		VALUES($1,$2,'dryer','Acme','G123','natural_gas','US-GAS','confirmed_exact','G123','G123','cycle_energy',0.25,'therm/cycle','normal cycle','normal cycle','{"status":"documented","components":["appliance_gas"]}','oem_pdf','https://example.org/gas-dryer.pdf',$2,0,$2,'reviewer',now(),'gas-dryer.json','{}')`, gasFact, gasHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "rate_unavailable" {
+		t.Fatalf("gas without therm rate: %+v", got)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'natural_gas',1.20,'therm','USD','user_tariff','gas bill',$2,false,$3)`, home, now, now.Add(-35*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "usage_unknown" {
+		t.Fatalf("gas without confirmed cycles: %+v", got)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'dryer.cycles_per_week',1,1,'confirmed','7',now())`, home, gasDryer); err != nil {
+		t.Fatal(err)
+	}
+	gasEstimate := gasRead()
+	if gasEstimate.Kind != "estimated_useful_cost" || gasEstimate.Energy == nil || gasEstimate.Energy.Unit != "therm" || gasEstimate.Energy.Fuel != "natural_gas" || gasEstimate.Cost == nil || gasEstimate.Cost.Value == "0.000000" || gasEstimate.Waste != "not_yet_assessed" {
+		t.Fatalf("reviewed gas estimate: %+v", gasEstimate)
+	}
 }

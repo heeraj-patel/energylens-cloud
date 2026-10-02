@@ -27,6 +27,12 @@ type estimateBody struct {
 	Cost              *struct {
 		Value string `json:"value"`
 	} `json:"cost"`
+	Energy *struct {
+		Value string `json:"value"`
+		Unit  string `json:"unit"`
+		Fuel  string `json:"fuel"`
+	} `json:"energy"`
+	Waste        string `json:"waste"`
 	EvidenceRefs []struct {
 		Kind     string `json:"kind"`
 		Revision int64  `json:"revision"`

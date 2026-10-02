@@ -115,3 +115,43 @@ func TestUnreviewedMissingRateAndInvalidInputs(t *testing.T) {
 		t.Fatal("accepted empty period")
 	}
 }
+
+func TestExactGasCyclesUseThermsAndNeverInferWaste(t *testing.T) {
+	weekly := "7"
+	in := Input{
+		Fact:     Fact{Kind: "cycle_energy", Unit: "therm/cycle", Fuel: "natural_gas", Value: "0.25", Reviewed: true, Source: "reviewed_exact"},
+		Identity: "confirmed_exact", WeeklyUsage: &weekly, RatePerTherm: "1.20", RateKind: "user_tariff",
+		StartDate: "2026-10-01", EndDate: "2026-11-01", Timezone: "America/Chicago",
+	}
+	got, err := Calculate(in)
+	if err != nil || got.Kind != "estimated_useful_cost" || got.EnergyTherms != "7.750000" || got.EnergyKWh != "" || got.Cost != "9.300000" || got.Waste != "not_yet_assessed" {
+		t.Fatalf("exact gas cycle estimate: %+v %v", got, err)
+	}
+	in.WeeklyUsage = nil
+	got, err = Calculate(in)
+	if err != nil || got.Kind != "unavailable" || got.UnavailableReason != "usage_unknown" {
+		t.Fatalf("unknown gas cycles: %+v %v", got, err)
+	}
+	in.WeeklyUsage = &weekly
+	in.RatePerTherm = ""
+	got, err = Calculate(in)
+	if err != nil || got.UnavailableReason != "rate_unavailable" {
+		t.Fatalf("missing gas rate: %+v %v", got, err)
+	}
+	in.RatePerTherm = "1.20"
+	in.Identity = "documented_variant_family"
+	got, err = Calculate(in)
+	if err != nil || got.UnavailableReason != "basis_incomparable" {
+		t.Fatalf("family gas evidence: %+v %v", got, err)
+	}
+	in.Identity = "confirmed_exact"
+	in.Fact.Unit = "kWh/cycle"
+	if _, err = Calculate(in); err == nil {
+		t.Fatal("gas fact accepted electrical unit")
+	}
+	in.Fact.Unit = "therm/cycle"
+	in.RatePerKWh = "0.20"
+	if _, err = Calculate(in); err == nil {
+		t.Fatal("gas fact accepted electrical rate")
+	}
+}

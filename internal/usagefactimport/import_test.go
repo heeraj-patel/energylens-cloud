@@ -142,3 +142,35 @@ func TestNegativeUsageFacts(t *testing.T) {
 		t.Fatal("omitted reviewer accepted")
 	}
 }
+
+func TestSignedGasUsageRequiresExactDryerThermBasis(t *testing.T) {
+	p, der, priv, key := fixture(t)
+	f := &p.Facts[0]
+	f.Category = "dryer"
+	f.Model = "DLGX5171V"
+	f.DocumentedScope = f.Model
+	f.MatchedModel = f.Model
+	f.Fuel = "natural_gas"
+	f.MatchQuality = "confirmed_exact"
+	f.Unit = "therm/cycle"
+	f.IncludedEnergy.Components = []string{"appliance_gas"}
+	if _, err := ParseAndVerify(signFixture(t, p, der, priv), key); err != nil {
+		t.Fatalf("exact gas fact rejected: %v", err)
+	}
+	for name, change := range map[string]func(*Fact){
+		"electric unit":        func(f *Fact) { f.Unit = "kWh/cycle" },
+		"family scope":         func(f *Fact) { f.MatchQuality = "documented_variant_family" },
+		"other category":       func(f *Fact) { f.Category = "washer" },
+		"electrical component": func(f *Fact) { f.IncludedEnergy.Components = []string{"appliance_electricity"} },
+		"mixed components":     func(f *Fact) { f.IncludedEnergy.Components = []string{"appliance_gas", "appliance_electricity"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := p
+			candidate.Facts = append([]Fact(nil), p.Facts...)
+			change(&candidate.Facts[0])
+			if _, err := ParseAndVerify(signFixture(t, candidate, der, priv), key); err == nil {
+				t.Fatal("incompatible gas fact accepted")
+			}
+		})
+	}
+}

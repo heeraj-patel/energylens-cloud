@@ -297,7 +297,7 @@ func validate(p Payload) error {
 	ids := map[string]bool{}
 	identities := map[string]bool{}
 	for _, f := range p.Facts {
-		if !validUUID(f.ID) || ids[f.ID] || !nonblank(f.Category) || !nonblank(f.Manufacturer) || !nonblank(f.Model) || !nonblank(f.Variant) || f.Fuel != "electricity" || !nonblank(f.DocumentedScope) || !nonblank(f.MatchedModel) {
+		if !validUUID(f.ID) || ids[f.ID] || !nonblank(f.Category) || !nonblank(f.Manufacturer) || !nonblank(f.Model) || !nonblank(f.Variant) || (f.Fuel != "electricity" && f.Fuel != "natural_gas") || !nonblank(f.DocumentedScope) || !nonblank(f.MatchedModel) {
 			return errors.New("invalid or duplicate usage identity")
 		}
 		ids[f.ID] = true
@@ -315,7 +315,11 @@ func validate(p Payload) error {
 		if f.MeasurementKind != "cycle_energy" && f.MeasurementKind != "hourly_energy" || !nonblank(f.TestBasis) {
 			return errors.New("invalid measurement basis")
 		}
-		if f.MeasurementKind == "cycle_energy" && (f.Unit != "kWh/cycle" || f.CycleDefinition == nil || !nonblank(*f.CycleDefinition) || f.OperationMode != nil) || f.MeasurementKind == "hourly_energy" && (f.Unit != "kWh/hour" || f.OperationMode == nil || !nonblank(*f.OperationMode) || f.CycleDefinition != nil) {
+		if f.MeasurementKind == "cycle_energy" && (f.CycleDefinition == nil || !nonblank(*f.CycleDefinition) || f.OperationMode != nil) || f.MeasurementKind == "hourly_energy" && (f.OperationMode == nil || !nonblank(*f.OperationMode) || f.CycleDefinition != nil) {
+			return errors.New("measurement unit or mode differs")
+		}
+		if f.Fuel == "electricity" && (f.MeasurementKind == "cycle_energy" && f.Unit != "kWh/cycle" || f.MeasurementKind == "hourly_energy" && f.Unit != "kWh/hour") ||
+			f.Fuel == "natural_gas" && (f.Category != "dryer" || f.MatchQuality != "confirmed_exact" || f.MeasurementKind != "cycle_energy" || f.Unit != "therm/cycle") {
 			return errors.New("measurement unit or mode differs")
 		}
 		value, ok := new(big.Rat).SetString(f.Value)
@@ -325,15 +329,23 @@ func validate(p Payload) error {
 		if f.IncludedEnergy.Status != "documented" || !nonblank(f.IncludedEnergy.EvidenceText) || len(f.IncludedEnergy.Components) == 0 {
 			return errors.New("included energy is undocumented")
 		}
-		seenComponent := map[string]bool{}
-		for _, component := range f.IncludedEnergy.Components {
-			if component != "appliance_electricity" && component != "water_heating_electricity" && component != "standby_electricity" || seenComponent[component] {
-				return errors.New("invalid included energy component")
+		if f.Fuel == "natural_gas" {
+			if len(f.IncludedEnergy.Components) != 1 || f.IncludedEnergy.Components[0] != "appliance_gas" {
+				return errors.New("gas basis must contain only appliance gas")
 			}
-			seenComponent[component] = true
-		}
-		if !seenComponent["appliance_electricity"] {
-			return errors.New("included energy omits appliance electricity")
+			// Gas therms and electrical auxiliary load have different tariffs.
+			// Neither is inferred from the other.
+		} else {
+			seenComponent := map[string]bool{}
+			for _, component := range f.IncludedEnergy.Components {
+				if component != "appliance_electricity" && component != "water_heating_electricity" && component != "standby_electricity" || seenComponent[component] {
+					return errors.New("invalid included energy component")
+				}
+				seenComponent[component] = true
+			}
+			if !seenComponent["appliance_electricity"] {
+				return errors.New("included energy omits appliance electricity")
+			}
 		}
 		source, err := url.Parse(f.SourceURL)
 		if err != nil || source.Scheme != "https" || source.Host == "" || source.User != nil || !hashRE.MatchString(f.SourceSHA256) || !hashRE.MatchString(f.ReviewSHA256) || !nonblank(f.Reviewer) || !nonblank(f.SourceManifest) || strings.Contains(f.SourceManifest, "..") || strings.ContainsAny(f.SourceManifest, `/\\`) {
