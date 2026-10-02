@@ -3,6 +3,8 @@ package tariff
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"strings"
@@ -122,5 +124,65 @@ func TestTariffOwnerReplayAndImmutableRevisions(t *testing.T) {
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,3,'natural_gas',1,'kWh','USD','user_tariff','bill',now(),false,now())`, home.ID); err == nil {
 		t.Fatal("mismatched fuel unit stored")
+	}
+	// Operator imports use a different home to show official-rate selection
+	// without changing the existing customer's user-tariff precedence.
+	otherHome, appliance, run := uuid.New(), uuid.New(), uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'Other home','UTC')`, otherHome, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'fridge','refrigerator','{}')`, appliance, otherHome); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := []byte("official electricity tariff snapshot version one")
+	digest := sha256.Sum256(snapshot)
+	verifiedAt := time.Now().UTC().Truncate(time.Second)
+	effective := verifiedAt.Add(-35 * 24 * time.Hour).Format(time.RFC3339)
+	operatorIn := OfficialImport{OwnerUserID: owner.ID, HomeID: otherHome.String(), SourceURL: "https://utility.example.test/rates/electricity", SourceSHA256: hex.EncodeToString(digest[:]), Tariff: Create{Fuel: "electricity", Rate: "0.18", RateUnit: "kWh", Currency: "USD", RateKind: "official_tariff", SourceAsOf: verifiedAt.Format(time.RFC3339), IsFallback: &fallback, EffectiveFrom: effective}}
+	if _, err = ImportOfficial(ctx, pool, OfficialImport{OwnerUserID: other.ID, HomeID: otherHome.String(), SourceURL: operatorIn.SourceURL, SourceSHA256: operatorIn.SourceSHA256, Tariff: operatorIn.Tariff}, snapshot, "operator", verifiedAt); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-owner official import: %v", err)
+	}
+	badHash := operatorIn
+	badHash.SourceSHA256 = strings.Repeat("0", 64)
+	if _, err = ImportOfficial(ctx, pool, badHash, snapshot, "operator", verifiedAt); err == nil {
+		t.Fatal("mismatched source snapshot accepted")
+	}
+	firstOfficial, err := ImportOfficial(ctx, pool, operatorIn, snapshot, "operator", verifiedAt)
+	if err != nil || firstOfficial.Revision != 1 || !strings.Contains(firstOfficial.SourceRef, operatorIn.SourceSHA256) {
+		t.Fatalf("first official import: %+v %v", firstOfficial, err)
+	}
+	replayed, err := ImportOfficial(ctx, pool, operatorIn, snapshot, "operator", verifiedAt)
+	if err != nil || replayed.ID != firstOfficial.ID {
+		t.Fatalf("official replay: %+v %v", replayed, err)
+	}
+	replayed, err = ImportOfficial(ctx, pool, operatorIn, snapshot, "second-operator", verifiedAt)
+	if err != nil || replayed.ID != firstOfficial.ID {
+		t.Fatalf("official replay under second operator: %+v %v", replayed, err)
+	}
+	changedSameSource := operatorIn
+	changedSameSource.Tariff.Rate = "0.21"
+	if _, err = ImportOfficial(ctx, pool, changedSameSource, snapshot, "operator", verifiedAt); !errors.Is(err, ErrSourceConflict) {
+		t.Fatalf("same source changed terms: %v", err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO estimate_runs(id,home_id,appliance_id,appliance_version,period_start,period_end,timezone,formula_version,dependency_hash,dependency_snapshot,result_json)
+		VALUES($1,$2,$3,1,'2026-10-01','2026-11-01','UTC','reviewed-energy/v1',$4,'{}','{}')`, run, otherHome, appliance, bytes.Repeat([]byte{1}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	newSnapshot := []byte("official electricity tariff snapshot version two")
+	newDigest := sha256.Sum256(newSnapshot)
+	changed := operatorIn
+	changed.SourceSHA256 = hex.EncodeToString(newDigest[:])
+	changed.Tariff.Rate = "0.21"
+	secondOfficial, err := ImportOfficial(ctx, pool, changed, newSnapshot, "operator", verifiedAt)
+	if err != nil || secondOfficial.Revision != 2 {
+		t.Fatalf("updated official rate: %+v %v", secondOfficial, err)
+	}
+	var reason string
+	if err = pool.QueryRow(ctx, `SELECT reason FROM estimate_run_invalidations WHERE run_id=$1`, run).Scan(&reason); err != nil || reason != "tariff_changed" {
+		t.Fatalf("estimate not invalidated by official rate: reason=%q err=%v", reason, err)
+	}
+	selected, err := store.List(ctx, owner.ID, otherHome.String())
+	if err != nil || len(selected) != 1 || selected[0].ID != secondOfficial.ID {
+		t.Fatalf("changed official rate not selected: %+v %v", selected, err)
 	}
 }

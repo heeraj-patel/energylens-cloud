@@ -33,7 +33,7 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "deletion-journal" {
 		return deletionJournalOperator(ctx, args[1:])
 	}
-	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts") {
+	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-official-tariff") {
 		return operator(ctx, args)
 	}
 	if len(args) > 0 && args[0] == "migrate" {
@@ -145,6 +145,12 @@ func operator(ctx context.Context, args []string) error {
 		result, err = usagefactimport.Import(ctx, pool, verified, *actor)
 		if err != nil {
 			return err
+		}
+	}
+	if args[0] == "import-official-tariff" {
+		result, e = importOfficialTariff(ctx, pool, fs, args[1:])
+		if e != nil {
+			return e
 		}
 	}
 	if args[0] == "provision-hub" {
