@@ -2,6 +2,7 @@ package reports
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -73,6 +74,18 @@ func (s Service) enqueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !input.Approved {
+		respondError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if len(input.ApprovedSnapshotSHA256) != 64 || strings.ToLower(input.ApprovedSnapshotSHA256) != input.ApprovedSnapshotSHA256 {
+		respondError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if _, err := hex.DecodeString(input.ApprovedSnapshotSHA256); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if _, err := normalizeRecipients(input.Recipients); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid_request")
 		return
 	}

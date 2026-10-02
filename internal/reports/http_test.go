@@ -79,6 +79,12 @@ func TestDeliveryRouteRequiresExplicitApprovalAndMapsStoreErrors(t *testing.T) {
 	}
 	for _, body := range []string{
 		`{}`, `{"approved_snapshot_sha256":"` + digest + `","recipients":["one@example.com"]}`,
+		`{"approved_snapshot_sha256":"bad","recipients":["one@example.com"],"approved":true}`,
+		`{"approved_snapshot_sha256":"` + strings.ToUpper(digest) + `","recipients":["one@example.com"],"approved":true}`,
+		`{"approved_snapshot_sha256":"` + digest + `","recipients":[],"approved":true}`,
+		`{"approved_snapshot_sha256":"` + digest + `","recipients":["one@example.com","one@example.com"],"approved":true}`,
+		`{"approved_snapshot_sha256":"` + digest + `","recipients":["one@example.com","two@example.com","three@example.com","four@example.com","five@example.com","six@example.com"],"approved":true}`,
+		`{"approved_snapshot_sha256":"` + digest + `","recipients":["bad address"],"approved":true}`,
 		valid + `{}`, `{"approved_snapshot_sha256":"` + digest + `","recipients":["one@example.com"],"approved":true,"provider":"x"}`,
 		strings.Repeat(" ", 4097) + valid,
 	} {
