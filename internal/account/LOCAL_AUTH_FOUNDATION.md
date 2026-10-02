@@ -1,0 +1,7 @@
+# Local auth foundation (inactive)
+
+Migration 0044 stores one normalized email and Argon2id hash per local user, hashed email verification tokens, and hashed refresh sessions with a family ID and rotation link. Signup will create a stable `auth_identities` mapping with issuer `urn:energylens:local:v1` and the user UUID as subject. Email verification must precede any access or refresh token issuance; `users.email_verified` changes only after verification. Account deletion must revoke sessions and remove credentials through the user cascade.
+
+`local_auth.go` provides bounded Argon2id hashing, 256-bit opaque token generation with purpose-separated SHA-256 storage hashes, and 15-minute EdDSA access tokens with fixed issuer, audience, subject, issue time and expiry checks. The signing method requires a provisioned private key; neither a key loader nor public route is installed. Existing external OIDC authentication remains the only active runtime path.
+
+Before enabling local authentication, add transactional signup and verification, verification mail delivery, generic login errors with per-account and per-source rate limits, database-backed rotating refresh and family replay revocation, logout, password reset, key provisioning/rotation, and a verifier dispatcher that accepts only the configured local and external issuers. No local token may be issued until the verified credential and active user are checked in the same service flow.
