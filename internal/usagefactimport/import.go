@@ -28,6 +28,7 @@ import (
 )
 
 const domain = "energylens.reviewed-usage-facts.v1\n"
+const revisionDomain = "energylens.reviewed-usage-facts.v2\n"
 const maxArtifactBytes = 16 << 20
 
 var hashRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -69,9 +70,20 @@ type Fact struct {
 	SourceManifest  string         `json:"source_manifest"`
 }
 type Payload struct {
-	Schema        string `json:"schema"`
-	SchemaVersion int    `json:"schema_version"`
-	Facts         []Fact `json:"facts"`
+	Schema        string    `json:"schema"`
+	SchemaVersion int       `json:"schema_version"`
+	Facts         []Fact    `json:"facts"`
+	Revision      *Revision `json:"revision,omitempty"`
+}
+type Revision struct {
+	ID                string  `json:"id"`
+	Action            string  `json:"action"`
+	PriorFactID       string  `json:"prior_fact_id"`
+	ReplacementFactID *string `json:"replacement_fact_id"`
+	Reason            string  `json:"reason"`
+	Reviewer          string  `json:"reviewer"`
+	ReviewedAt        string  `json:"reviewed_at"`
+	ReviewSHA256      string  `json:"review_sha256"`
 }
 type Envelope struct {
 	SchemaVersion int     `json:"schema_version"`
@@ -142,8 +154,30 @@ func presentFields(raw []byte) error {
 	if err := json.Unmarshal(outer["payload"], &payload); err != nil {
 		return err
 	}
-	if err := exactKeys(payload, "schema", "schema_version", "facts"); err != nil {
+	var version int
+	if err := json.Unmarshal(payload["schema_version"], &version); err != nil {
 		return err
+	}
+	if version == 1 {
+		if err := exactKeys(payload, "schema", "schema_version", "facts"); err != nil {
+			return err
+		}
+	} else if version == 2 {
+		if err := exactKeys(payload, "schema", "schema_version", "facts", "revision"); err != nil {
+			return err
+		}
+		var revision map[string]json.RawMessage
+		if err := json.Unmarshal(payload["revision"], &revision); err != nil {
+			return err
+		}
+		if err := exactKeys(revision, "id", "action", "prior_fact_id", "replacement_fact_id", "reason", "reviewer", "reviewed_at", "review_sha256"); err != nil {
+			return err
+		}
+	} else {
+		return errors.New("unsupported publication format")
+	}
+	if len(payload["facts"]) == 0 || payload["facts"][0] != '[' {
+		return errors.New("facts must be an array")
 	}
 	var facts []map[string]json.RawMessage
 	if err := json.Unmarshal(payload["facts"], &facts); err != nil {
@@ -213,7 +247,7 @@ func ParseAndVerify(artifact, publicPEM []byte) (Verified, error) {
 	if err = decodeStrict(artifact, &env); err != nil {
 		return Verified{}, err
 	}
-	if env.SchemaVersion != 1 || env.Algorithm != "Ed25519" || env.Payload.Schema != "energylens.reviewed-usage-facts" || env.Payload.SchemaVersion != 1 {
+	if env.SchemaVersion != env.Payload.SchemaVersion || (env.SchemaVersion != 1 && env.SchemaVersion != 2) || env.Algorithm != "Ed25519" || env.Payload.Schema != "energylens.reviewed-usage-facts" {
 		return Verified{}, errors.New("unsupported publication format")
 	}
 	keyID := sha256.Sum256(block.Bytes)
@@ -232,7 +266,11 @@ func ParseAndVerify(artifact, publicPEM []byte) (Verified, error) {
 	if err != nil || len(env.Signature) != 86 || len(sig) != ed25519.SignatureSize || base64.RawURLEncoding.EncodeToString(sig) != env.Signature {
 		return Verified{}, errors.New("invalid signature encoding")
 	}
-	if !ed25519.Verify(key, append([]byte(domain), payload...), sig) {
+	signingDomain := domain
+	if env.SchemaVersion == 2 {
+		signingDomain = revisionDomain
+	}
+	if !ed25519.Verify(key, append([]byte(signingDomain), payload...), sig) {
 		return Verified{}, errors.New("signature verification failed")
 	}
 	if err = validate(env.Payload); err != nil {
@@ -291,8 +329,30 @@ func validScope(f Fact) bool {
 	return len(scope) >= 5 && strings.Contains(model, scope) && strings.Contains(matched, scope)
 }
 func validate(p Payload) error {
-	if len(p.Facts) == 0 {
-		return errors.New("publication has no facts")
+	if p.SchemaVersion == 1 {
+		if len(p.Facts) == 0 || p.Revision != nil {
+			return errors.New("invalid initial publication")
+		}
+	} else {
+		r := p.Revision
+		if r == nil || !validUUID(r.ID) || !validUUID(r.PriorFactID) || !nonblank(r.Reason) || len(r.Reason) > 1000 || !nonblank(r.Reviewer) || !hashRE.MatchString(r.ReviewSHA256) {
+			return errors.New("invalid usage revision provenance")
+		}
+		reviewed, err := time.Parse(time.RFC3339, r.ReviewedAt)
+		if err != nil || reviewed.IsZero() || reviewed.After(time.Now().Add(5*time.Minute)) {
+			return errors.New("invalid usage revision review time")
+		}
+		if r.Action == "retract" {
+			if len(p.Facts) != 0 || r.ReplacementFactID != nil {
+				return errors.New("retraction must contain no replacement fact")
+			}
+		} else if r.Action == "supersede" {
+			if len(p.Facts) != 1 || r.ReplacementFactID == nil || !validUUID(*r.ReplacementFactID) || *r.ReplacementFactID != p.Facts[0].ID || r.PriorFactID == *r.ReplacementFactID {
+				return errors.New("supersession must contain one replacement fact")
+			}
+		} else {
+			return errors.New("invalid usage revision action")
+		}
 	}
 	ids := map[string]bool{}
 	identities := map[string]bool{}
@@ -424,12 +484,47 @@ func Import(ctx context.Context, pool *pgxpool.Pool, verified Verified, actor st
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Result{}, err
 	}
+	var prior Fact
+	if revision := verified.Envelope.Payload.Revision; revision != nil {
+		var identity []string
+		err = tx.QueryRow(ctx, `SELECT category,manufacturer,model,fuel,variant,measurement_kind FROM active_reviewed_usage_facts WHERE id=$1`, revision.PriorFactID).
+			Scan(&prior.Category, &prior.Manufacturer, &prior.Model, &prior.Fuel, &prior.Variant, &prior.MeasurementKind)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Result{}, errors.New("revision target is not an active reviewed fact")
+		}
+		if err != nil {
+			return Result{}, err
+		}
+		identity = []string{prior.Category, prior.Manufacturer, modelKey(prior.Model), prior.Fuel, prior.Variant, prior.MeasurementKind}
+		if revision.Action == "supersede" {
+			f := verified.Envelope.Payload.Facts[0]
+			next := []string{f.Category, f.Manufacturer, modelKey(f.Model), f.Fuel, f.Variant, f.MeasurementKind}
+			for i := range identity {
+				if !strings.EqualFold(identity[i], next[i]) {
+					return Result{}, errors.New("replacement fact changes reviewed identity")
+				}
+			}
+		}
+	}
 	result := Result{PayloadSHA256: verified.PayloadHash, Facts: len(verified.Envelope.Payload.Facts)}
 	_, err = tx.Exec(ctx, `INSERT INTO reviewed_usage_publications(payload_sha256,key_id,envelope_sha256,imported_by,fact_count) VALUES($1,$2,$3,$4,$5)`, verified.PayloadHash, verified.Envelope.KeyID, verified.EnvelopeHash, actor, result.Facts)
 	if err != nil {
 		return Result{}, err
 	}
 	for _, f := range verified.Envelope.Payload.Facts {
+		var activeID string
+		factSource := "active_reviewed_usage_facts"
+		if verified.Envelope.Payload.Revision == nil {
+			factSource = "reviewed_usage_facts"
+		}
+		err = tx.QueryRow(ctx, `SELECT id FROM `+factSource+` WHERE lower(category)=lower($1) AND lower(manufacturer)=lower($2) AND regexp_replace(upper(model),'[^A-Z0-9]','','g')=$3 AND fuel=$4 AND lower(variant)=lower($5) AND measurement_kind=$6 LIMIT 1`, f.Category, f.Manufacturer, modelKey(f.Model), f.Fuel, f.Variant, f.MeasurementKind).Scan(&activeID)
+		if err == nil {
+			if verified.Envelope.Payload.Revision == nil || activeID != verified.Envelope.Payload.Revision.PriorFactID {
+				return Result{}, errors.New("active reviewed fact already owns identity")
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return Result{}, err
+		}
 		factJSON, _ := json.Marshal(f)
 		var oldPublication string
 		err = tx.QueryRow(ctx, `SELECT publication_sha256 FROM reviewed_usage_facts WHERE id=$1`, f.ID).Scan(&oldPublication)
@@ -442,6 +537,13 @@ func Import(ctx context.Context, pool *pgxpool.Pool, verified Verified, actor st
 		reviewed, _ := time.Parse(time.RFC3339, f.ReviewedAt)
 		included, _ := json.Marshal(f.IncludedEnergy)
 		_, err = tx.Exec(ctx, `INSERT INTO reviewed_usage_facts(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,operation_mode,included_energy,source_kind,source_url,source_sha256,source_page_index,dataset_id,row_identifier,field_name,metadata_sha256,review_sha256,reviewer,reviewed_at,source_manifest,fact_json) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::numeric,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)`, f.ID, verified.PayloadHash, f.Category, f.Manufacturer, f.Model, f.Fuel, f.Variant, f.MatchQuality, f.DocumentedScope, f.MatchedModel, f.MeasurementKind, f.Value, f.Unit, f.TestBasis, f.CycleDefinition, f.OperationMode, included, f.SourceKind, f.SourceURL, f.SourceSHA256, f.SourcePageIndex, f.DatasetID, f.RowIdentifier, f.FieldName, f.MetadataSHA256, f.ReviewSHA256, f.Reviewer, reviewed, f.SourceManifest, factJSON)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+	if revision := verified.Envelope.Payload.Revision; revision != nil {
+		reviewed, _ := time.Parse(time.RFC3339, revision.ReviewedAt)
+		_, err = tx.Exec(ctx, `INSERT INTO reviewed_usage_fact_revisions(id,publication_sha256,prior_fact_id,replacement_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, revision.ID, verified.PayloadHash, revision.PriorFactID, revision.ReplacementFactID, revision.Action, revision.Reason, revision.Reviewer, reviewed, revision.ReviewSHA256)
 		if err != nil {
 			return Result{}, err
 		}

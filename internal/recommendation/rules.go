@@ -12,28 +12,31 @@ type Evidence struct {
 }
 
 type Appliance struct {
-	ID        string
-	Category  string
-	Fuel      string
-	Identity  string // confirmed_exact, documented_variant_family, unresolved
-	Facts     []Evidence
-	Answers   map[string]Evidence // only confirmed, current appliance-revision answers
-	Tariff    *Evidence           // current marginal electricity rate; never used for a savings claim
-	GasUsage  *Evidence           // exact reviewed dryer therm/cycle fact
-	GasTariff *Evidence           // fresh USD/therm marginal rate
+	ID             string
+	Category       string
+	Fuel           string
+	Identity       string // confirmed_exact, documented_variant_family, unresolved
+	Facts          []Evidence
+	Answers        map[string]Evidence // only confirmed, current appliance-revision answers
+	Tariff         *Evidence           // current marginal electricity rate; never used for a savings claim
+	GasUsage       *Evidence           // exact reviewed dryer therm/cycle fact
+	GasTariff      *Evidence           // fresh USD/therm marginal rate
+	UsageFrequency int64               // confirmed current hours/cycles per week; ordering only
 }
 
 type Action struct {
-	RuleID        string     `json:"rule_id"`
-	RuleVersion   int        `json:"rule_version"`
-	ApplianceID   string     `json:"appliance_id"`
-	State         string     `json:"state"` // candidate or active
-	Title         string     `json:"title"`
-	Explanation   string     `json:"explanation"`
-	NextQuestion  string     `json:"next_question,omitempty"`
-	BenefitGroup  string     `json:"benefit_group"`
-	EvidenceRefs  []Evidence `json:"evidence_refs"`
-	SavingsAmount *string    `json:"savings_amount"` // absent until a comparable scenario exists
+	RuleID         string     `json:"rule_id"`
+	RuleVersion    int        `json:"rule_version"`
+	ApplianceID    string     `json:"appliance_id"`
+	State          string     `json:"state"` // candidate or active
+	Title          string     `json:"title"`
+	Explanation    string     `json:"explanation"`
+	NextQuestion   string     `json:"next_question,omitempty"`
+	BenefitGroup   string     `json:"benefit_group"`
+	EvidenceRefs   []Evidence `json:"evidence_refs"`
+	SavingsAmount  *string    `json:"savings_amount"` // absent until a comparable scenario exists
+	usageFrequency int64
+	usageUnit      string
 }
 
 type rule struct {
@@ -98,7 +101,7 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 		out = append(out, Action{RuleID: "dryer.gas_cycle_options", RuleVersion: 1, ApplianceID: a.ID,
 			State: state, Title: "Review gas dryer cycle options",
 			Explanation:  "Check manufacturer-supported sensor-dry and suitable load settings. Gas and electrical use need separate evidence; this action does not identify waste or establish savings.",
-			NextQuestion: next, BenefitGroup: "laundry_cycle", EvidenceRefs: refs})
+			NextQuestion: next, BenefitGroup: "laundry_cycle", EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: "cycles_per_week"})
 	}
 	for _, r := range initial {
 		if a.Category != r.category || a.Fuel != r.fuel {
@@ -134,7 +137,7 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 		}
 		out = append(out, Action{RuleID: r.id, RuleVersion: 1, ApplianceID: a.ID, State: state,
 			Title: r.title, Explanation: r.explanation, NextQuestion: next,
-			BenefitGroup: r.group, EvidenceRefs: refs})
+			BenefitGroup: r.group, EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: r.answerKind})
 	}
 	if len(out) == 0 {
 		out = append(out, Action{RuleID: "general.gather_information", RuleVersion: 1, ApplianceID: a.ID,
@@ -160,6 +163,16 @@ func rankActions(actions []Action) []Action {
 		}
 		if a.State == "candidate" && readiness(a) != readiness(b) {
 			return readiness(a) > readiness(b)
+		}
+		// Confirmed household frequency orders otherwise eligible actions.
+		// It is an opportunity proxy, never a savings or cross-fuel benefit.
+		if a.State == "active" {
+			if a.usageUnit != b.usageUnit {
+				return a.usageUnit < b.usageUnit
+			}
+			if a.usageUnit != "" && a.usageFrequency != b.usageFrequency {
+				return a.usageFrequency > b.usageFrequency
+			}
 		}
 		if a.ApplianceID != b.ApplianceID {
 			return a.ApplianceID < b.ApplianceID

@@ -38,6 +38,7 @@ import (
 	"energylens.local/cloud/internal/sensors"
 	"energylens.local/cloud/internal/tariff"
 	"energylens.local/cloud/internal/telemetry"
+	"energylens.local/cloud/internal/weather"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -155,6 +156,15 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			estimates := estimation.Service{Store: estimation.PGRunStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-estimates", Mount: estimates.Routes})
 			answersFAQ := faq.Service{Store: faq.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			if c.WeatherOpenMeteoAPIKey != "" {
+				cells, err := weather.ParseCoarseCells(c.WeatherCoarseCells)
+				if err != nil {
+					rt.Close()
+					return nil, err
+				}
+				provider := weather.OpenMeteo{APIKey: c.WeatherOpenMeteoAPIKey, Cells: cells}
+				answersFAQ.Weather = &weather.Service{Store: weather.PGStore{Pool: rt.Pool}, Provider: provider, TTL: 24 * time.Hour}
+			}
 			modules = append(modules, Module{Name: "home-faq-answers", Mount: answersFAQ.Routes})
 			recommendations := recommendation.Service{Store: recommendation.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-recommendations", Mount: recommendations.Routes})
@@ -257,6 +267,8 @@ func hubRouter(ready func(context.Context) error, hub *hubtrust.Service, pools .
 			if len(pools) > 0 && pools[0] != nil {
 				sensorModule := sensors.Service{Store: sensors.Store{Pool: pools[0]}}
 				sensorModule.HubRoutes(v)
+				attachmentModule := attachments.Service{Store: attachments.Store{Pool: pools[0]}}
+				attachmentModule.HubRoutes(v)
 				ingest := telemetry.Service{Store: telemetry.Store{Pool: pools[0]}}
 				ingest.HubRoutes(v)
 				runtimeModule := kasaruntime.Service{Store: kasaruntime.Store{Pool: pools[0]}}

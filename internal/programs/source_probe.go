@@ -19,6 +19,12 @@ import (
 // separate from the operator-reviewed snapshot import.
 type HTTPSPageProbe struct{}
 
+// FetchedSource is an unreviewed, bounded copy of one registered page.
+type FetchedSource struct {
+	Content     []byte
+	ContentType string
+}
+
 var excludedSourceNetworks = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("198.18.0.0/15"),
@@ -69,19 +75,24 @@ func validatedSourceURL(source RegisteredSource) (*url.URL, error) {
 }
 
 func (HTTPSPageProbe) Check(ctx context.Context, source RegisteredSource) error {
+	_, err := (HTTPSPageProbe{}).Fetch(ctx, source)
+	return err
+}
+
+func (HTTPSPageProbe) Fetch(ctx context.Context, source RegisteredSource) (FetchedSource, error) {
 	u, err := validatedSourceURL(source)
 	if err != nil {
-		return err
+		return FetchedSource{}, err
 	}
 	addresses, err := net.DefaultResolver.LookupNetIP(ctx, "ip", u.Hostname())
 	if err != nil || len(addresses) == 0 {
-		return errors.New("source DNS lookup failed")
+		return FetchedSource{}, errors.New("source DNS lookup failed")
 	}
 	// Reject the complete answer if any address is non-public. The transport
 	// connects to one vetted IP, so a second DNS lookup cannot rebind the host.
 	for _, ip := range addresses {
 		if !publicSourceIP(ip) {
-			return errors.New("source DNS contains a non-public address")
+			return FetchedSource{}, errors.New("source DNS contains a non-public address")
 		}
 	}
 	address := net.JoinHostPort(addresses[0].String(), "443")
@@ -97,28 +108,28 @@ func (HTTPSPageProbe) Check(ctx context.Context, source RegisteredSource) error 
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return err
+		return FetchedSource{}, err
 	}
 	req.Header.Set("Accept", "text/html, application/json, application/xml, text/xml")
 	req.Header.Set("User-Agent", "EnergyLens-program-coverage/1")
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("source check failed: %w", err)
+		return FetchedSource{}, fmt.Errorf("source check failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("source returned HTTP %d", resp.StatusCode)
+		return FetchedSource{}, fmt.Errorf("source returned HTTP %d", resp.StatusCode)
 	}
 	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]))
 	if mediaType != "text/html" && mediaType != "application/json" && mediaType != "application/xml" && mediaType != "text/xml" {
-		return errors.New("source returned unsupported content type")
+		return FetchedSource{}, errors.New("source returned unsupported content type")
 	}
 	if resp.ContentLength > source.MaxResponseBytes {
-		return errors.New("source response exceeds byte budget")
+		return FetchedSource{}, errors.New("source response exceeds byte budget")
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, source.MaxResponseBytes+1))
 	if err != nil || len(body) == 0 || int64(len(body)) > source.MaxResponseBytes {
-		return errors.New("source response is empty or exceeds byte budget")
+		return FetchedSource{}, errors.New("source response is empty or exceeds byte budget")
 	}
-	return nil
+	return FetchedSource{Content: body, ContentType: mediaType}, nil
 }

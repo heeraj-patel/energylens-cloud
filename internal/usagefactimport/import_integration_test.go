@@ -15,6 +15,135 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func TestPostgresSignedUsageRevisionLifecycle(t *testing.T) {
+	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	schema := "usage_revision_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+
+	p, der, priv, key := fixture(t)
+	p.Facts[0].MatchQuality = "confirmed_exact"
+	p.Facts[0].DocumentedScope, p.Facts[0].MatchedModel = p.Facts[0].Model, p.Facts[0].Model
+	importSigned := func(p Payload) (Result, error) {
+		v, e := ParseAndVerify(signFixture(t, p, der, priv), key)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return Import(ctx, pool, v, "operator")
+	}
+	if _, err = importSigned(p); err != nil {
+		t.Fatal(err)
+	}
+	old := p.Facts[0]
+	owner, home, appliance, answer, run := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'House','UTC')`, []any{home, owner}},
+		{`INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Washer','washer',$3)`, []any{appliance, home, `{"brand":"LG","full_model":"WM3070HWA","variant":"US-120V","fuel":"electricity","match_quality":"confirmed_exact"}`}},
+		{`INSERT INTO question_answers(id,home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,$3,1,'washer.cycles_per_week',1,1,'confirmed','3',now())`, []any{answer, home, appliance}},
+		{`INSERT INTO estimate_runs(id,home_id,appliance_id,appliance_version,period_start,period_end,timezone,formula_version,dependency_hash,dependency_snapshot,result_json) VALUES($1,$2,$3,1,'2026-10-01','2026-11-01','UTC','reviewed-energy/v1',decode(repeat('ab',32),'hex'),$4,'{}')`, []any{run, home, appliance, `{"reviewed_usage_fact_id":"` + old.ID + `"}`}},
+	} {
+		if _, err = pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	currentFact := func() string {
+		items, e := (recommendation.PGStore{Pool: pool}).Current(ctx, owner, home, time.Now().UTC())
+		if e != nil || len(items) != 1 {
+			t.Fatalf("recommendation read: %+v %v", items, e)
+		}
+		if len(items[0].Facts) == 0 {
+			return ""
+		}
+		return items[0].Facts[0].ID
+	}
+	if got := currentFact(); got != old.ID {
+		t.Fatalf("initial recommendation fact: %s", got)
+	}
+	newFact := old
+	newFact.ID = uuid.NewString()
+	newFact.Value = "0.43"
+	replacement := newFact.ID
+	correction := Payload{Schema: p.Schema, SchemaVersion: 2, Facts: []Fact{newFact}, Revision: &Revision{ID: uuid.NewString(), Action: "supersede", PriorFactID: old.ID, ReplacementFactID: &replacement, Reason: "Corrected transcribed cycle energy", Reviewer: "second reviewer", ReviewedAt: "2026-10-03T00:00:00Z", ReviewSHA256: strings.Repeat("c", 64)}}
+	if got, e := importSigned(correction); e != nil || got.Facts != 1 || got.Replayed {
+		t.Fatalf("correction: %+v %v", got, e)
+	}
+	if got, e := importSigned(correction); e != nil || !got.Replayed {
+		t.Fatalf("correction replay: %+v %v", got, e)
+	}
+	if got := currentFact(); got != newFact.ID {
+		t.Fatalf("recommendation retained corrected fact: %s", got)
+	}
+	var count int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_run_invalidations WHERE run_id=$1 AND reason='dependency_changed'`, run).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("estimate not invalidated: %d %v", count, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE reviewed_usage_facts SET value=8 WHERE id=$1`, old.ID); err == nil {
+		t.Fatal("historical fact mutated")
+	}
+	stale := correction
+	stale.Revision = &Revision{ID: uuid.NewString(), Action: "retract", PriorFactID: old.ID, Reason: "Withdrawn", Reviewer: "second reviewer", ReviewedAt: "2026-10-03T00:00:00Z", ReviewSHA256: strings.Repeat("c", 64)}
+	stale.Facts = []Fact{}
+	if _, err = importSigned(stale); err == nil {
+		t.Fatal("stale revision accepted")
+	}
+	retraction := stale
+	retraction.Revision = &Revision{ID: uuid.NewString(), Action: "retract", PriorFactID: newFact.ID, Reason: "Source withdrawn", Reviewer: "second reviewer", ReviewedAt: "2026-10-03T00:00:00Z", ReviewSHA256: strings.Repeat("d", 64)}
+	if got, e := importSigned(retraction); e != nil || got.Facts != 0 {
+		t.Fatalf("retraction: %+v %v", got, e)
+	}
+	if got := currentFact(); got != "" {
+		t.Fatalf("retracted fact remained in recommendation: %s", got)
+	}
+	if got, e := importSigned(retraction); e != nil || !got.Replayed {
+		t.Fatalf("retraction replay: %+v %v", got, e)
+	}
+	resurrection := p
+	resurrection.Facts = append([]Fact(nil), p.Facts...)
+	resurrection.Facts[0].ID = uuid.NewString()
+	if _, err = importSigned(resurrection); err == nil {
+		t.Fatal("v1 publication resurrected withdrawn identity")
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM reviewed_usage_facts`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("historical facts lost: %d %v", count, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM reviewed_usage_fact_revisions`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("revision audit lost: %d %v", count, err)
+	}
+}
+
 func TestPostgresUsageImportReplayConflictAndImmutability(t *testing.T) {
 	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
 	if dsn == "" {

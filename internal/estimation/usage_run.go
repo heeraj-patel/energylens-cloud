@@ -95,7 +95,7 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	// Count all facts at this exact appliance identity, including rows whose
 	// scope is not eligible. This keeps changed or ambiguous source evidence
 	// from falling through to an unrelated annual calculation.
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM reviewed_usage_facts
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM active_reviewed_usage_facts
 		WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel=$4 AND variant=$5 AND measurement_kind=$6`,
 		a.Category, a.Brand, a.Model, a.Fuel, *a.Variant, kind).Scan(&out.FactCount)
 	if err != nil || out.FactCount == 0 {
@@ -108,7 +108,7 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	var cycle, mode *string
 	var included []byte
 	err = tx.QueryRow(ctx, `SELECT id,publication_sha256,measurement_kind,value::text,unit,match_quality,documented_scope,matched_model,source_kind,test_basis,cycle_definition,operation_mode,included_energy
-		FROM reviewed_usage_facts WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel=$4 AND variant=$5 AND measurement_kind=$6`,
+		FROM active_reviewed_usage_facts WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel=$4 AND variant=$5 AND measurement_kind=$6`,
 		a.Category, a.Brand, a.Model, a.Fuel, *a.Variant, kind).Scan(&out.FactID, &out.PublicationHash, &out.Kind, &out.Value, &out.Unit, &quality, &scope, &matched, &sourceKind, &testBasis, &cycle, &mode, &included)
 	if err != nil {
 		return out, err

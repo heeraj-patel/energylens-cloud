@@ -27,6 +27,34 @@ type EvidenceStore interface {
 
 type PGStore struct{ Pool *pgxpool.Pool }
 
+// CurrentRecentUse reads the latest FAQ answer for each current appliance.
+// A later unknown answer intentionally hides a prior confirmed value.
+func (s PGStore) CurrentRecentUse(ctx context.Context, owner, home string, appliance *string) ([]RecentUse, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT q.id,a.id,a.category,a.version,q.question_id,q.question_version,q.revision,q.status,q.answer_value,q.confirmed_at,q.recorded_at
+FROM homes h JOIN appliances a ON a.home_id=h.id AND a.archived_at IS NULL
+JOIN LATERAL (SELECT DISTINCT ON (question_id) id,question_id,question_version,revision,status,answer_value,confirmed_at,recorded_at
+ FROM question_answers WHERE home_id=h.id AND appliance_id=a.id AND appliance_version=a.version AND question_id LIKE 'faq-contributors/v1.%'
+ ORDER BY question_id,revision DESC) q ON true
+WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL AND ($3::uuid IS NULL OR a.id=$3)`, home, owner, appliance)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RecentUse
+	for rows.Next() {
+		var a RecentUse
+		var confirmed *time.Time
+		if err := rows.Scan(&a.ID, &a.ApplianceID, &a.Category, &a.ApplianceVersion, &a.QuestionID, &a.QuestionVersion, &a.Revision, &a.Status, &a.Value, &confirmed, &a.RecordedAt); err != nil {
+			return nil, err
+		}
+		if confirmed != nil {
+			a.ConfirmedAt = *confirmed
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // CurrentWeather reads only the current owner's coarse location and the cached
 // completed days. The assembler checks full coverage, freshness and source
 // consistency; this read never calls a weather provider.

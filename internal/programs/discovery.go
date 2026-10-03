@@ -43,9 +43,14 @@ type SourceProbe interface {
 	Check(context.Context, RegisteredSource) error
 }
 
+type SnapshotSourceProbe interface {
+	Fetch(context.Context, RegisteredSource) (FetchedSource, error)
+}
+
 type RegisteredSource struct {
 	ID                uuid.UUID
 	Key, CanonicalURL string
+	ParserVersion     string
 	AllowedHosts      []string
 	AccessMethod      string
 	MaxResponseBytes  int64
@@ -105,6 +110,15 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (out Dis
 		scopes = nil
 		resolution.Provenance = nil
 		resolution.Limitations = nil
+	} else {
+		registered, lookupErr := registeredSourceScopes(ctx, r.DB, req)
+		if lookupErr != nil {
+			return DiscoveryOutcome{}, lookupErr
+		}
+		scopes = append(scopes, registered...)
+		if len(registered) > 0 {
+			resolution.Limitations = append(resolution.Limitations, "registered_source_fanout_non_exhaustive")
+		}
 	}
 	if len(scopes) > 128 {
 		return DiscoveryOutcome{}, errors.New("ZIP resolver exceeded 128 candidate scopes")
@@ -185,8 +199,8 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (out Dis
 			var source RegisteredSource
 			var enabled bool
 			var reviewedAt, expires time.Time
-			e := r.DB.QueryRow(ctx, `SELECT id,source_key,canonical_url,allowed_hosts,access_method,max_response_bytes,max_requests_per_run,enabled,terms_reviewed_at,terms_review_expires_at
-				FROM program_sources WHERE source_key=$1`, s.SourceKey).Scan(&source.ID, &source.Key, &source.CanonicalURL, &source.AllowedHosts, &source.AccessMethod, &source.MaxResponseBytes, &source.MaxRequests, &enabled, &reviewedAt, &expires)
+			e := r.DB.QueryRow(ctx, `SELECT id,source_key,canonical_url,allowed_hosts,access_method,max_response_bytes,max_requests_per_run,enabled,terms_reviewed_at,terms_review_expires_at,parser_version
+				FROM program_sources WHERE source_key=$1`, s.SourceKey).Scan(&source.ID, &source.Key, &source.CanonicalURL, &source.AllowedHosts, &source.AccessMethod, &source.MaxResponseBytes, &source.MaxRequests, &enabled, &reviewedAt, &expires, &source.ParserVersion)
 			if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 				return DiscoveryOutcome{}, e
 			}
@@ -204,7 +218,16 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (out Dis
 					failureCode = "probe_unconfigured"
 				} else {
 					probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-					probeErr := r.Probe.Check(probeCtx, source)
+					var probeErr error
+					if fetcher, ok := r.Probe.(SnapshotSourceProbe); ok {
+						var fetched FetchedSource
+						fetched, probeErr = fetcher.Fetch(probeCtx, source)
+						if probeErr == nil {
+							probeErr = storeSourceSnapshot(probeCtx, r.DB, source, fetched)
+						}
+					} else {
+						probeErr = r.Probe.Check(probeCtx, source)
+					}
 					cancel()
 					if probeErr == nil {
 						status, checkedAt = "checked", time.Now().UTC()

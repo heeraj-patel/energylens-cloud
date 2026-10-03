@@ -112,7 +112,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			// every row for this identity first so a second or incompatible cycle
 			// fact cannot silently select a favorable source.
 			var count int
-			err = tx.QueryRow(ctx, `SELECT count(*) FROM reviewed_usage_facts
+			err = tx.QueryRow(ctx, `SELECT count(*) FROM active_reviewed_usage_facts
 			 WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel='electricity'
 			 AND variant=$4 AND measurement_kind='cycle_energy'`, item.Category,
 				item.Details.Brand, item.Details.FullModel, *item.Details.Variant).Scan(&count)
@@ -121,7 +121,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			}
 			if count == 1 {
 				var factID string
-				err = tx.QueryRow(ctx, `SELECT id FROM reviewed_usage_facts
+				err = tx.QueryRow(ctx, `SELECT id FROM active_reviewed_usage_facts
 				 WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel='electricity'
 				 AND variant=$4 AND measurement_kind='cycle_energy' AND unit='kWh/cycle'
 				 AND value>0 AND match_quality='confirmed_exact'
@@ -143,7 +143,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		if item.Category == "dryer" && item.Fuel == "natural_gas" && item.Identity == "confirmed_exact" &&
 			item.Details.Brand != "" && item.Details.FullModel != "" && item.Details.Variant != nil && *item.Details.Variant != "" {
 			var count int
-			err = tx.QueryRow(ctx, `SELECT count(*) FROM reviewed_usage_facts
+			err = tx.QueryRow(ctx, `SELECT count(*) FROM active_reviewed_usage_facts
 			 WHERE category='dryer' AND manufacturer=$1 AND model=$2 AND fuel='natural_gas'
 			 AND variant=$3 AND measurement_kind='cycle_energy'`, item.Details.Brand,
 				item.Details.FullModel, *item.Details.Variant).Scan(&count)
@@ -152,7 +152,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			}
 			if count == 1 {
 				var factID string
-				err = tx.QueryRow(ctx, `SELECT id FROM reviewed_usage_facts
+				err = tx.QueryRow(ctx, `SELECT id FROM active_reviewed_usage_facts
 				 WHERE category='dryer' AND manufacturer=$1 AND model=$2 AND fuel='natural_gas'
 				 AND variant=$3 AND measurement_kind='cycle_energy' AND unit='therm/cycle'
 				 AND match_quality='confirmed_exact' AND documented_scope=$2 AND matched_model=$2
@@ -227,6 +227,10 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			for _, kind := range []string{"hours_per_week", "cycles_per_week"} {
 				if questionID == item.Category+"."+kind {
 					item.Answers[kind] = Evidence{ID: answerID, Kind: "confirmed_answer", Revision: revision}
+					var frequency int64
+					if json.Unmarshal(answerValue, &frequency) == nil && frequency >= 0 && ((kind == "hours_per_week" && frequency <= 168) || (kind == "cycles_per_week" && frequency <= 100)) {
+						item.UsageFrequency = frequency
+					}
 				}
 			}
 		}

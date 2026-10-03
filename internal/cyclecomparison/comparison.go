@@ -80,7 +80,7 @@ func (a identity) isExactElectricDishwasher() bool {
 }
 
 func loadReference(ctx context.Context, tx pgx.Tx, a identity) (*ReferenceFact, string, error) {
-	rows, err := tx.Query(ctx, `SELECT id,value::float8,test_basis,cycle_definition,source_kind,source_url,reviewed_at,included_energy FROM reviewed_usage_facts WHERE category='dishwasher' AND lower(manufacturer)=lower($1) AND regexp_replace(upper(model),'[^A-Z0-9]','','g')=regexp_replace(upper($2),'[^A-Z0-9]','','g') AND fuel='electricity' AND lower(variant)=lower($3) AND match_quality='confirmed_exact' AND regexp_replace(upper(documented_scope),'[^A-Z0-9]','','g')=regexp_replace(upper($2),'[^A-Z0-9]','','g') AND regexp_replace(upper(matched_model),'[^A-Z0-9]','','g')=regexp_replace(upper($2),'[^A-Z0-9]','','g') AND measurement_kind='cycle_energy' AND unit='kWh/cycle'`, a.brand, a.model, a.variant)
+	rows, err := tx.Query(ctx, `SELECT id,value::float8,test_basis,cycle_definition,source_kind,source_url,reviewed_at,included_energy FROM active_reviewed_usage_facts WHERE category='dishwasher' AND lower(manufacturer)=lower($1) AND regexp_replace(upper(model),'[^A-Z0-9]','','g')=regexp_replace(upper($2),'[^A-Z0-9]','','g') AND fuel='electricity' AND lower(variant)=lower($3) AND match_quality='confirmed_exact' AND regexp_replace(upper(documented_scope),'[^A-Z0-9]','','g')=regexp_replace(upper($2),'[^A-Z0-9]','','g') AND regexp_replace(upper(matched_model),'[^A-Z0-9]','','g')=regexp_replace(upper($2),'[^A-Z0-9]','','g') AND measurement_kind='cycle_energy' AND unit='kWh/cycle'`, a.brand, a.model, a.variant)
 	if err != nil {
 		return nil, "", err
 	}

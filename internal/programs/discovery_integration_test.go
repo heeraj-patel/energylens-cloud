@@ -29,6 +29,16 @@ type countingProbe struct {
 	fail  string
 }
 
+type recordedProbe struct{ calls int }
+
+func (p *recordedProbe) Check(context.Context, RegisteredSource) error {
+	return errors.New("unexpected Check call")
+}
+func (p *recordedProbe) Fetch(_ context.Context, _ RegisteredSource) (FetchedSource, error) {
+	p.calls++
+	return FetchedSource{Content: []byte("recorded official page"), ContentType: "text/html"}, nil
+}
+
 func (p *countingProbe) Check(_ context.Context, s RegisteredSource) error {
 	p.calls[s.Key]++
 	if s.Key == p.fail {
@@ -105,6 +115,34 @@ func TestDiscoveryRecordsFullCandidateFanoutAndIncompleteCoverage(t *testing.T) 
 	var published int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM current_verified_program_revisions`).Scan(&published); err != nil || published != 0 {
 		t.Fatalf("discovery published terms: %d, %v", published, err)
+	}
+	for _, row := range []struct{ key, kind, scope, role, zip string }{
+		{"gas-utility", "utility", "utility", "gas_distributor", "78732"},
+		{"state-office", "government", "state", "", "78732"},
+		{"appliance-maker", "manufacturer", "manufacturer", "", "78732"},
+		{"other-zip", "government", "federal", "", "78733"},
+	} {
+		geography := `{"country_code":"US","postal_codes":["` + row.zip + `"],"scope_kind":"` + row.scope + `","provider_role":"` + row.role + `"}`
+		_, err = pool.Exec(ctx, `INSERT INTO program_sources(source_key,source_kind,authority_name,canonical_url,allowed_hosts,access_method,terms_url,terms_reviewed_at,terms_review_expires_at,terms_reviewed_by,parser_version,canonicalization_version,geography_coverage,category_coverage,refresh_interval,max_requests_per_run,max_response_bytes,enabled)
+		VALUES($1,$2,$1,'https://official.example/terms',ARRAY['official.example'],'html','https://official.example/terms',$3,$4,'reviewer','v1','v1',$5::jsonb,'["washer"]',interval '7 days',1,100000,true)`, row.key, row.kind, now.Add(-time.Hour), now.Add(time.Hour), geography)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorded := &recordedProbe{}
+	registeredRun, err := (DiscoveryRunner{DB: pool, Resolver: fixedZIPResolver{}, Probe: recorded}).Run(ctx, DiscoveryRequest{CountryCode: "US", PostalCode: "78732", Category: "washer"})
+	if err != nil || registeredRun.State != "partial" || recorded.calls != 3 {
+		t.Fatalf("registered fanout: %+v, calls=%d, err=%v", registeredRun, recorded.calls, err)
+	}
+	var registeredCount, snapshotCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM program_discovery_coverage WHERE run_id=$1 AND status='checked'`, registeredRun.RunID).Scan(&registeredCount); err != nil || registeredCount != 3 {
+		t.Fatalf("registered coverage: %d, %v", registeredCount, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM program_source_snapshots s JOIN program_source_snapshot_content c ON c.snapshot_id=s.id WHERE c.content=$1`, []byte("recorded official page")).Scan(&snapshotCount); err != nil || snapshotCount != 3 {
+		t.Fatalf("immutable source bytes: %d, %v", snapshotCount, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM public_program_revisions`).Scan(&published); err != nil || published != 0 {
+		t.Fatalf("unreviewed snapshots published terms: %d, %v", published, err)
 	}
 	failedRun, err := (DiscoveryRunner{DB: pool, Resolver: fixedZIPResolver{err: errors.New("lookup down")}}).Run(ctx, DiscoveryRequest{CountryCode: "US", PostalCode: "78732"})
 	if err != nil || failedRun.State != "failed" {

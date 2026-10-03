@@ -184,14 +184,21 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	exec(`UPDATE appliances SET version=2 WHERE id=$1`, appliance)
 	check("attachment_not_dedicated_for_window")
 	exec(`UPDATE appliances SET version=1 WHERE id=$1`, appliance)
-	// The importer rejects duplicates; the read path independently refuses
-	// ambiguity if a legacy or manually repaired database contains two facts.
-	exec(`DROP INDEX reviewed_usage_facts_one_identity_idx`)
+	// The importer rejects competing active publications; the read path also
+	// refuses ambiguity if a legacy or manually repaired database contains two.
 	exec(`INSERT INTO reviewed_usage_facts SELECT $1,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,operation_mode,included_energy,source_kind,source_url,source_sha256,source_page_index,dataset_id,row_identifier,field_name,metadata_sha256,review_sha256,reviewer,reviewed_at,source_manifest,fact_json,imported_at FROM reviewed_usage_facts WHERE id=$2`, uuid.NewString(), factID)
 	check("reviewed_fact_missing_or_ambiguous")
 	option, e = s.Reference(ctx, owner, home, appliance)
 	if e != nil || option.Status != "unavailable" || option.Fact != nil {
 		t.Fatalf("ambiguous reviewed reference: %+v, %v", option, e)
+	}
+	// The saved row was invalidated by a meter correction above. Restore only
+	// its invalidation marker to isolate the reviewed-fact revision trigger.
+	exec(`UPDATE dishwasher_cycle_evidence SET invalidated_at=NULL,invalidation_reason=NULL WHERE id=$1`, saved.ID)
+	exec(`INSERT INTO reviewed_usage_fact_revisions(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','source withdrawn','reviewer',$4,$5)`, uuid.NewString(), strings.Repeat("a", 64), factID, now, strings.Repeat("f", 64))
+	stale, e = s.Get(ctx, owner, home, appliance, saved.ID, now)
+	if e != nil || stale.Status != "invalidated" || stale.Reason != "reviewed_fact_changed" || stale.MeasuredKWh != nil || stale.LabReferenceKWhPerCycle != nil || stale.DifferenceKWh != nil {
+		t.Fatalf("retracted saved cycle: %+v, %v", stale, e)
 	}
 	exec(`UPDATE homes SET owner_user_id=$1 WHERE id=$2`, other, home)
 	if _, e := s.Compare(ctx, owner, home, appliance, in, now); !errors.Is(e, ErrNotFound) {

@@ -44,13 +44,17 @@ type NextAction struct {
 }
 
 type Answer struct {
-	QuestionID   string      `json:"question_id"`
-	Status       string      `json:"status"`
-	Text         string      `json:"answer"`
-	Findings     []Finding   `json:"findings"`
-	NextAction   *NextAction `json:"next_action,omitempty"`
-	EvidenceRefs []Evidence  `json:"evidence_refs"`
-	AsOf         string      `json:"as_of"`
+	QuestionID    string      `json:"question_id"`
+	Status        string      `json:"status"`
+	Text          string      `json:"answer"`
+	Findings      []Finding   `json:"findings"`
+	NextAction    *NextAction `json:"next_action,omitempty"`
+	EvidenceRefs  []Evidence  `json:"evidence_refs"`
+	AsOf          string      `json:"as_of"`
+	ExpiresAt     string      `json:"expires_at,omitempty"`
+	InputSnapshot []Evidence  `json:"input_snapshot,omitempty"`
+	WeatherStatus string      `json:"weather_status,omitempty"`
+	WeatherReason string      `json:"weather_reason,omitempty"`
 }
 
 var intents = map[string]bool{

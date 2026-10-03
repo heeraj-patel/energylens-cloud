@@ -39,7 +39,11 @@ func signFixture(t *testing.T, p Payload, der []byte, priv ed25519.PrivateKey) [
 	}
 	digest := sha256.Sum256(payload)
 	keyID := sha256.Sum256(der)
-	env := Envelope{SchemaVersion: 1, Algorithm: "Ed25519", Payload: p, PayloadSHA256: hex.EncodeToString(digest[:]), KeyID: hex.EncodeToString(keyID[:]), Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, append([]byte(domain), payload...)))}
+	signingDomain := domain
+	if p.SchemaVersion == 2 {
+		signingDomain = revisionDomain
+	}
+	env := Envelope{SchemaVersion: p.SchemaVersion, Algorithm: "Ed25519", Payload: p, PayloadSHA256: hex.EncodeToString(digest[:]), KeyID: hex.EncodeToString(keyID[:]), Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, append([]byte(signingDomain), payload...)))}
 	raw, err := canonical(env)
 	if err != nil {
 		t.Fatal(err)

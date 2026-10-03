@@ -78,7 +78,7 @@ func (s Store) Save(ctx context.Context, owner, home, appliance, key string, in 
 		return out, err
 	}
 	var publicationHash, reviewHash, sourceHash string
-	err = tx.QueryRow(ctx, `SELECT publication_sha256,review_sha256,source_sha256 FROM reviewed_usage_facts WHERE id=$1`, in.FactID).Scan(&publicationHash, &reviewHash, &sourceHash)
+	err = tx.QueryRow(ctx, `SELECT publication_sha256,review_sha256,source_sha256 FROM active_reviewed_usage_facts WHERE id=$1`, in.FactID).Scan(&publicationHash, &reviewHash, &sourceHash)
 	if err != nil {
 		return out, err
 	}

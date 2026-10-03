@@ -97,7 +97,9 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 	rows, err := tx.Query(ctx, `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.benefit_kind,r.status,
  r.reviewed_at,r.review_expires_at,LEAST(r.review_expires_at,s.terms_review_expires_at),
  snap.source_url,snap.content_sha256,a.postal_codes,a.category,a.fuel,coalesce(a.provider_key,''),
- a.requires_income,a.requires_address,a.additional_conditions,r.application_from,r.application_to
+	 a.requires_income,a.requires_address,a.additional_conditions,r.application_from,r.application_to,
+	 (r.purchase_from IS NOT NULL OR r.purchase_to IS NOT NULL OR r.installation_from IS NOT NULL OR
+	 r.installation_to IS NOT NULL OR r.reservation_from IS NOT NULL OR r.reservation_to IS NOT NULL)
  FROM current_verified_program_revisions r
  JOIN public_programs p ON p.id=r.program_id JOIN program_sources s ON s.id=p.source_id
  JOIN program_source_snapshots snap ON snap.id=r.source_snapshot_id
@@ -118,8 +120,9 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 		var zips []string
 		var pCategory, pFuel, provider string
 		var income, address, extra bool
+		var otherWindows bool
 		var from, to *time.Time
-		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.BenefitKind, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &income, &address, &extra, &from, &to); err != nil {
+		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.BenefitKind, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
 			return OwnerProgramResult{}, err
 		}
 		program := Program{ID: o.ProgramID, Status: status, ZIPs: zips, Category: pCategory, Fuel: pFuel, ProviderID: provider, RequiresIncome: income, RequiresAddress: address, ReviewedAt: reviewed, ReviewExpiresAt: effectiveExpires}
@@ -137,9 +140,12 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 			result.Status = "unknown"
 			result.Reasons = append(result.Reasons, "additional_conditions_unknown")
 		}
-		// Other purchase/installation/reservation windows still need applicant facts.
-		result.Status = "unknown"
-		result.Reasons = append(result.Reasons, "application_requirements_unconfirmed")
+		// Purchase, installation and reservation dates require facts that the
+		// household inventory does not yet contain.
+		if otherWindows {
+			result.Status = "unknown"
+			result.Reasons = append(result.Reasons, "transaction_windows_unconfirmed")
+		}
 		o.Status, o.Reasons = result.Status, result.Reasons
 		o.ReviewExpiresAt = effectiveExpires.UTC().Format(time.RFC3339)
 		out = append(out, o)

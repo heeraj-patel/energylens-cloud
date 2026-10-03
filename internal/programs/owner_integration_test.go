@@ -123,6 +123,27 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if len(got.Programs) != 1 || got.Programs[0].RevisionID != rev.String() || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "provider_unknown") {
 		t.Fatalf("provider candidate asserted: %+v", got)
 	}
+	// A reviewed, fully modeled non-utility offer can be a potential match.
+	// It remains only a potential match and never an eligibility approval.
+	input.ProgramKey = "washer-general"
+	input.Applicability = &StructuredApplicability{CountryCode: "US", PostalCodes: []string{"78732"}, Category: "washer", Fuel: "electricity"}
+	input.SourceBytes = []byte("separately recorded source terms")
+	if _, err = ImportReviewed(ctx, pool, input); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
+	if err != nil || len(got.Programs) != 2 {
+		t.Fatalf("reviewed household assessment: %+v %v", got, err)
+	}
+	var potential bool
+	for _, item := range got.Programs {
+		if item.Status == "potentially_eligible" && slices.Contains(item.Reasons, "terms_require_confirmation") {
+			potential = true
+		}
+	}
+	if !potential {
+		t.Fatalf("fully modeled potential match missing: %+v", got.Programs)
+	}
 	if got.Coverage != nil {
 		t.Fatalf("invented discovery coverage: %+v", got.Coverage)
 	}
