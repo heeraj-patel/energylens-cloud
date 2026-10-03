@@ -117,15 +117,24 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Serial SECRET-123','123 Main St','{"serial":"SECRET-123"}')`, appliance, home); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	// HTTP handlers use the wall clock; keep the store fixture in the same
+	// current home month so this test remains valid across calendar days.
+	now := time.Now().UTC().Truncate(time.Second)
+	location, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := now.In(location)
+	periodStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, local.Location()).Format("2006-01-02")
+	periodEnd := time.Date(local.Year(), local.Month()+1, 1, 0, 0, 0, 0, local.Location()).Format("2006-01-02")
 	fact, tariff := uuid.New(), uuid.New()
-	result := map[string]any{"kind": "estimated_useful_cost", "period": map[string]string{"start": "2026-10-01", "end": "2026-11-01"}, "energy": map[string]string{"value": "0", "unit": "kWh"}, "cost": map[string]string{"value": "0", "currency": "USD"}, "quality": map[string]string{"source": "reviewed_exact"}, "evidence_refs": []SourceRef{{ID: fact.String(), Kind: "reviewed_usage_fact", Revision: 1}, {ID: tariff.String(), Kind: "tariff", Revision: 1}}, "private_note": "SECRET-123"}
+	result := map[string]any{"kind": "estimated_useful_cost", "period": map[string]string{"start": periodStart, "end": periodEnd}, "energy": map[string]string{"value": "0", "unit": "kWh"}, "cost": map[string]string{"value": "0", "currency": "USD"}, "quality": map[string]string{"source": "reviewed_exact"}, "evidence_refs": []SourceRef{{ID: fact.String(), Kind: "reviewed_usage_fact", Revision: 1}, {ID: tariff.String(), Kind: "tariff", Revision: 1}}, "private_note": "SECRET-123"}
 	body, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO estimate_runs(id,home_id,appliance_id,appliance_version,period_start,period_end,timezone,formula_version,dependency_hash,dependency_snapshot,result_json,as_of)
-		VALUES($1,$2,$3,1,'2026-10-01','2026-11-01','America/Chicago','reviewed-energy/v1',$4,'{}',$5,$6)`, run, home, appliance, bytes.Repeat([]byte{1}, 32), body, now); err != nil {
+		VALUES($1,$2,$3,1,$4,$5,'America/Chicago','reviewed-energy/v1',$6,'{}',$7,$8)`, run, home, appliance, periodStart, periodEnd, bytes.Repeat([]byte{1}, 32), body, now); err != nil {
 		t.Fatal(err)
 	}
 	s := Store{DB: pool}
