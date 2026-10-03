@@ -121,7 +121,8 @@ func (s LocalRefreshService) Rotate(ctx context.Context, raw string, now time.Ti
 	if !now.Before(absoluteExpiry) {
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
-	access, err := s.Codec.signVerified(row.UserID, accessVersion, now)
+	// A refresh rotates credentials but does not establish a new sign-in.
+	access, err := s.Codec.signVerifiedAt(row.UserID, accessVersion, now, firstCreated)
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}

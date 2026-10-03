@@ -20,6 +20,11 @@ type Service struct {
 	Store       Store
 	Verifier    Verifier
 	Preferences PreferenceStore
+	Deletion    DeletionStore
+}
+
+type DeletionStore interface {
+	DeleteAccount(context.Context, string) error
 }
 type apiError struct {
 	Code      string         `json:"code"`
@@ -38,6 +43,9 @@ func jsonOut(w http.ResponseWriter, status int, v any) {
 }
 func (s Service) Routes(r chi.Router) {
 	r.With(s.auth).Get("/me", s.me)
+	if s.Deletion != nil {
+		r.With(s.auth).Delete("/me", s.deleteMe)
+	}
 	if s.Preferences != nil {
 		r.With(s.auth).Get("/me/preferences", s.accountPreferencesGet)
 		r.With(s.auth).Patch("/me/preferences", s.accountPreferencesPatch)
@@ -56,6 +64,7 @@ func (s Service) Routes(r chi.Router) {
 }
 
 type userKey struct{}
+type identityKey struct{}
 
 func (s Service) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +88,9 @@ func (s Service) auth(next http.Handler) http.Handler {
 			fail(w, 500, "internal_error", "could not resolve account")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(contextWithUser(r, user)))
+		ctx := contextWithUser(r, user)
+		ctx = context.WithValue(ctx, identityKey{}, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 func contextWithUser(r *http.Request, u User) context.Context {
@@ -87,6 +98,31 @@ func contextWithUser(r *http.Request, u User) context.Context {
 }
 func user(r *http.Request) User                             { return r.Context().Value(userKey{}).(User) }
 func (s Service) me(w http.ResponseWriter, r *http.Request) { jsonOut(w, 200, user(r)) }
+func (s Service) deleteMe(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	identity := r.Context().Value(identityKey{}).(Identity)
+	now := time.Now().UTC()
+	if identity.AuthTime.IsZero() || identity.AuthTime.After(now.Add(time.Minute)) || now.Sub(identity.AuthTime) > 5*time.Minute {
+		fail(w, http.StatusForbidden, "recent_sign_in_required", "sign in again to delete the account")
+		return
+	}
+	if _, ok := idempotencyKey(w, r); !ok {
+		return
+	}
+	if r.ContentLength > 0 {
+		fail(w, http.StatusBadRequest, "invalid_request", "request body must be empty")
+		return
+	}
+	if err := s.Deletion.DeleteAccount(r.Context(), user(r).ID); err != nil {
+		if errors.Is(err, ErrDeleted) {
+			fail(w, http.StatusForbidden, "account_deleted", "account is closed")
+			return
+		}
+		internal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	homes, err := s.Store.List(r.Context(), user(r).ID)
 	if err != nil {

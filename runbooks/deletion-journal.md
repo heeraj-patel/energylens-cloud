@@ -1,5 +1,15 @@
 # External deletion journal (operator)
 
+The customer `DELETE /v1/me` route is disabled by default. In development and
+test environments, `ENERGYLENS_CLOUD_ACCOUNT_DELETION_ENABLED=true` registers it
+on an authenticated API process. A bearer must carry an issuer-signed sign-in
+time from the previous five minutes. Local refresh does not renew that time.
+The route requires a UUID `Idempotency-Key`, returns `204` after tombstoning,
+and rejects the same bearer after commit. A repeated request is denied because
+the account is already closed. Production configuration rejects route enablement
+until the independent backup and replay assurance below is implemented as a
+mandatory gate. Physical purge remains an operator action.
+
 The database deletion table is not sufficient after restoring an older backup. Keep the archive directory on independently backed-up, access-controlled storage that is excluded from database restore. The directory must already exist with mode `0700`. Store a separate random key file outside the database and archive; it contains at least 32 random bytes encoded as hexadecimal. Do not rotate the key without retaining the prior key and re-signing/validating every archive record. The current implementation supports one key at a time.
 
 Set `ENERGYLENS_CLOUD_DELETION_JOURNAL_DIR`, `ENERGYLENS_CLOUD_DELETION_JOURNAL_KEY_FILE`, and `ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL` on operator commands. In production, the database URL must use `sslmode=verify-full`. The directory and key must also be available to all serving roles to enable their pre-serve replay gate. Missing, damaged, or incorrectly signed records abort startup when the gate is configured.

@@ -35,10 +35,21 @@ func TestOIDCVerifierRejectsInvalidIdentityTokens(t *testing.T) {
 		return out
 	}
 	now := time.Now()
-	base := jwt.MapClaims{"iss": v.Issuer, "aud": v.Audience, "sub": "account-1", "exp": now.Add(time.Hour).Unix(), "iat": now.Unix(), "email": "person@example.test", "email_verified": true}
+	base := jwt.MapClaims{"iss": v.Issuer, "aud": v.Audience, "sub": "account-1", "exp": now.Add(time.Hour).Unix(), "iat": now.Unix(), "auth_time": now.Add(-time.Minute).Unix(), "email": "person@example.test", "email_verified": true}
 	id, err := v.Verify(context.Background(), sign(base))
-	if err != nil || id.Issuer != v.Issuer || id.Subject != "account-1" || id.Email != "person@example.test" {
+	if err != nil || id.Issuer != v.Issuer || id.Subject != "account-1" || id.Email != "person@example.test" || id.AuthTime.Unix() != now.Add(-time.Minute).Unix() {
 		t.Fatalf("valid token: %+v %v", id, err)
+	}
+	for _, invalid := range []any{"not-a-time", float64(now.Unix()) + 0.5} {
+		claims := jwt.MapClaims{}
+		for k, val := range base {
+			claims[k] = val
+		}
+		claims["auth_time"] = invalid
+		id, err := v.Verify(context.Background(), sign(claims))
+		if err != nil || !id.AuthTime.IsZero() {
+			t.Fatalf("invalid auth_time trusted: %+v %v", id, err)
+		}
 	}
 	for name, change := range map[string]func(jwt.MapClaims){"issuer": func(c jwt.MapClaims) { c["iss"] = "https://other.example/" }, "audience": func(c jwt.MapClaims) { c["aud"] = "other" }, "expired": func(c jwt.MapClaims) { c["exp"] = now.Add(-time.Hour).Unix() }, "no_subject": func(c jwt.MapClaims) { delete(c, "sub") }, "no_expiry": func(c jwt.MapClaims) { delete(c, "exp") }} {
 		t.Run(name, func(t *testing.T) {

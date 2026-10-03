@@ -20,6 +20,7 @@ import (
 type Identity struct {
 	Issuer, Subject, Email string
 	EmailVerified          bool
+	AuthTime               time.Time
 }
 type Verifier interface {
 	Verify(context.Context, string) (Identity, error)
@@ -60,10 +61,14 @@ func (v *OIDCVerifier) Verify(ctx context.Context, raw string) (Identity, error)
 	}
 	email, _ := c["email"].(string)
 	verified, _ := c["email_verified"].(bool)
+	var authTime time.Time
+	if seconds, ok := c["auth_time"].(float64); ok && seconds > 0 && seconds == float64(int64(seconds)) {
+		authTime = time.Unix(int64(seconds), 0).UTC()
+	}
 	if !verified {
 		email = ""
 	}
-	return Identity{Issuer: v.Issuer, Subject: sub, Email: email, EmailVerified: verified}, nil
+	return Identity{Issuer: v.Issuer, Subject: sub, Email: email, EmailVerified: verified, AuthTime: authTime}, nil
 }
 
 func (v *OIDCVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {

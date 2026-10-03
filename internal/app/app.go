@@ -141,6 +141,9 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				modules = append(modules, Module{Name: "local-auth", Mount: localHTTP.Routes})
 			}
 			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Verifier: verifier}
+			if c.AccountDeletionEnabled {
+				accounts.Deletion = account.PGStore{Pool: rt.Pool}
+			}
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
 			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})

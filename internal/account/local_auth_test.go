@@ -103,6 +103,24 @@ func TestLocalAccessTokenIssuerAudienceSignatureAndExpiry(t *testing.T) {
 	}
 }
 
+func TestLocalRefreshCannotRenewSignInTime(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := LocalAccessCodec{Private: private, ActiveKeyID: "key-1", Keys: map[string]ed25519.PublicKey{"key-1": public}, Audience: "energylens-cloud"}
+	now := time.Now().UTC().Truncate(time.Second)
+	loginAt := now.Add(-10 * time.Minute)
+	token, err := codec.signVerifiedAt(uuid.NewString(), 1, now, loginAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, got, err := codec.verifySignatureWithAuthTime(token)
+	if err != nil || !got.Equal(loginAt) {
+		t.Fatalf("refresh changed sign-in time: %v %v", got, err)
+	}
+}
+
 func TestLocalAccessKeyRotationRequiresExplicitTrustedKey(t *testing.T) {
 	oldPublic, oldPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

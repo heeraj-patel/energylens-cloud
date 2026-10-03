@@ -148,17 +148,25 @@ var localKeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 func validLocalKeyID(id string) bool { return localKeyIDPattern.MatchString(id) }
 
 type localAccessClaims struct {
-	Version int64 `json:"ver"`
+	Version  int64            `json:"ver"`
+	AuthTime *jwt.NumericDate `json:"auth_time,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // signVerified is package-private so only the future verified-credential
 // service can issue a token after checking its database state.
 func (c LocalAccessCodec) signVerified(userID string, version int64, now time.Time) (string, error) {
+	return c.signVerifiedAt(userID, version, now, now)
+}
+
+func (c LocalAccessCodec) signVerifiedAt(userID string, version int64, now, authTime time.Time) (string, error) {
 	if !c.valid() || !canonicalLocalUserID(userID) || version < 1 || now.IsZero() {
 		return "", ErrInvalidCredential
 	}
-	claims := localAccessClaims{Version: version, RegisteredClaims: jwt.RegisteredClaims{
+	if authTime.IsZero() || authTime.After(now.Add(time.Minute)) || now.Sub(authTime) > localRefreshLifetime {
+		return "", ErrInvalidCredential
+	}
+	claims := localAccessClaims{Version: version, AuthTime: jwt.NewNumericDate(authTime.UTC()), RegisteredClaims: jwt.RegisteredClaims{
 		Issuer: LocalIssuer, Subject: userID, Audience: jwt.ClaimStrings{c.Audience}, ID: uuid.NewString(),
 		IssuedAt: jwt.NewNumericDate(now.UTC()), NotBefore: jwt.NewNumericDate(now.UTC()), ExpiresAt: jwt.NewNumericDate(now.UTC().Add(localAccessLifetime)),
 	}}
@@ -168,8 +176,13 @@ func (c LocalAccessCodec) signVerified(userID string, version int64, now time.Ti
 }
 
 func (c LocalAccessCodec) verifySignature(raw string) (string, int64, error) {
+	userID, version, _, err := c.verifySignatureWithAuthTime(raw)
+	return userID, version, err
+}
+
+func (c LocalAccessCodec) verifySignatureWithAuthTime(raw string) (string, int64, time.Time, error) {
 	if !c.validVerification() || len(raw) > 4096 {
-		return "", 0, ErrInvalidCredential
+		return "", 0, time.Time{}, ErrInvalidCredential
 	}
 	claims := &localAccessClaims{}
 	token, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
@@ -182,13 +195,20 @@ func (c LocalAccessCodec) verifySignature(raw string) (string, int64, error) {
 		jwt.WithValidMethods([]string{"EdDSA"}), jwt.WithIssuer(LocalIssuer), jwt.WithAudience(c.Audience),
 		jwt.WithExpirationRequired(), jwt.WithIssuedAt())
 	if err != nil || !token.Valid || !canonicalLocalUserID(claims.Subject) || claims.ID == "" {
-		return "", 0, ErrInvalidCredential
+		return "", 0, time.Time{}, ErrInvalidCredential
 	}
 	if claims.Version < 1 || claims.ExpiresAt == nil || claims.IssuedAt == nil || claims.NotBefore == nil ||
 		claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time) != localAccessLifetime || claims.IssuedAt.Time.After(time.Now().Add(time.Minute)) {
-		return "", 0, ErrInvalidCredential
+		return "", 0, time.Time{}, ErrInvalidCredential
 	}
-	return claims.Subject, claims.Version, nil
+	var authTime time.Time
+	if claims.AuthTime != nil {
+		authTime = claims.AuthTime.Time
+		if authTime.After(claims.IssuedAt.Time.Add(time.Minute)) || claims.IssuedAt.Time.Sub(authTime) > localRefreshLifetime {
+			return "", 0, time.Time{}, ErrInvalidCredential
+		}
+	}
+	return claims.Subject, claims.Version, authTime, nil
 }
 
 // LocalAccessVerifier must be used at a future HTTP edge: signature checks
@@ -202,7 +222,7 @@ func (v LocalAccessVerifier) Verify(ctx context.Context, raw string) (Identity, 
 	if v.DB == nil {
 		return Identity{}, ErrInvalidCredential
 	}
-	userID, version, err := v.Codec.verifySignature(raw)
+	userID, version, authTime, err := v.Codec.verifySignatureWithAuthTime(raw)
 	if err != nil {
 		return Identity{}, ErrInvalidCredential
 	}
@@ -219,7 +239,7 @@ func (v LocalAccessVerifier) Verify(ctx context.Context, raw string) (Identity, 
 	if current != version {
 		return Identity{}, ErrInvalidCredential
 	}
-	return Identity{Issuer: LocalIssuer, Subject: userID, EmailVerified: true}, nil
+	return Identity{Issuer: LocalIssuer, Subject: userID, EmailVerified: true, AuthTime: authTime}, nil
 }
 
 func canonicalLocalUserID(raw string) bool {

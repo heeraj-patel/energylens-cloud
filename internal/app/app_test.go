@@ -43,6 +43,25 @@ func TestRoleAndDatabasePolicy(t *testing.T) {
 	}
 }
 
+func TestAccountDeletionProductionGate(t *testing.T) {
+	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":8080", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=verify-full", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubListen: ":8081", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt"}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("disabled route rejected: %v", err)
+	}
+	base.AccountDeletionEnabled = true
+	if err := base.Validate(); err == nil {
+		t.Fatal("production deletion route enabled before external journal assurance")
+	}
+	base.Environment = "test"
+	if err := base.Validate(); err != nil {
+		t.Fatalf("test deletion route rejected: %v", err)
+	}
+	base.DatabaseURL = ""
+	if err := base.Validate(); err == nil {
+		t.Fatal("deletion route enabled without database")
+	}
+}
+
 func TestListenerRouteIsolation(t *testing.T) {
 	rt, err := Build(context.Background(), Config{Role: RoleAll, Environment: "dev", APIListen: "127.0.0.1:0"})
 	if err != nil {

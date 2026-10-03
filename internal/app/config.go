@@ -50,6 +50,7 @@ type Config struct {
 	LocalAuthLinkOrigin    string
 	LocalAuthProxyCIDRs    string
 	LocalAuthEnabled       bool
+	AccountDeletionEnabled bool
 	LocalAuthActiveKeyID   string
 	LocalAuthPrivateKey    string
 	LocalAuthPublicKeys    string
@@ -118,6 +119,13 @@ func LoadConfig(role string) (Config, error) {
 		}
 		c.LocalAuthEnabled = enabled
 	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_ACCOUNT_DELETION_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_ACCOUNT_DELETION_ENABLED: %w", err)
+		}
+		c.AccountDeletionEnabled = enabled
+	}
 	if c.Environment == "" {
 		c.Environment = "dev"
 	}
@@ -140,6 +148,14 @@ func (c Config) Validate() error {
 	}
 	if c.APIListen == "" {
 		return errors.New("API listen address required")
+	}
+	if c.AccountDeletionEnabled {
+		if c.Environment == "production" {
+			return errors.New("production account deletion requires an independently backed-up deletion journal gate")
+		}
+		if c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || c.OIDCIssuer == "" && !c.LocalAuthEnabled {
+			return errors.New("account deletion requires API role, database and owner authentication")
+		}
 	}
 	if c.LocalAuthProxyCIDRs != "" {
 		if c.Role != RoleAPI && c.Role != RoleAll {
