@@ -8,11 +8,15 @@ import (
 	"strconv"
 	"strings"
 
+	"energylens.local/cloud/internal/questions"
+
 	"github.com/jackc/pgx/v5"
 )
 
 type usageEvidence struct {
 	FactID          string
+	QuestionID      string
+	CycleDefinition string
 	PublicationHash string
 	FactCount       int64
 	Kind            string
@@ -21,15 +25,15 @@ type usageEvidence struct {
 	Selected        bool
 	ExactScope      bool
 	AnswerRevision  int64
+	GenericRevision int64
 	Status          string
 	Confirmed       bool
 	Projected       string
 	Weekly          string
 }
 
-// Hourly answers describe hours in use. Generic cycles_per_week answers count
-// every cycle, so they cannot establish how often a particular reviewed cycle
-// was run. Keep cycle facts unavailable until a cycle-specific answer exists.
+// Hourly answers describe hours in use. Cycle facts use a separate question
+// bound to the reviewed fact ID and exact documented cycle definition.
 func compatibleUsageBasis(kind, category, basis string, cycle, mode *string) bool {
 	normalize := func(s string) string { return strings.Join(strings.Fields(strings.ToLower(s)), " ") }
 	basis = normalize(basis)
@@ -45,6 +49,11 @@ func compatibleUsageBasis(kind, category, basis string, cycle, mode *string) boo
 		valid["cooling mode"] = true
 	}
 	return valid[basis] && valid[normalize(*mode)]
+}
+
+func compatibleCycleUsageBasis(category, basis string, cycle, mode *string) bool {
+	return (category == "washer" || category == "dryer" || category == "dishwasher") &&
+		strings.TrimSpace(basis) != "" && cycle != nil && strings.TrimSpace(*cycle) != "" && mode == nil
 }
 
 func applianceOnlyEnergy(fuel string, raw []byte) bool {
@@ -81,21 +90,17 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	if kind == "" || a.Quality != "confirmed_exact" || (a.Fuel != "electricity" && !(a.Fuel == "natural_gas" && a.Category == "dryer")) || a.Brand == "" || a.Model == "" || a.Variant == nil || strings.TrimSpace(*a.Variant) == "" {
 		return out, nil
 	}
-	// Answer changes invalidate stored runs even when the reviewed fact is
-	// incompatible. Keep the revision in the dependency snapshot in that case.
-	var answerValue []byte
-	var answerVersion int64
-	var questionVersion int
-	answerErr := tx.QueryRow(ctx, `SELECT revision,appliance_version,question_version,status,answer_value FROM question_answers
-		WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3
-		ORDER BY revision DESC LIMIT 1`, home, a.ID, question).Scan(&out.AnswerRevision, &answerVersion, &questionVersion, &out.Status, &answerValue)
-	if answerErr != nil && !errors.Is(answerErr, pgx.ErrNoRows) {
-		return out, answerErr
+	// Generic answers still invalidate an earlier run, including when the
+	// reviewed fact is incompatible. Only a source-specific cycle answer may
+	// supply the count used in a cycle calculation.
+	err := tx.QueryRow(ctx, `SELECT revision FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3 ORDER BY revision DESC LIMIT 1`, home, a.ID, question).Scan(&out.GenericRevision)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return out, err
 	}
 	// Count all facts at this exact appliance identity, including rows whose
 	// scope is not eligible. This keeps changed or ambiguous source evidence
 	// from falling through to an unrelated annual calculation.
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM active_reviewed_usage_facts
+	err = tx.QueryRow(ctx, `SELECT count(*) FROM active_reviewed_usage_facts
 		WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel=$4 AND variant=$5 AND measurement_kind=$6`,
 		a.Category, a.Brand, a.Model, a.Fuel, *a.Variant, kind).Scan(&out.FactCount)
 	if err != nil || out.FactCount == 0 {
@@ -117,7 +122,8 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	if !out.ExactScope || (sourceKind != "oem_pdf" && sourceKind != "epa_row") {
 		return out, nil
 	}
-	if !compatibleUsageBasis(kind, a.Category, testBasis, cycle, mode) || !applianceOnlyEnergy(a.Fuel, included) {
+	if !(kind == "cycle_energy" && compatibleCycleUsageBasis(a.Category, testBasis, cycle, mode) ||
+		kind == "hourly_energy" && compatibleUsageBasis(kind, a.Category, testBasis, cycle, mode)) || !applianceOnlyEnergy(a.Fuel, included) {
 		return out, nil
 	}
 	if a.Fuel == "electricity" && (out.Kind == "cycle_energy" && out.Unit != "kWh/cycle" || out.Kind == "hourly_energy" && out.Unit != "kWh/hour") ||
@@ -126,8 +132,21 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	}
 	if out.Kind == "hourly_energy" {
 		out.Kind = "hour_energy"
+	} else {
+		question = questions.ReviewedCycleQuestionID(a.Category, out.FactID)
+		out.CycleDefinition = *cycle
 	}
+	out.QuestionID = question
 	out.Selected = true
+	var answerValue []byte
+	var answerVersion int64
+	var questionVersion int
+	answerErr := tx.QueryRow(ctx, `SELECT revision,appliance_version,question_version,status,answer_value FROM question_answers
+		WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3
+		ORDER BY revision DESC LIMIT 1`, home, a.ID, question).Scan(&out.AnswerRevision, &answerVersion, &questionVersion, &out.Status, &answerValue)
+	if answerErr != nil && !errors.Is(answerErr, pgx.ErrNoRows) {
+		return out, answerErr
+	}
 	if errors.Is(answerErr, pgx.ErrNoRows) {
 		return out, nil
 	}

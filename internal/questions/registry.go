@@ -1,6 +1,8 @@
 // Package questions keeps versioned usage prompts and immutable answers.
 package questions
 
+import "strings"
+
 type Question struct {
 	ID               string `json:"id"`
 	Version          int64  `json:"version"`
@@ -11,6 +13,16 @@ type Question struct {
 	AnswerKind       string `json:"answer_kind"`
 	Unit             string `json:"unit"`
 	Optional         bool   `json:"optional"`
+	SourceFactID     string `json:"source_fact_id,omitempty"`
+	CycleDefinition  string `json:"cycle_definition,omitempty"`
+	TestBasis        string `json:"test_basis,omitempty"`
+	SourceURL        string `json:"source_url,omitempty"`
+}
+
+// ReviewedCycleQuestionID binds an answer to one immutable reviewed fact.
+// Replacing that fact produces a new question and cannot reuse an old count.
+func ReviewedCycleQuestionID(category, factID string) string {
+	return category + ".reviewed_cycle." + strings.ToLower(factID) + ".cycles_per_week"
 }
 
 type definition struct {

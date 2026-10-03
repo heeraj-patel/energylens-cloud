@@ -198,5 +198,36 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	if _, err = pool.Exec(ctx, `UPDATE question_answers SET status='unknown' WHERE id=$1`, answers[0].ID); err == nil {
 		t.Fatal("immutable answer changed")
 	}
+	if _, err = pool.Exec(ctx, `UPDATE appliances SET identity='{"brand":"Acme","full_model":"W100","variant":"US-120V","fuel":"electricity","match_quality":"confirmed_exact"}',version=3 WHERE id=$1`, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	factID := uuid.NewString()
+	factHash := strings.Repeat("a", 64)
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_publications(payload_sha256,key_id,envelope_sha256,imported_by,fact_count) VALUES($1,$1,$1,'operator',1)`, factHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_facts
+		(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
+		VALUES($1,$2,'washer','Acme','W100','electricity','US-120V','confirmed_exact','W100','W100','cycle_energy',0.5,'kWh/cycle','normal cycle','normal cycle','{"status":"documented","components":["appliance_electricity"]}','oem_pdf','https://example.org/washer.pdf',$2,0,$2,'reviewer',now(),'washer.json','{}')`, factID, factHash); err != nil {
+		t.Fatal(err)
+	}
+	cycleQuestions, err := store.List(ctx, owner.ID, home.ID, "onboarding", &a.ID)
+	if err != nil || len(cycleQuestions) != 2 || cycleQuestions[1].ID != ReviewedCycleQuestionID("washer", factID) || cycleQuestions[1].CycleDefinition != "normal cycle" || cycleQuestions[1].SourceFactID != factID || cycleQuestions[1].IdentityRevision != 3 {
+		t.Fatalf("reviewed cycle prompt: %+v %v", cycleQuestions, err)
+	}
+	cycleAnswer := AnswerCreate{QuestionID: cycleQuestions[1].ID, QuestionVersion: 1, ApplianceID: a.ID, IdentityRevision: 3, Status: "confirmed", Value: json.RawMessage("3"), ConfirmedAt: &now}
+	if _, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{cycleAnswer}, uuid.NewString(), reqHash[:]); err != nil {
+		t.Fatalf("matched cycle answer: %v", err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_fact_revisions(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','source corrected','reviewer',now(),$2)`, uuid.NewString(), factHash, factID); err != nil {
+		t.Fatal(err)
+	}
+	cycleQuestions, err = store.List(ctx, owner.ID, home.ID, "onboarding", &a.ID)
+	if err != nil || len(cycleQuestions) != 1 {
+		t.Fatalf("retracted source still prompted: %+v %v", cycleQuestions, err)
+	}
+	if _, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{cycleAnswer}, uuid.NewString(), reqHash[:]); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("retracted source still accepts answers: %v", err)
+	}
 }
 func ptr(v string) *string { return &v }

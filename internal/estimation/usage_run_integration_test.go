@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"energylens.local/cloud/internal/migrate"
+	"energylens.local/cloud/internal/questions"
 	"energylens.local/cloud/migrations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -257,22 +258,69 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "basis_incomparable" {
+	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "rate_unavailable" {
 		t.Fatalf("gas normal cycle cannot bind generic cycle count: %+v", got)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'natural_gas',1.20,'therm','USD','user_tariff','gas bill',$2,false,$3)`, home, now, now.Add(-35*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	gasBeforeAnswer := gasRead()
-	if gasBeforeAnswer.Kind != "unavailable" || gasBeforeAnswer.UnavailableReason != "basis_incomparable" {
+	if gasBeforeAnswer.Kind != "unavailable" || gasBeforeAnswer.UnavailableReason != "usage_unknown" {
 		t.Fatalf("gas normal cycle became comparable with a tariff: %+v", gasBeforeAnswer)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'dryer.cycles_per_week',1,1,'confirmed','7',now())`, home, gasDryer); err != nil {
 		t.Fatal(err)
 	}
 	gasEstimate := gasRead()
-	if gasEstimate.Kind != "unavailable" || gasEstimate.UnavailableReason != "basis_incomparable" || gasEstimate.Energy != nil || gasEstimate.Cost != nil || gasEstimate.ID == gasBeforeAnswer.ID {
+	if gasEstimate.Kind != "unavailable" || gasEstimate.UnavailableReason != "usage_unknown" || gasEstimate.Energy != nil || gasEstimate.Cost != nil || gasEstimate.ID == gasBeforeAnswer.ID {
 		t.Fatalf("generic gas dryer cycles selected a normal-cycle fact: %+v", gasEstimate)
+	}
+	matchedQuestion := questions.ReviewedCycleQuestionID("dryer", gasFact)
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,$3,1,1,'confirmed','3',now())`, home, gasDryer, matchedQuestion); err != nil {
+		t.Fatal(err)
+	}
+	matched := gasRead()
+	if matched.Kind != "estimated_useful_cost" || matched.Cost == nil || matched.Cost.Value == "0.000000" {
+		t.Fatalf("matched cycle among seven mixed cycles: %+v", matched)
+	}
+	var gasDeps []byte
+	if err = pool.QueryRow(ctx, `SELECT dependency_snapshot FROM estimate_runs WHERE id=$1`, matched.ID).Scan(&gasDeps); err != nil {
+		t.Fatal(err)
+	}
+	var matchedDeps map[string]any
+	if err = json.Unmarshal(gasDeps, &matchedDeps); err != nil {
+		t.Fatal(err)
+	}
+	if matchedDeps["reviewed_usage_question_id"] != matchedQuestion || matchedDeps["weekly_usage"] != "3" {
+		t.Fatalf("matched-cycle provenance: %s", gasDeps)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status) VALUES($1,$2,1,$3,1,2,'unknown')`, home, gasDryer, matchedQuestion); err != nil {
+		t.Fatal(err)
+	}
+	if unknown := gasRead(); unknown.Kind != "unavailable" || unknown.UnavailableReason != "usage_unknown" || unknown.Cost != nil {
+		t.Fatalf("unknown matched cycle: %+v", unknown)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,$3,1,3,'confirmed','3',now())`, home, gasDryer, matchedQuestion); err != nil {
+		t.Fatal(err)
+	}
+	if got := gasRead(); got.Kind != "estimated_useful_cost" {
+		t.Fatalf("restored matched cycle: %+v", got)
+	}
+	replacementFact, replacementRevision := uuid.NewString(), uuid.NewString()
+	replacementHash := strings.Repeat("f", 64)
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_publications(payload_sha256,key_id,envelope_sha256,imported_by,fact_count) VALUES($1,$1,$1,'operator',1)`, replacementHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_facts
+		(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
+		VALUES($1,$2,'dryer','Acme','G123','natural_gas','US-GAS','confirmed_exact','G123','G123','cycle_energy',0.20,'therm/cycle','eco cycle','eco cycle','{"status":"documented","components":["appliance_gas"]}','oem_pdf','https://example.org/gas-dryer-2.pdf',$2,0,$2,'reviewer',now(),'gas-dryer-2.json','{}')`, replacementFact, replacementHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_fact_revisions(id,publication_sha256,prior_fact_id,replacement_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,$4,'supersede','corrected reviewed cycle','reviewer',now(),$2)`, replacementRevision, replacementHash, gasFact, replacementFact); err != nil {
+		t.Fatal(err)
+	}
+	if changed := gasRead(); changed.Kind != "unavailable" || changed.UnavailableReason != "usage_unknown" || changed.Cost != nil {
+		t.Fatalf("old source count reused: %+v", changed)
 	}
 
 	// An exact per-use fact with a different mode or energy scope must not
@@ -283,10 +331,10 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 	}{
 		{"standby hourly", "computer", "C-STANDBY", "hourly_energy", "kWh/hour", "standby", `{"status":"documented","components":["appliance_electricity"]}`, "computer.hours_per_week", "basis_incomparable", nil, ptr("standby")},
 		{"mixed hourly energy", "computer", "C-MIXED", "hourly_energy", "kWh/hour", "active use", `{"status":"documented","components":["appliance_electricity","standby_electricity"]}`, "computer.hours_per_week", "basis_incomparable", nil, ptr("active use")},
-		{"generic count with normal cycle", "washer", "W-NORMAL", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity"]}`, "washer.cycles_per_week", "basis_incomparable", ptr("normal cycle"), nil},
+		{"generic count with normal cycle", "washer", "W-NORMAL", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity"]}`, "washer.cycles_per_week", "usage_unknown", ptr("normal cycle"), nil},
 		{"mixed water heating", "washer", "W-MIXED", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity","water_heating_electricity"]}`, "washer.cycles_per_week", "basis_incomparable", ptr("normal cycle"), nil},
-		{"different cycle", "dishwasher", "D-ECO", "cycle_energy", "kWh/cycle", "eco cycle", `{"status":"documented","components":["appliance_electricity"]}`, "dishwasher.cycles_per_week", "basis_incomparable", ptr("eco cycle"), nil},
-		{"mismatched cycle labels", "washer", "W-STANDARD", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity"]}`, "washer.cycles_per_week", "basis_incomparable", ptr("standard cycle"), nil},
+		{"different cycle", "dishwasher", "D-ECO", "cycle_energy", "kWh/cycle", "eco cycle", `{"status":"documented","components":["appliance_electricity"]}`, "dishwasher.cycles_per_week", "usage_unknown", ptr("eco cycle"), nil},
+		{"mismatched cycle labels", "washer", "W-STANDARD", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity"]}`, "washer.cycles_per_week", "usage_unknown", ptr("standard cycle"), nil},
 		{"unknown test basis", "computer", "C-UNKNOWN", "hourly_energy", "kWh/hour", "manufacturer average", `{"status":"documented","components":["appliance_electricity"]}`, "computer.hours_per_week", "basis_incomparable", nil, ptr("active use")},
 		{"compatible active use", "computer", "C-ACTIVE", "hourly_energy", "kWh/hour", "active use", `{"status":"documented","components":["appliance_electricity"]}`, "computer.hours_per_week", "", nil, ptr("active use")},
 	} {

@@ -96,6 +96,11 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 	}
 	defer rows.Close()
 	candidates := []Question{}
+	type applianceCandidate struct {
+		id, category string
+		version      int64
+	}
+	var cycleCandidates []applianceCandidate
 	found := false
 	for rows.Next() {
 		var id, category string
@@ -107,6 +112,9 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 		if q, ok := questionFor(category, id, version, purpose); ok {
 			candidates = append(candidates, q)
 		}
+		if purpose == "onboarding" {
+			cycleCandidates = append(cycleCandidates, applianceCandidate{id, category, version})
+		}
 	}
 	err = rows.Err()
 	rows.Close()
@@ -115,6 +123,15 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 	}
 	if appliance != nil && !found {
 		return nil, ErrNotFound
+	}
+	for _, item := range cycleCandidates {
+		q, err := reviewedCycleQuestion(ctx, s.Pool, home, item.id, item.category, item.version)
+		if err != nil {
+			return nil, err
+		}
+		if q != nil {
+			candidates = append(candidates, *q)
+		}
 	}
 	out := []Question{}
 	for _, q := range candidates {
@@ -228,6 +245,15 @@ func (s PGStore) Submit(ctx context.Context, owner, home string, inputs []Answer
 			return nil, ErrVersion
 		}
 		q, ok := questionByID(category, in.ApplianceID, version, in.QuestionID)
+		if !ok {
+			cycle, cycleErr := reviewedCycleQuestion(ctx, tx, home, in.ApplianceID, category, version)
+			if cycleErr != nil {
+				return nil, cycleErr
+			}
+			if cycle != nil && cycle.ID == in.QuestionID {
+				q, ok = *cycle, true
+			}
+		}
 		if !ok || !validAnswer(in, q, now) {
 			return nil, ErrInvalid
 		}
