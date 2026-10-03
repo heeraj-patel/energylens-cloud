@@ -11,7 +11,7 @@ import (
 )
 
 func TestRoleAndDatabasePolicy(t *testing.T) {
-	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":8080", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubListen: ":8081", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt"}
+	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":8080", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubListen: ":8081", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt", MeteredExportCursorKeyFile: "/private/metered-export.key"}
 	if err := base.Validate(); err == nil {
 		t.Fatal("production must require database")
 	}
@@ -44,7 +44,7 @@ func TestRoleAndDatabasePolicy(t *testing.T) {
 }
 
 func TestAccountDeletionProductionGate(t *testing.T) {
-	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":8080", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=verify-full", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubListen: ":8081", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt"}
+	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":8080", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=verify-full", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubListen: ":8081", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt", MeteredExportCursorKeyFile: "/private/metered-export.key"}
 	if err := base.Validate(); err != nil {
 		t.Fatalf("disabled route rejected: %v", err)
 	}

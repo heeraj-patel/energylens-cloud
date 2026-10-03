@@ -101,6 +101,7 @@ func TestLocalAuthRuntimeGate(t *testing.T) {
 		LocalAuthEnabled: true, LocalAuthMailEnabled: true, LocalAuthResendAPIKey: "test-key", LocalAuthResendFrom: "auth@example.test", LocalAuthLinkOrigin: "https://app.example.test",
 		LocalAuthActiveKeyID: "active", LocalAuthPrivateKey: privatePath, LocalAuthPublicKeys: string(publicFiles), LocalAuthAudience: "energylens-cloud",
 		LocalAuthRegisterKey: keys[0], LocalAuthLoginKey: keys[1], LocalAuthRecoveryKey: keys[2],
+		MeteredExportCursorKeyFile: write("metered-export.key", []byte("local-auth-integration-export-key-32"), 0600),
 	}
 	if err := CheckLocalAuthKeys(c, "", ""); err != nil {
 		t.Fatalf("operator key check rejected valid material: %v", err)

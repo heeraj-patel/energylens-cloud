@@ -4,12 +4,15 @@
 package meteredexport
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"energylens.local/cloud/internal/meteredhistory"
@@ -23,6 +26,9 @@ type Service struct {
 	Summary meteredsummary.Store
 	Auth    func(http.Handler) http.Handler
 	UserID  func(*http.Request) string
+	// CursorKey is a dedicated, deployment-stable secret shared by API replicas.
+	// PreviousCursorKey accepts cursors issued before a key rotation.
+	CursorKey, PreviousCursorKey []byte
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -30,12 +36,12 @@ func (s Service) Routes(r chi.Router) {
 }
 
 type cursor struct {
-	Home, Dataset, Sensor, Attachment string
-	From, To                          time.Time
-	SnapshotCursor                    int64
-	AsOf                              time.Time
-	HistoryAfter                      *historyKey
-	SummaryAfter                      *meteredsummary.Key
+	Home, Owner, Dataset, Sensor, Attachment string
+	From, To                                 time.Time
+	SnapshotCursor                           int64
+	AsOf                                     time.Time
+	HistoryAfter                             *historyKey
+	SummaryAfter                             *meteredsummary.Key
 }
 
 type historyKey struct {
@@ -44,6 +50,8 @@ type historyKey struct {
 	Epoch   int64
 	EventID string
 }
+
+var errCursorScope = errors.New("cursor scope mismatch")
 
 func uuidOK(s string) bool { u, err := uuid.Parse(s); return err == nil && u.String() == s }
 
@@ -63,8 +71,8 @@ func validRange(c cursor, now time.Time) bool {
 	return (c.Dataset == "hour" || c.Dataset == "day") && !c.From.Before(now.AddDate(-2, 0, 0)) && !c.To.After(c.From.AddDate(2, 0, 0))
 }
 
-func validCursor(c cursor, home string, now time.Time) bool {
-	if c.Home != home || !validRange(c, now) || c.Sensor != "" && !uuidOK(c.Sensor) || c.Attachment != "" && !uuidOK(c.Attachment) {
+func validCursor(c cursor, now time.Time) bool {
+	if !validRange(c, now) || c.Sensor != "" && !uuidOK(c.Sensor) || c.Attachment != "" && !uuidOK(c.Attachment) {
 		return false
 	}
 	if c.Dataset == "history" {
@@ -79,30 +87,61 @@ func validCursor(c cursor, home string, now time.Time) bool {
 		(k.Attachment == "" || uuidOK(k.Attachment))
 }
 
-func decodeCursor(raw, home string, now time.Time) (cursor, error) {
+func (s Service) decodeCursor(raw, home, owner string, now time.Time) (cursor, error) {
 	var c cursor
 	if len(raw) > 4096 {
 		return c, errors.New("cursor too long")
 	}
-	b, err := base64.RawURLEncoding.DecodeString(raw)
-	if err != nil {
-		return c, err
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 || parts[0] != "v1" {
+		return c, errors.New("invalid cursor version")
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || base64.RawURLEncoding.EncodeToString(b) != parts[1] {
+		return c, errors.New("invalid cursor payload")
+	}
+	mac, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(mac) != sha256.Size || base64.RawURLEncoding.EncodeToString(mac) != parts[2] {
+		return c, errors.New("invalid cursor signature")
+	}
+	message := []byte(parts[0] + "." + parts[1])
+	if !validMAC(s.CursorKey, message, mac) && !validMAC(s.PreviousCursorKey, message, mac) {
+		return c, errors.New("invalid cursor signature")
 	}
 	if err = json.Unmarshal(b, &c); err != nil {
 		return c, err
 	}
-	if !validCursor(c, home, now) {
+	if c.Home != home || c.Owner != owner {
+		return c, errCursorScope
+	}
+	if !validCursor(c, now) {
 		return c, errors.New("invalid cursor")
 	}
 	return c, nil
 }
 
-func encodeCursor(c cursor) string {
+func validMAC(key, message, signature []byte) bool {
+	if len(key) < 32 {
+		return false
+	}
+	h := hmac.New(sha256.New, key)
+	_, _ = h.Write(message)
+	return hmac.Equal(h.Sum(nil), signature)
+}
+
+func (s Service) encodeCursor(c cursor) string {
 	b, _ := json.Marshal(c)
-	return base64.RawURLEncoding.EncodeToString(b)
+	message := "v1." + base64.RawURLEncoding.EncodeToString(b)
+	h := hmac.New(sha256.New, s.CursorKey)
+	_, _ = h.Write([]byte(message))
+	return message + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
 func (s Service) list(w http.ResponseWriter, r *http.Request) {
+	if len(s.CursorKey) < 32 {
+		internalError(w, "metered export cursor key unavailable", errors.New("missing cursor key"))
+		return
+	}
 	home := chi.URLParam(r, "home")
 	if !uuidOK(home) {
 		fail(w, 404, "not_found")
@@ -119,16 +158,21 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	now := time.Now().UTC()
-	c := cursor{Home: home}
+	owner := s.UserID(r)
+	c := cursor{Home: home, Owner: owner}
 	if raw := p.Get("cursor"); raw != "" {
 		if p.Has("dataset") || p.Has("from") || p.Has("to") || p.Has("sensor_id") || p.Has("attachment_id") {
 			fail(w, 400, "invalid_request")
 			return
 		}
 		var err error
-		c, err = decodeCursor(raw, home, now)
+		c, err = s.decodeCursor(raw, home, owner, now)
 		if err != nil {
-			fail(w, 400, "invalid_request")
+			if errors.Is(err, errCursorScope) {
+				fail(w, 404, "not_found")
+			} else {
+				fail(w, 400, "invalid_request")
+			}
 			return
 		}
 	} else {
@@ -206,7 +250,7 @@ func (s Service) history(w http.ResponseWriter, r *http.Request, c cursor, limit
 	if more {
 		last := rows[len(rows)-1]
 		c.SnapshotCursor, c.HistoryAfter = q.SnapshotCursor, &historyKey{Time: last.SortTime, Hub: last.HubID, Epoch: last.Epoch, EventID: last.EventID}
-		next = encodeCursor(c)
+		next = s.encodeCursor(c)
 	}
 	write(w, c, c.AsOf, items, next, "ingest_snapshot")
 }
@@ -233,7 +277,7 @@ func (s Service) summary(w http.ResponseWriter, r *http.Request, c cursor, limit
 	var next any
 	if more {
 		c.SummaryAfter = &rows[len(rows)-1].Key
-		next = encodeCursor(c)
+		next = s.encodeCursor(c)
 	}
 	write(w, c, time.Now().UTC(), items, next, "live_rollup")
 }

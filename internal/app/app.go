@@ -162,7 +162,12 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "home-programs", Mount: ownerPrograms.Routes})
 			reportPreviews := reports.Service{Store: reports.Store{DB: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-report-previews", Mount: reportPreviews.Routes})
-			meteredExport := meteredexport.Service{History: meteredhistory.Store{Pool: rt.Pool}, Summary: meteredsummary.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			cursorKey, previousCursorKey, err := c.meteredExportKeys()
+			if err != nil {
+				rt.Close()
+				return nil, fmt.Errorf("configure metered export cursors: %w", err)
+			}
+			meteredExport := meteredexport.Service{History: meteredhistory.Store{Pool: rt.Pool}, Summary: meteredsummary.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID, CursorKey: cursorKey, PreviousCursorKey: previousCursorKey}
 			modules = append(modules, Module{Name: "home-metered-export", Mount: meteredExport.Routes})
 			answers := questions.Service{Store: questions.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-questions", Mount: answers.Routes})

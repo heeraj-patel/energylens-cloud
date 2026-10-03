@@ -2,6 +2,7 @@ package meteredexport
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -123,7 +124,8 @@ func TestOwnerMeteredExportKeepsKindsAndScope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	svc := Service{History: meteredhistory.Store{Pool: pool}, Summary: meteredsummary.Store{Pool: pool}, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return owner }}
+	key := []byte("metered-export-test-key-32-bytes!")
+	svc := Service{History: meteredhistory.Store{Pool: pool}, Summary: meteredsummary.Store{Pool: pool}, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return owner }, CursorKey: key}
 	router := chi.NewRouter()
 	svc.Routes(router)
 	request := func(path string) (int, exportPage) {
@@ -139,6 +141,7 @@ func TestOwnerMeteredExportKeepsKindsAndScope(t *testing.T) {
 		return w.Code, p
 	}
 	base := "/homes/" + home + "/metered-export?dataset="
+	var historyCursor, summaryCursor string
 	for _, dataset := range []string{"history", "hour"} {
 		code, page := request(base + dataset + "&limit=1")
 		if code != 200 || page.NextCursor == nil || len(page.Records) != 1 || page.AsOf.IsZero() {
@@ -149,6 +152,11 @@ func TestOwnerMeteredExportKeepsKindsAndScope(t *testing.T) {
 		}
 		if dataset == "hour" && (page.Retention != "summary_24_months" || page.ContinuationConsistency != "live_rollup") {
 			t.Fatalf("summary metadata %+v", page)
+		}
+		if dataset == "history" {
+			historyCursor = *page.NextCursor
+		} else {
+			summaryCursor = *page.NextCursor
 		}
 		seen := map[string]bool{}
 		for {
@@ -178,6 +186,81 @@ func TestOwnerMeteredExportKeepsKindsAndScope(t *testing.T) {
 			t.Fatalf("%s kinds: %v", dataset, seen)
 		}
 	}
+	continuation := func(raw string) string {
+		return "/homes/" + home + "/metered-export?cursor=" + url.QueryEscape(raw) + "&limit=1"
+	}
+	for _, original := range []string{historyCursor, summaryCursor} {
+		parts := strings.Split(original, ".")
+		if len(parts) != 3 || parts[0] != "v1" {
+			t.Fatalf("unexpected signed cursor %q", original)
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(payload, &fields); err != nil {
+			t.Fatal(err)
+		}
+		for name, value := range map[string]any{"SnapshotCursor": float64(999999), "AsOf": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano), "Sensor": uuid.NewString(), "From": time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339Nano)} {
+			mutated := make(map[string]any, len(fields))
+			for k, v := range fields {
+				mutated[k] = v
+			}
+			mutated[name] = value
+			b, err := json.Marshal(mutated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if code, _ := request(continuation("v1." + base64.RawURLEncoding.EncodeToString(b) + "." + parts[2])); code != 400 {
+				t.Fatalf("%s tampered cursor accepted: %d", name, code)
+			}
+		}
+		afterName := "HistoryAfter"
+		if fields["Dataset"] == "hour" {
+			afterName = "SummaryAfter"
+		}
+		fields[afterName].(map[string]any)["Epoch"] = float64(999)
+		b, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code, _ := request(continuation("v1." + base64.RawURLEncoding.EncodeToString(b) + "." + parts[2])); code != 400 {
+			t.Fatalf("%s tampered cursor accepted: %d", afterName, code)
+		}
+		if code, _ := request(continuation(parts[1])); code != 400 {
+			t.Fatalf("legacy unsigned cursor accepted: %d", code)
+		}
+		if code, _ := request(continuation(original) + "&sensor_id=" + sensor); code != 400 {
+			t.Fatalf("cursor filter override accepted: %d", code)
+		}
+	}
+	// A new service instance with the same durable key can continue the page.
+	restarted := svc
+	restarted.CursorKey = append([]byte(nil), key...)
+	router = chi.NewRouter()
+	restarted.Routes(router)
+	if code, page := request(continuation(historyCursor)); code != 200 || len(page.Records) != 1 || page.AsOf.IsZero() {
+		t.Fatalf("restart did not preserve history continuation: %d %+v", code, page)
+	}
+	if code, page := request(continuation(summaryCursor)); code != 200 || len(page.Records) != 1 {
+		t.Fatalf("restart did not preserve summary continuation: %d %+v", code, page)
+	}
+	rotated := restarted
+	rotated.CursorKey, rotated.PreviousCursorKey = []byte("new-metered-export-key-32-bytes!!"), key
+	router = chi.NewRouter()
+	rotated.Routes(router)
+	if code, _ := request(continuation(historyCursor)); code != 200 {
+		t.Fatalf("previous key rejected during rotation: %d", code)
+	}
+	rotated.PreviousCursorKey = nil
+	router = chi.NewRouter()
+	rotated.Routes(router)
+	if code, _ := request(continuation(historyCursor)); code != 400 {
+		t.Fatalf("retired key cursor accepted: %d", code)
+	}
+	router = chi.NewRouter()
+	svc.Routes(router)
 	code, attached := request(base + "history&attachment_id=" + attachment)
 	if code != 200 || len(attached.Records) != 1 {
 		t.Fatalf("attached history %d %+v", code, attached)
@@ -207,5 +290,11 @@ func TestOwnerMeteredExportKeepsKindsAndScope(t *testing.T) {
 	}
 	if code, _ = request(base + "hour"); code != 404 {
 		t.Fatalf("foreign summary %d", code)
+	}
+	if code, _ = request(continuation(historyCursor)); code != 404 {
+		t.Fatalf("foreign owner history cursor %d", code)
+	}
+	if code, _ = request(continuation(summaryCursor)); code != 404 {
+		t.Fatalf("foreign owner summary cursor %d", code)
 	}
 }

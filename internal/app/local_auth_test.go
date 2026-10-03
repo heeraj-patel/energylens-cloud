@@ -64,6 +64,7 @@ func TestLocalAuthGateRequiresCompleteConfiguration(t *testing.T) {
 	production.DatabaseURL = "postgres://user:pass@localhost:5432/db?sslmode=verify-full"
 	production.HubListen, production.HubCertFile, production.HubKeyFile, production.HubCAFile = ":8081", "server.crt", "server.key", "client-ca.crt"
 	production.HubSignCertFile, production.HubSignKeyFile = "signer.crt", "signer.key"
+	production.MeteredExportCursorKeyFile = "/keys/metered-export.key"
 	if err := production.Validate(); err != nil {
 		t.Fatalf("production local-only configuration rejected: %v", err)
 	}
