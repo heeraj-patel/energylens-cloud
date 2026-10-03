@@ -71,6 +71,13 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	exec(`INSERT INTO reviewed_usage_facts(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json) VALUES($1,$2,'dishwasher','Acme','DW123','electricity','US-120V','confirmed_exact','DW123','DW123','cycle_energy',0.7,'kWh/cycle','DOE Normal','Normal with heated dry','{"status":"documented","components":["appliance_electricity"]}','oem_pdf','https://example.test/dw.pdf',$3,0,$4,'reviewer',$5,'test.json','{}')`, factID, strings.Repeat("a", 64), strings.Repeat("d", 64), strings.Repeat("e", 64), now)
 	in := Request{Start: start, End: end, AttachmentID: attachment, FactID: factID, ConfirmedTestBasis: "DOE Normal", ConfirmedCycleDefinition: "Normal with heated dry", DedicatedNoOtherLoads: true}
 	s := Store{Pool: pool}
+	if _, e := s.Reference(ctx, other, home, appliance); !errors.Is(e, ErrNotFound) {
+		t.Fatalf("other owner reference: %v", e)
+	}
+	option, e := s.Reference(ctx, owner, home, appliance)
+	if e != nil || option.Status != "available" || option.Fact == nil || option.Fact.ID != factID || option.Fact.TestBasis != "DOE Normal" || option.Fact.CycleDefinition != "Normal with heated dry" {
+		t.Fatalf("exact reviewed reference: %+v, %v", option, e)
+	}
 	check := func(want string) {
 		t.Helper()
 		got, e := s.Compare(ctx, owner, home, appliance, in, now)
@@ -135,6 +142,10 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	exec(`DROP INDEX reviewed_usage_facts_one_identity_idx`)
 	exec(`INSERT INTO reviewed_usage_facts SELECT $1,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,operation_mode,included_energy,source_kind,source_url,source_sha256,source_page_index,dataset_id,row_identifier,field_name,metadata_sha256,review_sha256,reviewer,reviewed_at,source_manifest,fact_json,imported_at FROM reviewed_usage_facts WHERE id=$2`, uuid.NewString(), factID)
 	check("reviewed_fact_missing_or_ambiguous")
+	option, e = s.Reference(ctx, owner, home, appliance)
+	if e != nil || option.Status != "unavailable" || option.Fact != nil {
+		t.Fatalf("ambiguous reviewed reference: %+v, %v", option, e)
+	}
 	exec(`UPDATE homes SET owner_user_id=$1 WHERE id=$2`, other, home)
 	if _, e := s.Compare(ctx, owner, home, appliance, in, now); !errors.Is(e, ErrNotFound) {
 		t.Fatalf("old owner after transfer: %v", e)

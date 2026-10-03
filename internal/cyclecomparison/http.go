@@ -20,6 +20,7 @@ type Service struct {
 }
 
 func (s Service) Routes(r chi.Router) {
+	r.With(s.Auth).Get("/homes/{home}/appliances/{appliance}/cycle-comparison/reference", s.reference)
 	r.With(s.Auth).Post("/homes/{home}/appliances/{appliance}/cycle-comparison", s.compare)
 }
 
@@ -32,6 +33,26 @@ func fail(w http.ResponseWriter, status int, code string) {
 
 func valid(in Request, now time.Time) bool {
 	return validID(in.AttachmentID) && validID(in.FactID) && !in.Start.IsZero() && in.End.After(in.Start) && in.End.Sub(in.Start) <= 24*time.Hour && !in.Start.Before(now.Add(-30*24*time.Hour)) && !in.End.After(now) && strings.TrimSpace(in.ConfirmedTestBasis) == in.ConfirmedTestBasis && in.ConfirmedTestBasis != "" && strings.TrimSpace(in.ConfirmedCycleDefinition) == in.ConfirmedCycleDefinition && in.ConfirmedCycleDefinition != ""
+}
+
+func (s Service) reference(w http.ResponseWriter, r *http.Request) {
+	home, appliance := chi.URLParam(r, "home"), chi.URLParam(r, "appliance")
+	if !validID(home) || !validID(appliance) {
+		fail(w, 404, "not_found")
+		return
+	}
+	out, err := s.Store.Reference(r.Context(), s.UserID(r), home, appliance)
+	if errors.Is(err, ErrNotFound) {
+		fail(w, 404, "not_found")
+		return
+	}
+	if err != nil {
+		slog.Error("cycle reference lookup failed", "error", err)
+		fail(w, 500, "internal_error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s Service) compare(w http.ResponseWriter, r *http.Request) {
