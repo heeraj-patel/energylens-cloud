@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,8 +11,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"energylens.local/cloud/internal/account"
+	"energylens.local/cloud/internal/programs"
 	"energylens.local/cloud/internal/reports"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -63,6 +66,12 @@ type Config struct {
 	KBScanSources               string
 	KBScanCandidateIndex        string
 	KBScanAllowEPA              bool
+	ProgramRefreshEnabled       bool
+	OEDIIOUPath                 string
+	OEDINonIOUPath              string
+	OEDIIOUSHA256               string
+	OEDINonIOUSHA256            string
+	OEDIRetrievedAt             time.Time
 }
 
 func LoadConfig(role string) (Config, error) {
@@ -76,7 +85,22 @@ func LoadConfig(role string) (Config, error) {
 		LocalAuthResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY"), LocalAuthResendFrom: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM"), LocalAuthLinkOrigin: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN"), LocalAuthProxyCIDRs: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_TRUSTED_PROXY_CIDRS"),
 		LocalAuthActiveKeyID: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ACTIVE_KEY_ID"), LocalAuthPrivateKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PRIVATE_KEY_FILE"), LocalAuthPublicKeys: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PUBLIC_KEY_FILES"), LocalAuthAudience: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_AUDIENCE"),
 		LocalAuthRegisterKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_REGISTER_RATE_KEY_FILE"), LocalAuthLoginKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LOGIN_RATE_KEY_FILE"), LocalAuthRecoveryKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RECOVERY_RATE_KEY_FILE"),
+		OEDIIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED: %w", err)
+		}
+		c.ProgramRefreshEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_OEDI_RETRIEVED_AT"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid OEDI retrieval timestamp: %w", err)
+		}
+		c.OEDIRetrievedAt = parsed.UTC()
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_ALLOW_EPA"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -191,6 +215,23 @@ func (c Config) Validate() error {
 		}
 		if c.LocalAuthRegisterKey == c.LocalAuthLoginKey || c.LocalAuthRegisterKey == c.LocalAuthRecoveryKey || c.LocalAuthLoginKey == c.LocalAuthRecoveryKey {
 			return errors.New("local auth rate keys must use separate files")
+		}
+	}
+	if c.ProgramRefreshEnabled {
+		if c.Role != RoleWorker && c.Role != RoleAll {
+			return errors.New("program refresh requires worker or all role")
+		}
+		if c.DatabaseURL == "" || c.OEDIIOUPath == "" || c.OEDINonIOUPath == "" || c.OEDIIOUSHA256 == "" || c.OEDINonIOUSHA256 == "" || c.OEDIRetrievedAt.IsZero() {
+			return errors.New("program refresh requires database and both full OEDI CSVs with SHA-256 and retrieval time")
+		}
+		if !filepath.IsAbs(c.OEDIIOUPath) || !filepath.IsAbs(c.OEDINonIOUPath) || filepath.Base(c.OEDIIOUPath) != "iou_zipcodes_2024.csv" || filepath.Base(c.OEDINonIOUPath) != "non_iou_zipcodes_2024.csv" {
+			return errors.New("program refresh requires absolute full OEDI CSV paths")
+		}
+		// Validate both complete operator files before starting a worker that
+		// could otherwise claim private requests and fail every lookup.
+		resolver := programs.OEDIZIPResolver{IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}
+		if _, err := resolver.ResolveZIPDetailed(context.Background(), "US", "00000"); err != nil {
+			return fmt.Errorf("invalid OEDI program refresh files: %w", err)
 		}
 	}
 	if c.MeteredRollupEnabled {

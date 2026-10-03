@@ -166,7 +166,7 @@ func readOwnerCoverage(ctx context.Context, tx pgx.Tx, country, zip, category st
 	var limitations, provenance []byte
 	err := tx.QueryRow(ctx, `SELECT id::text,category,state,started_at,finished_at,limitations,resolution_provenance
 		FROM program_discovery_runs WHERE country_code=$1 AND postal_code=$2
-		AND (category=$3 OR category IS NULL)
+		AND (category=$3 OR category IS NULL) AND finished_at IS NOT NULL
 		ORDER BY started_at DESC,id DESC LIMIT 1`, country, zip, category).
 		Scan(&run.RunID, &run.Category, &run.State, &run.StartedAt, &run.FinishedAt, &limitations, &provenance)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -210,7 +210,11 @@ type OwnerService struct {
 	UserID func(*http.Request) string
 }
 
-func (s OwnerService) Routes(r chi.Router) { r.With(s.Auth).Get("/homes/{home}/programs", s.list) }
+func (s OwnerService) Routes(r chi.Router) {
+	r.With(s.Auth).Get("/homes/{home}/programs", s.list)
+	r.With(s.Auth).Post("/homes/{home}/programs/discovery-refresh", s.refresh)
+	r.With(s.Auth).Get("/homes/{home}/programs/discovery-refresh/{request}", s.refreshStatus)
+}
 func (s OwnerService) list(w http.ResponseWriter, r *http.Request) {
 	home, appliance := chi.URLParam(r, "home"), r.URL.Query().Get("appliance_id")
 	if _, err := uuid.Parse(home); err != nil {

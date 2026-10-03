@@ -56,3 +56,23 @@ Migration 0033 adds a separate immutable import for reviewed per-cycle and per-h
 After migration 0022, authenticated owners can list, create, read and patch appliances under `/v1/homes/{home}/appliances`. Mutations use UUID `Idempotency-Key` headers; PATCH also uses the current strong version `If-Match` ETag. Each version records an immutable appliance snapshot. A catalog product ID is accepted only with a confirmed exact identity whose category, model, variant, region and fuel match that imported product. Archive, sensors, answers and estimates are separate later routes.
 
 Migration 0041 adds a private, home-scoped candidate scan outbox. Saving a confirmed exact make/model with no linked reviewed catalog product queues one scan per normalized model per home; unresolved or edited names do not queue. The worker role polls pending requests every 10 seconds when both `ENERGYLENS_CLOUD_KB_PYTHON` and `ENERGYLENS_CLOUD_KB_SOURCES` point to an installed KB Python and reviewed source directory. `ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX` may point to a recorded public candidate index. Default operation is offline (`scan-energy --skip-epa`); `ENERGYLENS_CLOUD_KB_ALLOW_EPA=true` enables the KB's bounded official EPA lookup only after source terms and network policy review. Each pass claims at most 10 models; at 03:00 UTC only, one pass also retries due missing-source rows after 24 hours, up to five attempts. Scanner/provider failures retry with bounded backoff outside that missing-source schedule. Reports remain private review candidates and never enter the customer catalog automatically. Physical home purge deletes the requests and their reports. The worker is disabled when KB paths are absent.
+
+Program discovery refresh (migration 0051): authenticated clients can POST
+`/v1/homes/{home}/programs/discovery-refresh` with `{"appliance_id":"<uuid>"}`
+and a UUID `Idempotency-Key` header, then GET the returned request ID. The
+private request snapshots owner, home, appliance, category, and location revision;
+status becomes unavailable when that scope changes. Requests for the same ZIP
+and category share one location-only job. The programs page continues to show
+the latest finished coverage while a new request is pending or running. Reviewed
+program terms are still evaluated at read time and are not published by refresh.
+
+The worker is off by default. Set `ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED=true`
+on a `worker` role with `ENERGYLENS_CLOUD_DATABASE_URL`, absolute paths
+`ENERGYLENS_CLOUD_OEDI_IOU_CSV` and `ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV`, their
+full-file `ENERGYLENS_CLOUD_OEDI_IOU_SHA256` and
+`ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256`, and a UTC
+`ENERGYLENS_CLOUD_OEDI_RETRIEVED_AT` RFC3339 timestamp. Startup validates both
+full operator CSVs before accepting work. Each pass claims one job and has a
+bounded runtime; failed or abandoned jobs become terminal. OEDI's likely ZIP
+assignments are candidate leads only. They cannot establish address service,
+source terms, program eligibility, or savings.

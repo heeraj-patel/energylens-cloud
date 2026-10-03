@@ -88,7 +88,7 @@ func validScope(s Scope) bool {
 
 // Run records every identified scope, including unresolved and failed checks.
 // Resolver failure is persisted as a failed run so absence of coverage is visible.
-func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (DiscoveryOutcome, error) {
+func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (out DiscoveryOutcome, err error) {
 	if r.DB == nil || r.Resolver == nil || !countryCodePattern.MatchString(req.CountryCode) || req.PostalCode == "" || strings.TrimSpace(req.PostalCode) != req.PostalCode {
 		return DiscoveryOutcome{}, errors.New("invalid discovery request or runner")
 	}
@@ -162,6 +162,14 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (Discove
 	if err != nil {
 		return DiscoveryOutcome{}, err
 	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		finishCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = r.DB.Exec(finishCtx, `UPDATE program_discovery_runs SET state='failed',finished_at=now(),limitations=limitations || '["runner_failed"]'::jsonb WHERE id=$1 AND finished_at IS NULL`, runID)
+	}()
 	// A source is probed once even when several scopes refer to it. This also
 	// prevents a single ZIP from multiplying the registered per-run budget.
 	type probeResult struct {

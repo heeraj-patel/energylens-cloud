@@ -164,6 +164,7 @@ func purgeHomeTx(ctx context.Context, tx pgx.Tx, home string) error {
 	// Delete leaf references before their parents. Keep shared/public reviewed
 	// catalog, utility programs, and coarse weather caches untouched.
 	for _, sql := range []string{
+		`DELETE FROM program_discovery_refresh_requests WHERE home_id=$1`,
 		`DELETE FROM report_delivery_requests WHERE home_id=$1`,
 		`DELETE FROM report_preview_items WHERE preview_id IN (SELECT id FROM report_previews WHERE home_id=$1)`,
 		`DELETE FROM report_previews WHERE home_id=$1`,

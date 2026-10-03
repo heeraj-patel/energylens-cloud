@@ -305,7 +305,7 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
-	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.KBScanPython != "" {
+	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.KBScanPython != "" {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -343,6 +343,14 @@ func Serve(ctx context.Context, c Config) error {
 				go func() {
 					defer close(finished)
 					runReportDeliveries(workerCtx, reports.DeliveryWorker{DB: rt.Pool, Provider: reportProvider, Enabled: true}, reportDeliveryInterval)
+				}()
+			}
+			if c.ProgramRefreshEnabled {
+				finished := make(chan struct{})
+				jobs = append(jobs, finished)
+				go func() {
+					defer close(finished)
+					runProgramRefreshes(workerCtx, programs.RefreshWorker{DB: rt.Pool, Resolver: programs.OEDIZIPResolver{IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}}, 5*time.Second)
 				}()
 			}
 			if c.KBScanPython != "" {
