@@ -25,43 +25,44 @@ const (
 )
 
 type Config struct {
-	Role                   Role
-	Environment            string
-	APIListen              string
-	HubListen              string
-	HubCertFile            string
-	HubKeyFile             string
-	HubCAFile              string
-	HubSignCertFile        string
-	HubSignKeyFile         string
-	DatabaseURL            string
-	EIAAPIKey              string
-	OIDCIssuer             string
-	OIDCAudience           string
-	OIDCJWKSURL            string
-	MeteredRollupEnabled   bool
-	ReportRetentionEnabled bool
-	ReportDeliveryEnabled  bool
-	ResendAPIKey           string
-	ResendFrom             string
-	LocalAuthMailEnabled   bool
-	LocalAuthResendAPIKey  string
-	LocalAuthResendFrom    string
-	LocalAuthLinkOrigin    string
-	LocalAuthProxyCIDRs    string
-	LocalAuthEnabled       bool
-	AccountDeletionEnabled bool
-	LocalAuthActiveKeyID   string
-	LocalAuthPrivateKey    string
-	LocalAuthPublicKeys    string
-	LocalAuthAudience      string
-	LocalAuthRegisterKey   string
-	LocalAuthLoginKey      string
-	LocalAuthRecoveryKey   string
-	KBScanPython           string
-	KBScanSources          string
-	KBScanCandidateIndex   string
-	KBScanAllowEPA         bool
+	Role                        Role
+	Environment                 string
+	APIListen                   string
+	HubListen                   string
+	HubCertFile                 string
+	HubKeyFile                  string
+	HubCAFile                   string
+	HubSignCertFile             string
+	HubSignKeyFile              string
+	DatabaseURL                 string
+	EIAAPIKey                   string
+	OIDCIssuer                  string
+	OIDCAudience                string
+	OIDCJWKSURL                 string
+	MeteredRollupEnabled        bool
+	KasaRuntimeRetentionEnabled bool
+	ReportRetentionEnabled      bool
+	ReportDeliveryEnabled       bool
+	ResendAPIKey                string
+	ResendFrom                  string
+	LocalAuthMailEnabled        bool
+	LocalAuthResendAPIKey       string
+	LocalAuthResendFrom         string
+	LocalAuthLinkOrigin         string
+	LocalAuthProxyCIDRs         string
+	LocalAuthEnabled            bool
+	AccountDeletionEnabled      bool
+	LocalAuthActiveKeyID        string
+	LocalAuthPrivateKey         string
+	LocalAuthPublicKeys         string
+	LocalAuthAudience           string
+	LocalAuthRegisterKey        string
+	LocalAuthLoginKey           string
+	LocalAuthRecoveryKey        string
+	KBScanPython                string
+	KBScanSources               string
+	KBScanCandidateIndex        string
+	KBScanAllowEPA              bool
 }
 
 func LoadConfig(role string) (Config, error) {
@@ -97,6 +98,13 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_RETENTION_ENABLED %q: %w", raw, err)
 		}
 		c.ReportRetentionEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_KASA_RUNTIME_RETENTION_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_KASA_RUNTIME_RETENTION_ENABLED %q: %w", raw, err)
+		}
+		c.KasaRuntimeRetentionEnabled = enabled
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -199,6 +207,14 @@ func (c Config) Validate() error {
 		}
 		if c.DatabaseURL == "" {
 			return errors.New("report retention requires ENERGYLENS_CLOUD_DATABASE_URL")
+		}
+	}
+	if c.KasaRuntimeRetentionEnabled {
+		if c.Role != RoleWorker && c.Role != RoleAll {
+			return errors.New("Kasa runtime retention requires worker or all role")
+		}
+		if c.DatabaseURL == "" {
+			return errors.New("Kasa runtime retention requires ENERGYLENS_CLOUD_DATABASE_URL")
 		}
 	}
 	if c.ResendAPIKey != "" || c.ResendFrom != "" {

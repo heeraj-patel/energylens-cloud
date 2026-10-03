@@ -219,6 +219,65 @@ func TestReportRetentionEnvironmentFlag(t *testing.T) {
 	}
 }
 
+type waitingKasaRuntimeRetention struct {
+	started chan struct{}
+	t       *testing.T
+}
+
+func (j waitingKasaRuntimeRetention) RunOnce(ctx context.Context, now time.Time, limit int) (int64, error) {
+	if limit != kasaRuntimeRetentionLimit || now.Location() != time.UTC {
+		j.t.Errorf("unexpected Kasa retention pass arguments: limit=%d now=%v", limit, now)
+	}
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > kasaRuntimeRetentionDeadline {
+		j.t.Error("Kasa retention pass missing bounded deadline")
+	}
+	close(j.started)
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+func TestKasaRuntimeRetentionWorkerConfigurationAndShutdown(t *testing.T) {
+	base := Config{Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", KasaRuntimeRetentionEnabled: true}
+	if err := base.Validate(); err == nil {
+		t.Fatal("API role accepted Kasa runtime retention")
+	}
+	base.Role = RoleWorker
+	if err := base.Validate(); err == nil {
+		t.Fatal("Kasa runtime retention accepted missing database")
+	}
+	base.DatabaseURL = "postgres://user:pass@localhost:5432/db?sslmode=disable"
+	if err := base.Validate(); err != nil {
+		t.Fatalf("worker rejected Kasa runtime retention: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	job := waitingKasaRuntimeRetention{started: make(chan struct{}), t: t}
+	done := make(chan struct{})
+	go func() { runKasaRuntimeRetention(ctx, job, time.Minute); close(done) }()
+	select {
+	case <-job.started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("Kasa runtime retention did not run at startup")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Kasa runtime retention did not stop on cancellation")
+	}
+}
+
+func TestKasaRuntimeRetentionEnvironmentFlag(t *testing.T) {
+	t.Setenv("ENERGYLENS_CLOUD_KASA_RUNTIME_RETENTION_ENABLED", "maybe")
+	if _, err := LoadConfig("worker"); err == nil {
+		t.Fatal("invalid Kasa runtime retention flag accepted")
+	}
+	t.Setenv("ENERGYLENS_CLOUD_KASA_RUNTIME_RETENTION_ENABLED", "")
+	if c, err := LoadConfig("worker"); err != nil || c.KasaRuntimeRetentionEnabled {
+		t.Fatalf("default Kasa runtime retention should be disabled: enabled=%v err=%v", c.KasaRuntimeRetentionEnabled, err)
+	}
+}
+
 func TestResendConfigurationIsWorkerOnlyAndDoesNotEnableDelivery(t *testing.T) {
 	base := Config{Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=disable", ResendAPIKey: "test-key", ResendFrom: "reports@example.test"}
 	if err := base.Validate(); err == nil {

@@ -305,7 +305,7 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
-	if c.MeteredRollupEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.KBScanPython != "" {
+	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.KBScanPython != "" {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -327,6 +327,14 @@ func Serve(ctx context.Context, c Config) error {
 				go func() {
 					defer close(finished)
 					runReportRetention(workerCtx, reports.RetentionJob{DB: rt.Pool}, reportRetentionInterval)
+				}()
+			}
+			if c.KasaRuntimeRetentionEnabled {
+				finished := make(chan struct{})
+				jobs = append(jobs, finished)
+				go func() {
+					defer close(finished)
+					runKasaRuntimeRetention(workerCtx, kasaruntime.RetentionJob{DB: rt.Pool}, kasaRuntimeRetentionInterval)
 				}()
 			}
 			if c.ReportDeliveryEnabled {

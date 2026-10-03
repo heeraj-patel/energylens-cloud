@@ -10,16 +10,19 @@ import (
 )
 
 const (
-	rollupInterval          = time.Minute
-	rollupDeadline          = 30 * time.Second
-	rollupBatchLimit        = 10
-	rollupBucketLimit       = 100
-	rollupPurgeLimit        = 100
-	reportRetentionInterval = time.Hour
-	reportRetentionDeadline = 30 * time.Second
-	reportRetentionLimit    = 100
-	reportDeliveryInterval  = 10 * time.Second
-	reportDeliveryDeadline  = 20 * time.Second
+	rollupInterval               = time.Minute
+	rollupDeadline               = 30 * time.Second
+	rollupBatchLimit             = 10
+	rollupBucketLimit            = 100
+	rollupPurgeLimit             = 100
+	reportRetentionInterval      = time.Hour
+	reportRetentionDeadline      = 30 * time.Second
+	reportRetentionLimit         = 100
+	kasaRuntimeRetentionInterval = time.Minute
+	kasaRuntimeRetentionDeadline = 30 * time.Second
+	kasaRuntimeRetentionLimit    = 500
+	reportDeliveryInterval       = 10 * time.Second
+	reportDeliveryDeadline       = 20 * time.Second
 )
 
 type rollupJob interface {
@@ -32,6 +35,33 @@ type identityScanJob interface {
 
 type reportRetentionJob interface {
 	RunOnce(context.Context, time.Time, int) (int64, error)
+}
+
+type kasaRuntimeRetentionJob interface {
+	RunOnce(context.Context, time.Time, int) (int64, error)
+}
+
+func runKasaRuntimeRetention(ctx context.Context, job kasaRuntimeRetentionJob, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, kasaRuntimeRetentionDeadline)
+		deleted, err := job.RunOnce(runCtx, time.Now().UTC(), kasaRuntimeRetentionLimit)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			slog.Error("Kasa runtime retention pass failed", "error", err)
+		} else if deleted > 0 {
+			slog.Info("Kasa runtime retention pass complete", "snapshots_deleted", deleted)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 type reportDeliveryJob interface {
