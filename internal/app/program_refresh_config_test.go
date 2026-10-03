@@ -29,3 +29,10 @@ func TestProgramRefreshWorkerRequiresCompleteOEDIFiles(t *testing.T) {
 		t.Fatalf("API role accepted refresh worker: %v", err)
 	}
 }
+
+func TestProgramSourceProbeRequiresRefreshWorker(t *testing.T) {
+	c := Config{Role: RoleWorker, Environment: "dev", APIListen: "127.0.0.1:0", ProgramSourceProbeEnabled: true}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "program source probe requires program refresh") {
+		t.Fatalf("source probe without refresh: %v", err)
+	}
+}

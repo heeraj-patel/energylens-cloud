@@ -13,6 +13,7 @@ import (
 type RefreshWorker struct {
 	DB       *pgxpool.Pool
 	Resolver ZIPResolver
+	Probe    SourceProbe
 }
 
 // RunOnce claims at most one coalesced job. A timed-out worker is recovered
@@ -53,7 +54,7 @@ func (w RefreshWorker) RunOnce(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 70*time.Second)
-	outcome, runErr := (DiscoveryRunner{DB: w.DB, Resolver: w.Resolver}).Run(runCtx, DiscoveryRequest{CountryCode: country, PostalCode: zip, Category: category})
+	outcome, runErr := (DiscoveryRunner{DB: w.DB, Resolver: w.Resolver, Probe: w.Probe}).Run(runCtx, DiscoveryRequest{CountryCode: country, PostalCode: zip, Category: category})
 	cancel()
 	// Use a fresh context so cancellation and deadline errors are terminalized.
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 10*time.Second)

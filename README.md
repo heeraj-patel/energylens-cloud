@@ -76,3 +76,12 @@ full operator CSVs before accepting work. Each pass claims one job and has a
 bounded runtime; failed or abandoned jobs become terminal. OEDI's likely ZIP
 assignments are candidate leads only. They cannot establish address service,
 source terms, program eligibility, or savings.
+
+`ENERGYLENS_CLOUD_PROGRAM_SOURCE_PROBE_ENABLED=true` additionally permits the
+refresh worker to check a registered, enabled, terms-approved HTTPS HTML/feed/API
+page when a ZIP scope names its source key. The probe uses one public DNS answer
+and a pinned connection, blocks redirects/private addresses, and caps the
+response at the registered byte budget. It records source-check coverage only;
+it does not retain source bytes, extract terms, or publish offers. OEDI utility
+leads currently have no registered source keys, so this flag alone does not
+expand ZIP provider or incentive coverage.

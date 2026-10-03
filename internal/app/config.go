@@ -67,6 +67,7 @@ type Config struct {
 	KBScanCandidateIndex        string
 	KBScanAllowEPA              bool
 	ProgramRefreshEnabled       bool
+	ProgramSourceProbeEnabled   bool
 	OEDIIOUPath                 string
 	OEDINonIOUPath              string
 	OEDIIOUSHA256               string
@@ -94,6 +95,13 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED: %w", err)
 		}
 		c.ProgramRefreshEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_SOURCE_PROBE_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_PROGRAM_SOURCE_PROBE_ENABLED: %w", err)
+		}
+		c.ProgramSourceProbeEnabled = enabled
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_OEDI_RETRIEVED_AT"); raw != "" {
 		parsed, err := time.Parse(time.RFC3339, raw)
@@ -216,6 +224,9 @@ func (c Config) Validate() error {
 		if c.LocalAuthRegisterKey == c.LocalAuthLoginKey || c.LocalAuthRegisterKey == c.LocalAuthRecoveryKey || c.LocalAuthLoginKey == c.LocalAuthRecoveryKey {
 			return errors.New("local auth rate keys must use separate files")
 		}
+	}
+	if c.ProgramSourceProbeEnabled && !c.ProgramRefreshEnabled {
+		return errors.New("program source probe requires program refresh")
 	}
 	if c.ProgramRefreshEnabled {
 		if c.Role != RoleWorker && c.Role != RoleAll {

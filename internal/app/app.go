@@ -353,7 +353,11 @@ func Serve(ctx context.Context, c Config) error {
 				jobs = append(jobs, finished)
 				go func() {
 					defer close(finished)
-					runProgramRefreshes(workerCtx, programs.RefreshWorker{DB: rt.Pool, Resolver: programs.OEDIZIPResolver{IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}}, 5*time.Second)
+					worker := programs.RefreshWorker{DB: rt.Pool, Resolver: programs.OEDIZIPResolver{IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}}
+					if c.ProgramSourceProbeEnabled {
+						worker.Probe = programs.HTTPSPageProbe{}
+					}
+					runProgramRefreshes(workerCtx, worker, 5*time.Second)
 				}()
 			}
 			if c.KBScanPython != "" {
