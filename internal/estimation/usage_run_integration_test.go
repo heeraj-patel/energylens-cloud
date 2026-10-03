@@ -50,14 +50,14 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner, home, appliance, fact := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
-	identity := `{"brand":"Acme","full_model":"W123","variant":"US-120V","fuel":"electricity","match_quality":"confirmed_exact"}`
+	identity := `{"brand":"Acme","full_model":"C123","variant":"US-120V","fuel":"electricity","match_quality":"confirmed_exact"}`
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, owner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'House','America/Chicago')`, home, owner); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Washer','washer',$3)`, appliance, home, identity); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Computer','computer',$3)`, appliance, home, identity); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -79,8 +79,8 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_facts
-		(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
-		VALUES($1,$2,'washer','Acme','W123','electricity','US-120V','confirmed_exact','W123','W123','cycle_energy',0.5,'kWh/cycle','normal cycle','normal cycle','{"status":"documented","components":["appliance_electricity"]}','oem_pdf','https://example.org/manual.pdf',$2,0,$2,'reviewer',now(),'washer.json','{}')`, fact, hash)
+		(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,operation_mode,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
+		VALUES($1,$2,'computer','Acme','C123','electricity','US-120V','confirmed_exact','C123','C123','hourly_energy',0.5,'kWh/hour','active use','active use','{"status":"documented","components":["appliance_electricity"]}','oem_pdf','https://example.org/manual.pdf',$2,0,$2,'reviewer',now(),'computer.json','{}')`, fact, hash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,14 +99,14 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 	if withoutAnswer.Kind != "unavailable" || withoutAnswer.UnavailableReason != "usage_unknown" {
 		t.Fatalf("unknown usage: %+v", withoutAnswer)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'washer.cycles_per_week',1,1,'confirmed','0',now())`, home, appliance); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'computer.hours_per_week',1,1,'confirmed','0',now())`, home, appliance); err != nil {
 		t.Fatal(err)
 	}
 	zero := read()
 	if zero.Kind != "estimated_useful_cost" || zero.Cost == nil || zero.Cost.Value != "0.000000" || zero.ID == withoutAnswer.ID {
 		t.Fatalf("confirmed zero: %+v", zero)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'washer.cycles_per_week',1,2,'confirmed','7',now())`, home, appliance); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'computer.hours_per_week',1,2,'confirmed','7',now())`, home, appliance); err != nil {
 		t.Fatal(err)
 	}
 	used := read()
@@ -138,13 +138,13 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_run_invalidations WHERE run_id=$1`, used.ID).Scan(&invalidations); err != nil || invalidations != 1 {
 		t.Fatalf("missing invalidation: %d %v", invalidations, err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status) VALUES($1,$2,2,'washer.cycles_per_week',1,3,'unknown')`, home, appliance); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status) VALUES($1,$2,2,'computer.hours_per_week',1,3,'unknown')`, home, appliance); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(); got.Kind != "unavailable" || got.UnavailableReason != "usage_unknown" {
 		t.Fatalf("unknown became zero: %+v", got)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,2,'washer.cycles_per_week',1,4,'confirmed','"14"',now())`, home, appliance); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,2,'computer.hours_per_week',1,4,'confirmed','"14"',now())`, home, appliance); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(); got.Kind != "unavailable" || got.UnavailableReason != "usage_unknown" {
@@ -257,20 +257,79 @@ func TestReviewedUsageSavedAnswerEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "rate_unavailable" {
-		t.Fatalf("gas without therm rate: %+v", got)
+	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "basis_incomparable" {
+		t.Fatalf("gas normal cycle cannot bind generic cycle count: %+v", got)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'natural_gas',1.20,'therm','USD','user_tariff','gas bill',$2,false,$3)`, home, now, now.Add(-35*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if got := gasRead(); got.Kind != "unavailable" || got.UnavailableReason != "usage_unknown" {
-		t.Fatalf("gas without confirmed cycles: %+v", got)
+	gasBeforeAnswer := gasRead()
+	if gasBeforeAnswer.Kind != "unavailable" || gasBeforeAnswer.UnavailableReason != "basis_incomparable" {
+		t.Fatalf("gas normal cycle became comparable with a tariff: %+v", gasBeforeAnswer)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'dryer.cycles_per_week',1,1,'confirmed','7',now())`, home, gasDryer); err != nil {
 		t.Fatal(err)
 	}
 	gasEstimate := gasRead()
-	if gasEstimate.Kind != "estimated_useful_cost" || gasEstimate.Energy == nil || gasEstimate.Energy.Unit != "therm" || gasEstimate.Energy.Fuel != "natural_gas" || gasEstimate.Cost == nil || gasEstimate.Cost.Value == "0.000000" || gasEstimate.Waste != "not_yet_assessed" {
-		t.Fatalf("reviewed gas estimate: %+v", gasEstimate)
+	if gasEstimate.Kind != "unavailable" || gasEstimate.UnavailableReason != "basis_incomparable" || gasEstimate.Energy != nil || gasEstimate.Cost != nil || gasEstimate.ID == gasBeforeAnswer.ID {
+		t.Fatalf("generic gas dryer cycles selected a normal-cycle fact: %+v", gasEstimate)
+	}
+
+	// An exact per-use fact with a different mode or energy scope must not
+	// become useful cost, or fall through to an unrelated annual rating.
+	for _, tc := range []struct {
+		name, category, model, kind, unit, basis, included, question, expected string
+		cycle, mode                                                            *string
+	}{
+		{"standby hourly", "computer", "C-STANDBY", "hourly_energy", "kWh/hour", "standby", `{"status":"documented","components":["appliance_electricity"]}`, "computer.hours_per_week", "basis_incomparable", nil, ptr("standby")},
+		{"mixed hourly energy", "computer", "C-MIXED", "hourly_energy", "kWh/hour", "active use", `{"status":"documented","components":["appliance_electricity","standby_electricity"]}`, "computer.hours_per_week", "basis_incomparable", nil, ptr("active use")},
+		{"generic count with normal cycle", "washer", "W-NORMAL", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity"]}`, "washer.cycles_per_week", "basis_incomparable", ptr("normal cycle"), nil},
+		{"mixed water heating", "washer", "W-MIXED", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity","water_heating_electricity"]}`, "washer.cycles_per_week", "basis_incomparable", ptr("normal cycle"), nil},
+		{"different cycle", "dishwasher", "D-ECO", "cycle_energy", "kWh/cycle", "eco cycle", `{"status":"documented","components":["appliance_electricity"]}`, "dishwasher.cycles_per_week", "basis_incomparable", ptr("eco cycle"), nil},
+		{"mismatched cycle labels", "washer", "W-STANDARD", "cycle_energy", "kWh/cycle", "normal cycle", `{"status":"documented","components":["appliance_electricity"]}`, "washer.cycles_per_week", "basis_incomparable", ptr("standard cycle"), nil},
+		{"unknown test basis", "computer", "C-UNKNOWN", "hourly_energy", "kWh/hour", "manufacturer average", `{"status":"documented","components":["appliance_electricity"]}`, "computer.hours_per_week", "basis_incomparable", nil, ptr("active use")},
+		{"compatible active use", "computer", "C-ACTIVE", "hourly_energy", "kWh/hour", "active use", `{"status":"documented","components":["appliance_electricity"]}`, "computer.hours_per_week", "", nil, ptr("active use")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item, reviewedFact, product := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			identity, err := json.Marshal(map[string]string{"brand": "Acme", "full_model": tc.model, "variant": "US-120V", "fuel": "electricity", "match_quality": "confirmed_exact"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,$3,$4,$5)`, item, home, tc.name, tc.category, identity); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO catalog_products(id,category,brand,full_model,variant,fuel,match_quality,product_json) VALUES($1,$2,'Acme',$3,'US-120V','electricity','confirmed_exact','{}')`, product, tc.category, tc.model); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',365,'kWh','{}','{}','epa_exact','https://example.org/annual',$3,'reviewed_row_manifest','annual.json',now(),1,'{}')`, uuid.NewString(), product, annualPublication); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `UPDATE appliances SET catalog_product_id=$2 WHERE id=$1`, item, product); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO reviewed_usage_facts
+				(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,operation_mode,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
+				VALUES($1,$2,$3,'Acme',$4,'electricity','US-120V','confirmed_exact',$4,$4,$5,0.5,$6,$7,$8,$9,$10,'oem_pdf','https://example.org/usage.pdf',$2,0,$2,'reviewer',now(),'usage.json','{}')`, reviewedFact, hash, tc.category, tc.model, tc.kind, tc.unit, tc.basis, tc.cycle, tc.mode, tc.included); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,$3,1,1,'confirmed','7',now())`, home, item, tc.question); err != nil {
+				t.Fatal(err)
+			}
+			runs, readErr := store.ListRuns(ctx, owner, home, &item, now)
+			if readErr != nil || len(runs) != 1 {
+				t.Fatalf("estimate: %d %v", len(runs), readErr)
+			}
+			got := decodeEstimate(t, runs[0])
+			if tc.expected == "" {
+				if got.Kind != "estimated_useful_cost" || got.Cost == nil {
+					t.Fatalf("compatible fact unavailable: %+v", got)
+				}
+			} else if got.Kind != "unavailable" || got.UnavailableReason != tc.expected || got.Cost != nil || got.Energy != nil {
+				t.Fatalf("incompatible fact produced estimate: %+v", got)
+			}
+		})
 	}
 }
+
+func ptr(s string) *string { return &s }

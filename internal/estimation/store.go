@@ -151,7 +151,7 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 	if usage.Selected {
 		unavailable = ""
 	}
-	if usage.FactCount > 0 && !usage.Selected && f.Count == 0 {
+	if usage.FactCount > 0 && !usage.Selected && (f.Count == 0 || usage.ExactScope) {
 		unavailable = "basis_incomparable"
 	}
 	if unavailable == "" && a.Fuel != "electricity" && a.Fuel != "natural_gas" {

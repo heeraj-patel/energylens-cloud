@@ -19,11 +19,46 @@ type usageEvidence struct {
 	Value           string
 	Unit            string
 	Selected        bool
+	ExactScope      bool
 	AnswerRevision  int64
 	Status          string
 	Confirmed       bool
 	Projected       string
 	Weekly          string
+}
+
+// Hourly answers describe hours in use. Generic cycles_per_week answers count
+// every cycle, so they cannot establish how often a particular reviewed cycle
+// was run. Keep cycle facts unavailable until a cycle-specific answer exists.
+func compatibleUsageBasis(kind, category, basis string, cycle, mode *string) bool {
+	normalize := func(s string) string { return strings.Join(strings.Fields(strings.ToLower(s)), " ") }
+	basis = normalize(basis)
+	if kind != "hourly_energy" || mode == nil || cycle != nil {
+		return false
+	}
+	valid := map[string]bool{"active use": true, "active mode": true, "in use": true}
+	if category == "television" {
+		valid["watching"] = true
+	} else if category == "space_heater" {
+		valid["heating mode"] = true
+	} else if category == "air_conditioner" {
+		valid["cooling mode"] = true
+	}
+	return valid[basis] && valid[normalize(*mode)]
+}
+
+func applianceOnlyEnergy(fuel string, raw []byte) bool {
+	var included struct {
+		Status     string   `json:"status"`
+		Components []string `json:"components"`
+	}
+	if json.Unmarshal(raw, &included) != nil || included.Status != "documented" || len(included.Components) != 1 {
+		return false
+	}
+	if fuel == "natural_gas" {
+		return included.Components[0] == "appliance_gas"
+	}
+	return fuel == "electricity" && included.Components[0] == "appliance_electricity"
 }
 
 func usageQuestion(category string) (kind, question string) {
@@ -46,6 +81,17 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	if kind == "" || a.Quality != "confirmed_exact" || (a.Fuel != "electricity" && !(a.Fuel == "natural_gas" && a.Category == "dryer")) || a.Brand == "" || a.Model == "" || a.Variant == nil || strings.TrimSpace(*a.Variant) == "" {
 		return out, nil
 	}
+	// Answer changes invalidate stored runs even when the reviewed fact is
+	// incompatible. Keep the revision in the dependency snapshot in that case.
+	var answerValue []byte
+	var answerVersion int64
+	var questionVersion int
+	answerErr := tx.QueryRow(ctx, `SELECT revision,appliance_version,question_version,status,answer_value FROM question_answers
+		WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3
+		ORDER BY revision DESC LIMIT 1`, home, a.ID, question).Scan(&out.AnswerRevision, &answerVersion, &questionVersion, &out.Status, &answerValue)
+	if answerErr != nil && !errors.Is(answerErr, pgx.ErrNoRows) {
+		return out, answerErr
+	}
 	// Count all facts at this exact appliance identity, including rows whose
 	// scope is not eligible. This keeps changed or ambiguous source evidence
 	// from falling through to an unrelated annual calculation.
@@ -58,14 +104,20 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 	if out.FactCount != 1 {
 		return out, nil
 	}
-	var quality, scope, matched, sourceKind string
-	err = tx.QueryRow(ctx, `SELECT id,publication_sha256,measurement_kind,value::text,unit,match_quality,documented_scope,matched_model,source_kind
+	var quality, scope, matched, sourceKind, testBasis string
+	var cycle, mode *string
+	var included []byte
+	err = tx.QueryRow(ctx, `SELECT id,publication_sha256,measurement_kind,value::text,unit,match_quality,documented_scope,matched_model,source_kind,test_basis,cycle_definition,operation_mode,included_energy
 		FROM reviewed_usage_facts WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel=$4 AND variant=$5 AND measurement_kind=$6`,
-		a.Category, a.Brand, a.Model, a.Fuel, *a.Variant, kind).Scan(&out.FactID, &out.PublicationHash, &out.Kind, &out.Value, &out.Unit, &quality, &scope, &matched, &sourceKind)
+		a.Category, a.Brand, a.Model, a.Fuel, *a.Variant, kind).Scan(&out.FactID, &out.PublicationHash, &out.Kind, &out.Value, &out.Unit, &quality, &scope, &matched, &sourceKind, &testBasis, &cycle, &mode, &included)
 	if err != nil {
 		return out, err
 	}
-	if quality != "confirmed_exact" || scope != a.Model || matched != a.Model || (sourceKind != "oem_pdf" && sourceKind != "epa_row") {
+	out.ExactScope = quality == "confirmed_exact" && scope == a.Model && matched == a.Model
+	if !out.ExactScope || (sourceKind != "oem_pdf" && sourceKind != "epa_row") {
+		return out, nil
+	}
+	if !compatibleUsageBasis(kind, a.Category, testBasis, cycle, mode) || !applianceOnlyEnergy(a.Fuel, included) {
 		return out, nil
 	}
 	if a.Fuel == "electricity" && (out.Kind == "cycle_energy" && out.Unit != "kWh/cycle" || out.Kind == "hourly_energy" && out.Unit != "kWh/hour") ||
@@ -76,17 +128,8 @@ func loadReviewedUsage(ctx context.Context, tx pgx.Tx, home string, a applianceE
 		out.Kind = "hour_energy"
 	}
 	out.Selected = true
-	var answerValue []byte
-	var answerVersion int64
-	var questionVersion int
-	err = tx.QueryRow(ctx, `SELECT revision,appliance_version,question_version,status,answer_value FROM question_answers
-		WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3
-		ORDER BY revision DESC LIMIT 1`, home, a.ID, question).Scan(&out.AnswerRevision, &answerVersion, &questionVersion, &out.Status, &answerValue)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(answerErr, pgx.ErrNoRows) {
 		return out, nil
-	}
-	if err != nil {
-		return out, err
 	}
 	if answerVersion != a.Version || questionVersion != 1 || out.Status != "confirmed" {
 		return out, nil
