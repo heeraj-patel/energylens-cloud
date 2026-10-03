@@ -120,14 +120,49 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].RevisionID != rev.String() || got[0].Status != "unknown" || !slices.Contains(got[0].Reasons, "provider_unknown") {
+	if len(got.Programs) != 1 || got.Programs[0].RevisionID != rev.String() || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "provider_unknown") {
 		t.Fatalf("provider candidate asserted: %+v", got)
+	}
+	if got.Coverage != nil {
+		t.Fatalf("invented discovery coverage: %+v", got.Coverage)
+	}
+	var oldRun, latestRun, otherCategoryRun uuid.UUID
+	for _, run := range []struct {
+		zip, category, state string
+		id                   *uuid.UUID
+	}{
+		{"78732", "", "complete", &oldRun},
+		{"78732", "washer", "partial", &latestRun},
+		{"78732", "dryer", "complete", &otherCategoryRun},
+	} {
+		if err = pool.QueryRow(ctx, `INSERT INTO program_discovery_runs(country_code,postal_code,category,state,limitations,finished_at)
+			VALUES('US',$1,$2,$3,'["zip_provider_discovery_incomplete"]',now()) RETURNING id`, run.zip, nullableText(run.category), run.state).Scan(run.id); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO program_discovery_coverage(run_id,scope_kind,scope_key,scope_name,provider_role,status,checked_at)
+		VALUES($1,'utility','utility-a','Utility A','electric_distributor','checked',now()),
+		($1,'county','travis','Travis County',NULL,'pending',NULL)`, latestRun); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
+	if err != nil || got.Coverage == nil || got.Coverage.RunID != latestRun.String() || got.Coverage.State != "partial" || len(got.Coverage.Scopes) != 2 || got.Coverage.Scopes[1].Status != "checked" {
+		t.Fatalf("latest matching discovery run: %+v %v", got.Coverage, err)
+	}
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/homes/"+home.String()+"/programs?appliance_id="+appliance.String(), nil))
+	var page struct {
+		Coverage *OwnerCoverage `json:"coverage"`
+	}
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &page) != nil || page.Coverage == nil || page.Coverage.RunID != latestRun.String() {
+		t.Fatalf("owner coverage response: %d %s", w.Code, w.Body.String())
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,2,'US','78733','postal_code','user_entered')`, home); err != nil {
 		t.Fatal(err)
 	}
 	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
-	if err != nil || len(got) != 0 {
+	if err != nil || len(got.Programs) != 0 || got.Coverage != nil {
 		t.Fatalf("ZIP boundary: %+v %v", got, err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,3,'US','78732','postal_code','user_entered')`, home); err != nil {
@@ -137,7 +172,7 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
-	if err != nil || len(got) != 0 {
+	if err != nil || len(got.Programs) != 0 {
 		t.Fatalf("expired review: %+v %v", got, err)
 	}
 }
