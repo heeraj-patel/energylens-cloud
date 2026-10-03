@@ -54,8 +54,9 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 	rows, err = s.Pool.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model'
 	    FROM catalog_products p JOIN catalog_fact_revisions f ON f.product_id=p.id
 	    WHERE lower(p.brand)=lower($1) AND p.fuel=$2
-	      AND p.match_quality='documented_variant_family' AND f.source_kind='oem_family'
-	      AND p.variant IS NOT NULL AND ($3::text IS NULL OR lower(p.variant)=lower($3))
+	      AND p.match_quality='documented_variant_family'
+	      AND f.source_kind IN ('oem_family', 'other_official')
+	      AND (p.variant IS NULL OR $3::text IS NULL OR lower(p.variant)=lower($3))
 	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
 	      AND length(regexp_replace(upper(p.full_model), '[^A-Z0-9]', '', 'g'))=$5
 	    ORDER BY CASE WHEN $4::text IS NOT NULL AND lower(p.region)=lower($4) THEN 0 ELSE 1 END,
@@ -100,6 +101,8 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 		candidate["facts"] = json.RawMessage(`[]`)
 		candidate["query_match"] = json.RawMessage(`"documented_family"`)
 		if q.Variant == nil {
+			candidate["variant_match"] = json.RawMessage(`"unresolved"`)
+		} else if candidate["variant"] == nil || string(candidate["variant"]) == "null" {
 			candidate["variant_match"] = json.RawMessage(`"unresolved"`)
 		} else {
 			candidate["variant_match"] = json.RawMessage(`"confirmed"`)

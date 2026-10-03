@@ -165,4 +165,43 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 	if err != nil || len(results) != 2 || !strings.Contains(string(results[0]), exactID) || !strings.Contains(string(results[1]), familyID) {
 		t.Fatalf("exact priority: %d %v %s", len(results), err, results)
 	}
+	// The reviewed EnerGuide row has no documented variant. Its representative
+	// model is searchable, while another model in the printed pattern is only a
+	// fact-free family lead, even if the customer supplied a variant.
+	energuideID := uuid.NewString()
+	energuideProduct, _ := json.Marshal(map[string]any{"id": energuideID, "category": "refrigerator", "brand": "KitchenAid", "full_model": "KSSC48QTS00", "variant": nil, "region": nil, "fuel": "electricity", "match_quality": "documented_variant_family"})
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'refrigerator','KitchenAid','KSSC48QTS00','electricity','documented_variant_family',$2)`, energuideID, energuideProduct); err != nil {
+		t.Fatal(err)
+	}
+	energuideFactID := uuid.NewString()
+	energuideFact := map[string]any{"id": energuideFactID, "kind": "annual_energy", "value": "659", "unit": "kWh", "test_basis": map[string]any{"matched_model": "KSSC48QT*0*"}, "included_energy": map[string]any{"status": "not_specified_by_source"}, "source_kind": "other_official", "source_url": "https://example.org/energuide.pdf", "source_hash": hash, "source_hash_basis": "verified_source_document", "source_manifest": "sources/kitchenaid.json", "reviewed_at": "2026-09-30T00:00:00Z", "revision": 1}
+	energuideFactJSON, _ := json.Marshal(energuideFact)
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',659,'kWh',$4,'{}','other_official','https://example.org/energuide.pdf',$3,'verified_source_document','sources/kitchenaid.json','2026-09-30T00:00:00Z',1,$5)`, energuideFactID, energuideID, hash, `{"matched_model":"KSSC48QT*0*"}`, energuideFactJSON); err != nil {
+		t.Fatal(err)
+	}
+	results, err = store.Search(ctx, Search{Brand: "KitchenAid", Model: "KSSC48QTS00", Fuel: "electricity"})
+	if err != nil || len(results) != 1 {
+		t.Fatalf("representative EnerGuide search: %d %v", len(results), err)
+	}
+	var representative struct {
+		ID           string            `json:"id"`
+		MatchQuality string            `json:"match_quality"`
+		QueryMatch   string            `json:"query_match"`
+		Facts        []json.RawMessage `json:"facts"`
+	}
+	if err = json.Unmarshal(results[0], &representative); err != nil || representative.ID != energuideID || representative.MatchQuality != "documented_variant_family" || len(representative.Facts) != 1 || representative.QueryMatch != "" {
+		t.Fatalf("representative EnerGuide family rating: %+v %v", representative, err)
+	}
+	variant = "unknown-finish"
+	results, err = store.Search(ctx, Search{Brand: "KitchenAid", Model: "KSSC48QT500", Fuel: "electricity", Variant: &variant})
+	if err != nil || len(results) != 1 {
+		t.Fatalf("EnerGuide family lead search: %d %v", len(results), err)
+	}
+	candidate.QueryMatch = ""
+	candidate.MatchedModel = ""
+	candidate.VariantMatch = ""
+	candidate.Facts = nil
+	if err = json.Unmarshal(results[0], &candidate); err != nil || candidate.ID != energuideID || candidate.QueryMatch != "documented_family" || candidate.MatchedModel != "KSSC48QT500" || candidate.VariantMatch != "unresolved" || len(candidate.Facts) != 0 {
+		t.Fatalf("EnerGuide family lead exposed a rating: %+v %v", candidate, err)
+	}
 }

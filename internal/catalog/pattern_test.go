@@ -13,6 +13,16 @@ func TestDocumentedPatternMatches(t *testing.T) {
 			t.Errorf("unexpected match for %q", model)
 		}
 	}
+	for _, model := range []string{"KSSC48QTS00", "KSSC48QT500"} {
+		if !documentedPatternMatches("KSSC48QT*0*", model) {
+			t.Errorf("reviewed EnerGuide pattern should match %q", model)
+		}
+	}
+	for _, model := range []string{"KSSC48QTS11", "KSSC48QTSS00", "KSSC48FTS00"} {
+		if documentedPatternMatches("KSSC48QT*0*", model) {
+			t.Errorf("reviewed EnerGuide pattern should reject %q", model)
+		}
+	}
 	for _, pattern := range []string{"WM3070H.*A", "WM3070H[WX]A", "WM3070H+A", "W***A", "WM3070H(?=W)A"} {
 		if documentedPatternMatches(pattern, "WM3070HWA") {
 			t.Errorf("unreviewable pattern %q matched", pattern)

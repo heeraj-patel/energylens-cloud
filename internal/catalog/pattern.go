@@ -20,7 +20,7 @@ func normalizedModel(value string) string {
 
 func documentedPatternMatches(pattern, model string) bool {
 	if len(pattern) < 5 || len(pattern) > 80 || strings.Contains(pattern, ".*") || len(model) < 1 || len(model) > 100 ||
-		!asciiAlnum(pattern[0]) || !asciiAlnum(pattern[len(pattern)-1]) ||
+		!asciiAlnum(pattern[0]) || !asciiAlnum(pattern[len(pattern)-1]) && pattern[len(pattern)-1] != '*' ||
 		!asciiAlnum(model[0]) || !modelEnd(model[len(model)-1]) {
 		return false
 	}
