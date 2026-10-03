@@ -157,7 +157,7 @@ func (s Store) QueueDelivery(ctx context.Context, owner, home string, in Deliver
 		return DeliveryRequest{}, ErrSnapshotMismatch
 	}
 	var stale bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS (
+	err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM report_preview_invalidations v WHERE v.preview_id=$1) OR EXISTS (
 		SELECT 1 FROM report_preview_items i LEFT JOIN appliances a ON a.id=i.appliance_id AND a.home_id=$2
 		WHERE i.preview_id=$1 AND (a.id IS NULL OR a.archived_at IS NOT NULL OR a.version<>i.appliance_version OR
 		(i.estimate_run_id IS NOT NULL AND EXISTS(SELECT 1 FROM estimate_run_invalidations v WHERE v.run_id=i.estimate_run_id)))

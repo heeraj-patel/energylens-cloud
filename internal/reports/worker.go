@@ -49,7 +49,7 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 		FROM report_delivery_requests d
 		JOIN report_previews p ON p.id=d.preview_id AND p.owner_user_id=d.owner_user_id AND p.home_id=d.home_id
 		JOIN homes h ON h.id=d.home_id AND h.owner_user_id=d.owner_user_id AND h.deleted_at IS NULL
-		WHERE d.state='pending' ORDER BY d.created_at,d.id LIMIT 1 FOR UPDATE OF d,h SKIP LOCKED`).Scan(&id, &home, &previewID, &recipients, &approved, &raw, &expires, &previewVersion, &homeVersion)
+		WHERE d.state='pending' ORDER BY d.created_at,d.id LIMIT 1 FOR UPDATE OF d,h,p SKIP LOCKED`).Scan(&id, &home, &previewID, &recipients, &approved, &raw, &expires, &previewVersion, &homeVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -88,7 +88,7 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 		return false, err
 	}
 	var stale bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS (
+	err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM report_preview_invalidations v WHERE v.preview_id=$1) OR EXISTS (
 		SELECT 1 FROM report_preview_items i LEFT JOIN appliances a ON a.id=i.appliance_id AND a.home_id=$2
 		WHERE i.preview_id=$1 AND (a.id IS NULL OR a.archived_at IS NOT NULL OR a.version<>i.appliance_version OR
 		(i.estimate_run_id IS NOT NULL AND EXISTS(SELECT 1 FROM estimate_run_invalidations v WHERE v.run_id=i.estimate_run_id)))

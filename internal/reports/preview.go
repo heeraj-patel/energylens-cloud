@@ -14,6 +14,8 @@ import (
 	"sort"
 	"time"
 
+	"energylens.local/cloud/internal/recommendation"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,36 +33,61 @@ type SourceRef struct {
 }
 
 type Estimate struct {
-	Kind        string      `json:"kind"`
-	EnergyKWh   string      `json:"energy_kwh"`
-	CostUSD     string      `json:"cost_usd"`
-	PeriodStart string      `json:"period_start"`
-	PeriodEnd   string      `json:"period_end"`
-	AsOf        time.Time   `json:"as_of"`
-	SourceRefs  []SourceRef `json:"source_refs"`
+	Kind         string      `json:"kind"`
+	EnergyKWh    string      `json:"energy_kwh,omitempty"`
+	CostUSD      string      `json:"cost_usd"`
+	PeriodStart  string      `json:"period_start"`
+	PeriodEnd    string      `json:"period_end"`
+	AsOf         time.Time   `json:"as_of"`
+	SourceRefs   []SourceRef `json:"source_refs"`
+	EnergyTherms string      `json:"energy_therms,omitempty"`
+	Fuel         string      `json:"fuel,omitempty"`
+}
+
+type MeasuredSummary struct {
+	EnergyKWh    string    `json:"energy_kwh"`
+	PeriodStart  string    `json:"period_start"`
+	PeriodEnd    string    `json:"period_end"`
+	BucketCount  int       `json:"bucket_count"`
+	Source       string    `json:"source"`
+	SourceSHA256 string    `json:"source_sha256"`
+	SourceAsOf   time.Time `json:"source_as_of"`
+	Coverage     string    `json:"coverage"`
+}
+
+type ReportRecommendation struct {
+	ApplianceID  string      `json:"appliance_id"`
+	RuleID       string      `json:"rule_id"`
+	RuleVersion  int         `json:"rule_version"`
+	State        string      `json:"state"`
+	Title        string      `json:"title"`
+	Explanation  string      `json:"explanation"`
+	EvidenceRefs []SourceRef `json:"evidence_refs"`
 }
 
 type Item struct {
-	ApplianceID string    `json:"appliance_id"`
-	Category    string    `json:"category"`
-	Estimate    *Estimate `json:"estimate"`
-	Explanation string    `json:"explanation"`
+	ApplianceID string           `json:"appliance_id"`
+	Category    string           `json:"category"`
+	Estimate    *Estimate        `json:"estimate"`
+	Measured    *MeasuredSummary `json:"measured,omitempty"`
+	Explanation string           `json:"explanation"`
 }
 
 type Preview struct {
-	ID                    string    `json:"id"`
-	SnapshotSHA256        string    `json:"snapshot_sha256"`
-	HomeID                string    `json:"home_id"`
-	SchemaVersion         string    `json:"schema_version"`
-	CreatedAt             time.Time `json:"created_at"`
-	ExpiresAt             time.Time `json:"expires_at"`
-	Scope                 string    `json:"scope"`
-	HomeTotalStatus       string    `json:"home_total_status"`
-	MeasuredStatus        string    `json:"measured_status"`
-	RecommendationsStatus string    `json:"recommendations_status"`
-	Assumptions           []string  `json:"assumptions"`
-	Items                 []Item    `json:"items"`
-	Stale                 bool      `json:"stale"`
+	ID                    string                 `json:"id"`
+	SnapshotSHA256        string                 `json:"snapshot_sha256"`
+	HomeID                string                 `json:"home_id"`
+	SchemaVersion         string                 `json:"schema_version"`
+	CreatedAt             time.Time              `json:"created_at"`
+	ExpiresAt             time.Time              `json:"expires_at"`
+	Scope                 string                 `json:"scope"`
+	HomeTotalStatus       string                 `json:"home_total_status"`
+	MeasuredStatus        string                 `json:"measured_status"`
+	RecommendationsStatus string                 `json:"recommendations_status"`
+	Assumptions           []string               `json:"assumptions"`
+	Items                 []Item                 `json:"items"`
+	Recommendations       []ReportRecommendation `json:"recommendations,omitempty"`
+	Stale                 bool                   `json:"stale"`
 }
 
 type Store struct{ DB *pgxpool.Pool }
@@ -95,6 +122,7 @@ type estimateResult struct {
 	Energy *struct {
 		Value string `json:"value"`
 		Unit  string `json:"unit"`
+		Fuel  string `json:"fuel"`
 	} `json:"energy"`
 	Cost *struct {
 		Value    string `json:"value"`
@@ -113,7 +141,7 @@ type estimateResult struct {
 func vettedEstimate(raw []byte, start, end string, asOf time.Time) *Estimate {
 	var r estimateResult
 	if json.Unmarshal(raw, &r) != nil || (r.Kind != "estimated_operating_cost" && r.Kind != "estimated_useful_cost") ||
-		r.Energy == nil || r.Cost == nil || r.Energy.Unit != "kWh" || r.Cost.Currency != "USD" ||
+		r.Energy == nil || r.Cost == nil || (r.Energy.Unit != "kWh" && r.Energy.Unit != "therm") || r.Cost.Currency != "USD" ||
 		!decimalAmount.MatchString(r.Energy.Value) || !decimalAmount.MatchString(r.Cost.Value) ||
 		r.Period.Start != start || r.Period.End != end || r.Quality.Source != "reviewed_exact" {
 		return nil
@@ -133,6 +161,16 @@ func vettedEstimate(raw []byte, start, end string, asOf time.Time) *Estimate {
 		}
 	}
 	if !hasFact || !hasTariff || len(r.EvidenceRefs) > 4 {
+		return nil
+	}
+	if r.Energy.Unit == "therm" {
+		if r.Energy.Fuel != "natural_gas" || r.Kind != "estimated_useful_cost" {
+			return nil
+		}
+		return &Estimate{Kind: r.Kind, EnergyTherms: r.Energy.Value, Fuel: "natural_gas", CostUSD: r.Cost.Value,
+			PeriodStart: start, PeriodEnd: end, AsOf: asOf, SourceRefs: r.EvidenceRefs}
+	}
+	if r.Energy.Fuel != "" && r.Energy.Fuel != "electricity" {
 		return nil
 	}
 	return &Estimate{Kind: r.Kind, EnergyKWh: r.Energy.Value, CostUSD: r.Cost.Value,
@@ -197,7 +235,10 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	}
 	local := now.In(loc)
 	start := fmt.Sprintf("%04d-%02d-01", local.Year(), local.Month())
-	end := time.Date(local.Year(), local.Month()+1, 1, 0, 0, 0, 0, loc).Format("2006-01-02")
+	endLocal := time.Date(local.Year(), local.Month()+1, 1, 0, 0, 0, 0, loc)
+	end := endLocal.Format("2006-01-02")
+	startUTC := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc).UTC()
+	endUTC := endLocal.UTC()
 	rows, err := tx.Query(ctx, `SELECT a.id,a.category,a.version,e.id,e.result_json,e.as_of
 		FROM appliances a LEFT JOIN LATERAL (
 		 SELECT e.id,e.result_json,e.as_of FROM estimate_runs e
@@ -210,7 +251,7 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	if err != nil {
 		return Preview{}, err
 	}
-	preview := Preview{ID: uuid.NewString(), HomeID: home, SchemaVersion: "manual-preview/v1", CreatedAt: now.UTC(), ExpiresAt: now.UTC().Add(24 * time.Hour), Scope: "selected_appliances", HomeTotalStatus: "unavailable_incomplete_scope", MeasuredStatus: "not_included", RecommendationsStatus: "not_included", Assumptions: []string{"Per-device estimates use reviewed source evidence and a current monthly tariff.", "No whole-home total, measured savings, waste finding, or incentive is asserted."}, Items: []Item{}}
+	preview := Preview{ID: uuid.NewString(), HomeID: home, SchemaVersion: "manual-preview/v2", CreatedAt: now.UTC(), ExpiresAt: now.UTC().Add(24 * time.Hour), Scope: "selected_appliances", HomeTotalStatus: "unavailable_incomplete_scope", MeasuredStatus: "unavailable", RecommendationsStatus: "unavailable", Assumptions: []string{"Per-device estimates use reviewed source evidence and a current monthly tariff.", "Measured electricity covers only complete daily sensor buckets for selected appliances; coverage may be incomplete.", "No whole-home total, measured savings, waste finding, or incentive is asserted."}, Items: []Item{}, Recommendations: []ReportRecommendation{}}
 	type dependency struct {
 		id         uuid.UUID
 		version    int64
@@ -231,7 +272,7 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 		if runID != nil && asOf != nil {
 			item.Estimate = vettedEstimate(body, start, end, *asOf)
 			if item.Estimate != nil {
-				item.Explanation = "Estimated monthly operating or useful energy cost; this is not measured use or a savings claim."
+				item.Explanation = "Reviewed monthly energy and cost estimate; this is not measured use or a savings claim."
 			} else {
 				runID = nil
 			}
@@ -249,7 +290,70 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	if len(preview.Items) != len(selected) {
 		return Preview{}, ErrInvalidSelection
 	}
+	for i := range preview.Items {
+		var energyKWh string
+		var buckets int
+		var sensors int
+		var sourceRows string
+		var sourceAsOf *time.Time
+		err = tx.QueryRow(ctx, `SELECT COALESCE(sum(d.energy_wh)/1000,0)::text,count(*)::int,count(DISTINCT d.sensor_id)::int,
+			COALESCE(jsonb_agg(jsonb_build_object('hub',d.hub_id,'epoch',d.ownership_epoch,'sensor',d.sensor_id,'attachment',d.attachment_id,'bucket',d.bucket_start,'energy_wh',d.energy_wh,'covered_seconds',d.covered_seconds,'allocation',d.allocation_method,'refs',d.source_refs,'computed_at',d.computed_at) ORDER BY d.bucket_start,d.sensor_id,d.attachment_id),'[]'::jsonb)::text,
+			max(d.computed_at) FROM energy_daily d
+			JOIN attachments a ON a.id=d.attachment_id AND a.home_id=d.home_id
+			WHERE d.home_id=$1 AND a.appliance_id=$2 AND d.status='complete'
+			AND d.bucket_start >= $3::timestamptz
+			AND d.bucket_start + interval '1 day' <= LEAST($4::timestamptz,$5::timestamptz)`,
+			home, preview.Items[i].ApplianceID, startUTC, endUTC, now.UTC()).Scan(&energyKWh, &buckets, &sensors, &sourceRows, &sourceAsOf)
+		if err != nil {
+			return Preview{}, err
+		}
+		if buckets > 0 && sensors == 1 {
+			sourceHash := sha256.Sum256([]byte(sourceRows))
+			preview.Items[i].Measured = &MeasuredSummary{EnergyKWh: energyKWh, PeriodStart: start, PeriodEnd: end,
+				BucketCount: buckets, Source: "energy_daily", SourceSHA256: hex.EncodeToString(sourceHash[:]), SourceAsOf: *sourceAsOf, Coverage: "partial_or_unknown"}
+			preview.MeasuredStatus = "partial"
+		}
+	}
 	sort.Slice(preview.Items, func(i, j int) bool { return preview.Items[i].ApplianceID < preview.Items[j].ApplianceID })
+	// The shared evaluator supplies only bounded actions. It never computes savings.
+	recommendations := recommendation.PGStore{Pool: s.DB}
+	current, err := recommendations.Current(ctx, owner, home, now)
+	if err != nil {
+		return Preview{}, err
+	}
+	events, err := recommendations.Latest(ctx, owner, home)
+	if err != nil {
+		return Preview{}, err
+	}
+	actions := []recommendation.Action{}
+	for _, appliance := range current {
+		if !unique[uuid.MustParse(appliance.ID)] {
+			continue
+		}
+		actions = append(actions, recommendation.EvaluateGasEnabled(appliance)...)
+	}
+	for _, action := range recommendation.ApplyLifecycle(actions, events, now) {
+		if action.State != "active" && action.State != "candidate" && action.State != "accepted" {
+			continue
+		}
+		refs := make([]SourceRef, 0, len(action.EvidenceRefs))
+		for _, ref := range action.EvidenceRefs {
+			refs = append(refs, SourceRef{ID: ref.ID, Kind: ref.Kind, Revision: ref.Revision})
+		}
+		preview.Recommendations = append(preview.Recommendations, ReportRecommendation{ApplianceID: action.ApplianceID,
+			RuleID: action.RuleID, RuleVersion: action.RuleVersion, State: action.State,
+			Title: action.Title, Explanation: action.Explanation, EvidenceRefs: refs})
+	}
+	if len(preview.Recommendations) > 0 {
+		preview.RecommendationsStatus = "available"
+	}
+	sort.Slice(preview.Recommendations, func(i, j int) bool {
+		a, b := preview.Recommendations[i], preview.Recommendations[j]
+		if a.ApplianceID != b.ApplianceID {
+			return a.ApplianceID < b.ApplianceID
+		}
+		return a.RuleID < b.RuleID
+	})
 	preview.SnapshotSHA256, err = snapshotDigest(preview)
 	if err != nil {
 		return Preview{}, err
@@ -295,7 +399,7 @@ func (s Store) Get(ctx context.Context, owner, home, previewID string, now time.
 		return Preview{}, err
 	}
 	var stale bool
-	err = s.DB.QueryRow(ctx, `SELECT h.version<>$2 OR EXISTS (
+	err = s.DB.QueryRow(ctx, `SELECT h.version<>$2 OR EXISTS (SELECT 1 FROM report_preview_invalidations v WHERE v.preview_id=$1) OR EXISTS (
 		SELECT 1 FROM report_preview_items i LEFT JOIN appliances a ON a.id=i.appliance_id AND a.home_id=h.id
 		WHERE i.preview_id=$1 AND (a.id IS NULL OR a.archived_at IS NOT NULL OR a.version<>i.appliance_version OR
 		(i.estimate_run_id IS NOT NULL AND EXISTS(SELECT 1 FROM estimate_run_invalidations v WHERE v.run_id=i.estimate_run_id)))

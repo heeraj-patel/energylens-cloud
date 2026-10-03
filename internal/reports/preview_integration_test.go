@@ -149,7 +149,8 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Items) != 1 || p.Items[0].Estimate == nil || p.Items[0].Estimate.CostUSD != "0" || p.HomeTotalStatus != "unavailable_incomplete_scope" {
+	if len(p.Items) != 1 || p.Items[0].Estimate == nil || p.Items[0].Estimate.CostUSD != "0" || p.HomeTotalStatus != "unavailable_incomplete_scope" ||
+		p.RecommendationsStatus != "available" || len(p.Recommendations) != 1 || p.Recommendations[0].RuleID != "general.gather_information" || p.Recommendations[0].ApplianceID != appliance.String() {
 		t.Fatalf("preview: %+v", p)
 	}
 	replayed, err := s.Create(ctx, owner.String(), home.String(), []uuid.UUID{appliance}, key, now.Add(time.Minute))
@@ -419,6 +420,58 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	}
 	if got := api(http.MethodGet, readPath, "", "owner"); got != 200 {
 		t.Fatalf("owner API read = %d", got)
+	}
+	// A complete UTC daily bucket is included only for a single mapped meter.
+	// Its exact rollup provenance is hashed in the immutable report snapshot.
+	bucket := time.Date(local.Year(), local.Month(), 2, 0, 0, 0, 0, time.UTC)
+	measuredAt := bucket.Add(5 * 24 * time.Hour)
+	hub, sensor, attachment := uuid.New(), uuid.New(), uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO hubs(id,local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES($1,'elhub_report_test',$2,'test',$3,2)`, hub, make([]byte, 32), home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO sensor_endpoints(id,home_id,hub_id,ownership_epoch,local_sensor_id,kind) VALUES($1,$2,$3,2,'report-plug','plug')`, sensor, home, hub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO appliance_revisions(appliance_id,home_id,version,snapshot) VALUES($1,$2,1,'{}') ON CONFLICT DO NOTHING`, appliance, home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO attachments(id,home_id,sensor_id,appliance_id,identity_revision,started_at) VALUES($1,$2,$3,$4,1,$5)`, attachment, home, sensor, appliance, bucket.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO energy_daily(home_id,hub_id,ownership_epoch,sensor_id,attachment_id,bucket_start,energy_wh,covered_seconds,interval_count,status,allocation_method,source_refs,computed_at) VALUES($1,$2,2,$3,$4,$5,1200,86400,1,'complete','exact','[]',$6)`, home, hub, sensor, attachment, bucket, measuredAt.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	measuredPreview, err := s.Create(ctx, owner.String(), home.String(), []uuid.UUID{appliance}, uuid.New(), measuredAt)
+	if err != nil || len(measuredPreview.Items) != 1 || measuredPreview.Items[0].Measured == nil || measuredPreview.Items[0].Measured.EnergyKWh != "1.2000000000000000" || measuredPreview.MeasuredStatus != "partial" || len(measuredPreview.Items[0].Measured.SourceSHA256) != 64 {
+		t.Fatalf("measured v2 preview: %+v %v", measuredPreview, err)
+	}
+	measuredHTML, err := RenderApprovedHTML(measuredPreview, measuredPreview.SnapshotSHA256)
+	if err != nil || !strings.Contains(measuredHTML.HTML, measuredPreview.Items[0].Measured.SourceSHA256) || !strings.Contains(measuredHTML.HTML, "1.2000000000000000 kWh") {
+		t.Fatalf("measured provenance missing from report: %v", err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE energy_daily SET energy_wh=1300,computed_at=$2 WHERE attachment_id=$1`, attachment, measuredAt); err != nil {
+		t.Fatal(err)
+	}
+	measuredAfterCorrection, err := s.Get(ctx, owner.String(), home.String(), measuredPreview.ID, measuredAt)
+	if err != nil || !measuredAfterCorrection.Stale {
+		t.Fatalf("corrected meter rollup did not stale report: %+v %v", measuredAfterCorrection, err)
+	}
+	// A new usage answer can change a recommendation without changing the
+	// appliance or estimate run. Pending v2 snapshots must become stale.
+	newPreview, err := s.Create(ctx, owner.String(), home.String(), []uuid.UUID{appliance}, uuid.New(), now.Add(time.Minute))
+	if err != nil || newPreview.SchemaVersion != "manual-preview/v2" || newPreview.Stale {
+		t.Fatalf("new v2 preview: %+v %v", newPreview, err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,1,'computer.hours_per_week',1,1,'confirmed','7',$3)`, home, appliance, now); err != nil {
+		t.Fatal(err)
+	}
+	changedPreview, err := s.Get(ctx, owner.String(), home.String(), newPreview.ID, now.Add(time.Minute))
+	if err != nil || !changedPreview.Stale {
+		t.Fatalf("usage revision did not stale report: %+v %v", changedPreview, err)
+	}
+	var invalidationReason string
+	if err = pool.QueryRow(ctx, `SELECT reason FROM report_preview_invalidations WHERE preview_id=$1`, newPreview.ID).Scan(&invalidationReason); err != nil || invalidationReason != "recommendation_evidence_changed" {
+		t.Fatalf("report invalidation: %q %v", invalidationReason, err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE homes SET deleted_at=$2,version=version+1 WHERE id=$1`, home, now.Add(2*time.Hour)); err != nil {
 		t.Fatal(err)
