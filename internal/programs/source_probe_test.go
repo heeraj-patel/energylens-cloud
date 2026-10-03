@@ -1,6 +1,7 @@
 package programs
 
 import (
+	"context"
 	"net/netip"
 	"testing"
 )
@@ -40,5 +41,15 @@ func TestPageProbeRejectsNonPublicAddresses(t *testing.T) {
 		if !publicSourceIP(netip.MustParseAddr(value)) {
 			t.Errorf("rejected public address %s", value)
 		}
+	}
+}
+
+func TestPageProbeNeverConnectsToLoopback(t *testing.T) {
+	err := (HTTPSPageProbe{}).Check(context.Background(), RegisteredSource{
+		CanonicalURL: "https://localhost/rebates", AllowedHosts: []string{"localhost"},
+		AccessMethod: "html", MaxResponseBytes: 100_000, MaxRequests: 1,
+	})
+	if err == nil {
+		t.Fatal("loopback source accepted")
 	}
 }
