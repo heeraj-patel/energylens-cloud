@@ -18,6 +18,7 @@ import (
 	"energylens.local/cloud/internal/account"
 	"energylens.local/cloud/internal/attachments"
 	"energylens.local/cloud/internal/catalog"
+	"energylens.local/cloud/internal/cyclecomparison"
 	"energylens.local/cloud/internal/energyrate"
 	"energylens.local/cloud/internal/estimation"
 	"energylens.local/cloud/internal/faq"
@@ -178,6 +179,8 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "metered-summaries", Mount: summaryModule.Routes})
 			outcomeModule := outcomes.Service{Store: outcomes.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "measured-outcomes", Mount: outcomeModule.Routes})
+			cycleModule := cyclecomparison.Service{Store: cyclecomparison.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			modules = append(modules, Module{Name: "dishwasher-cycle-comparison", Mount: cycleModule.Routes})
 			runtimeModule := kasaruntime.Service{Store: kasaruntime.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "kasa-runtime", Mount: runtimeModule.AccountRoutes})
 		}
