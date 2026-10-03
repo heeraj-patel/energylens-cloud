@@ -2,6 +2,7 @@ package programs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -21,6 +22,18 @@ type Scope struct {
 
 type ZIPResolver interface {
 	ResolveZIP(context.Context, string, string) ([]Scope, error)
+}
+
+// DetailedZIPResolver adds evidence for offline datasets without changing
+// existing resolvers. Its limitations keep a successful ZIP lookup partial.
+type DetailedZIPResolver interface {
+	ResolveZIPDetailed(context.Context, string, string) (ZIPResolution, error)
+}
+
+type ZIPResolution struct {
+	Scopes      []Scope
+	Provenance  map[string]any
+	Limitations []string
 }
 
 // SourceProbe checks one registered public source. It must enforce the source's
@@ -64,7 +77,7 @@ func validScope(s Scope) bool {
 	switch s.Kind {
 	case "utility":
 		switch s.ProviderRole {
-		case "electric_distributor", "electric_retailer", "gas_distributor", "gas_retailer", "other_fuel":
+		case "electric_service_candidate", "electric_distributor", "electric_retailer", "gas_distributor", "gas_retailer", "other_fuel":
 			return true
 		}
 	case "city", "county", "state", "federal", "tribal", "manufacturer":
@@ -79,10 +92,19 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (Discove
 	if r.DB == nil || r.Resolver == nil || !countryCodePattern.MatchString(req.CountryCode) || req.PostalCode == "" || strings.TrimSpace(req.PostalCode) != req.PostalCode {
 		return DiscoveryOutcome{}, errors.New("invalid discovery request or runner")
 	}
-	scopes, resolveErr := r.Resolver.ResolveZIP(ctx, req.CountryCode, req.PostalCode)
+	resolution := ZIPResolution{}
+	var resolveErr error
+	if detailed, ok := r.Resolver.(DetailedZIPResolver); ok {
+		resolution, resolveErr = detailed.ResolveZIPDetailed(ctx, req.CountryCode, req.PostalCode)
+	} else {
+		resolution.Scopes, resolveErr = r.Resolver.ResolveZIP(ctx, req.CountryCode, req.PostalCode)
+	}
+	scopes := resolution.Scopes
 	if resolveErr != nil {
 		// A partial resolver response cannot establish complete ZIP coverage.
 		scopes = nil
+		resolution.Provenance = nil
+		resolution.Limitations = nil
 	}
 	if len(scopes) > 128 {
 		return DiscoveryOutcome{}, errors.New("ZIP resolver exceeded 128 candidate scopes")
@@ -101,15 +123,42 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (Discove
 	} else if len(scopes) == 0 {
 		state, limitation = "partial", "no_scopes_identified"
 	}
-	limitations := "[]"
+	limitations := append([]string{}, resolution.Limitations...)
 	if limitation != "" {
-		limitations = `["` + limitation + `"]`
+		limitations = append(limitations, limitation)
+	}
+	if len(resolution.Limitations) > 0 {
+		state = "partial"
+	}
+	if len(limitations) > 32 {
+		return DiscoveryOutcome{}, errors.New("too many ZIP limitations")
+	}
+	uniqueLimitations := make(map[string]bool, len(limitations))
+	for _, value := range limitations {
+		if value == "" || len(value) > 120 || uniqueLimitations[value] {
+			return DiscoveryOutcome{}, errors.New("invalid or duplicate ZIP limitation")
+		}
+		uniqueLimitations[value] = true
+	}
+	limitationsJSON, err := json.Marshal(limitations)
+	if err != nil {
+		return DiscoveryOutcome{}, err
+	}
+	provenanceJSON, err := json.Marshal(resolution.Provenance)
+	if err != nil {
+		return DiscoveryOutcome{}, err
+	}
+	if resolution.Provenance == nil {
+		provenanceJSON = []byte("{}")
+	}
+	if len(provenanceJSON) > 4096 || len(resolution.Provenance) > 10 {
+		return DiscoveryOutcome{}, errors.New("ZIP provenance exceeds bound")
 	}
 	var runID uuid.UUID
-	err := r.DB.QueryRow(ctx, `INSERT INTO program_discovery_runs
-		(country_code,postal_code,state_code,county_name,city_name,category,state,limitations)
-		VALUES ($1,$2,$3,$4,$5,$6,'running',$7::jsonb) RETURNING id`,
-		req.CountryCode, req.PostalCode, nullableText(req.StateCode), nullableText(req.CountyName), nullableText(req.CityName), nullableText(req.Category), limitations).Scan(&runID)
+	err = r.DB.QueryRow(ctx, `INSERT INTO program_discovery_runs
+		(country_code,postal_code,state_code,county_name,city_name,category,state,limitations,resolution_provenance)
+		VALUES ($1,$2,$3,$4,$5,$6,'running',$7::jsonb,$8::jsonb) RETURNING id`,
+		req.CountryCode, req.PostalCode, nullableText(req.StateCode), nullableText(req.CountyName), nullableText(req.CityName), nullableText(req.Category), string(limitationsJSON), string(provenanceJSON)).Scan(&runID)
 	if err != nil {
 		return DiscoveryOutcome{}, err
 	}

@@ -45,13 +45,14 @@ type OwnerCoverageScope struct {
 // A run covers only scopes identified by its resolver. It does not establish
 // complete ZIP provider discovery or service at the customer's address.
 type OwnerCoverage struct {
-	RunID       string               `json:"run_id"`
-	Category    *string              `json:"category"`
-	State       string               `json:"state"`
-	StartedAt   time.Time            `json:"started_at"`
-	FinishedAt  *time.Time           `json:"finished_at"`
-	Limitations []string             `json:"limitations"`
-	Scopes      []OwnerCoverageScope `json:"scopes"`
+	RunID                string               `json:"run_id"`
+	Category             *string              `json:"category"`
+	State                string               `json:"state"`
+	StartedAt            time.Time            `json:"started_at"`
+	FinishedAt           *time.Time           `json:"finished_at"`
+	Limitations          []string             `json:"limitations"`
+	ResolutionProvenance map[string]any       `json:"resolution_provenance"`
+	Scopes               []OwnerCoverageScope `json:"scopes"`
 }
 
 type OwnerProgramResult struct {
@@ -162,12 +163,12 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 
 func readOwnerCoverage(ctx context.Context, tx pgx.Tx, country, zip, category string) (*OwnerCoverage, error) {
 	var run OwnerCoverage
-	var limitations []byte
-	err := tx.QueryRow(ctx, `SELECT id::text,category,state,started_at,finished_at,limitations
+	var limitations, provenance []byte
+	err := tx.QueryRow(ctx, `SELECT id::text,category,state,started_at,finished_at,limitations,resolution_provenance
 		FROM program_discovery_runs WHERE country_code=$1 AND postal_code=$2
 		AND (category=$3 OR category IS NULL)
 		ORDER BY started_at DESC,id DESC LIMIT 1`, country, zip, category).
-		Scan(&run.RunID, &run.Category, &run.State, &run.StartedAt, &run.FinishedAt, &limitations)
+		Scan(&run.RunID, &run.Category, &run.State, &run.StartedAt, &run.FinishedAt, &limitations, &provenance)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -175,6 +176,9 @@ func readOwnerCoverage(ctx context.Context, tx pgx.Tx, country, zip, category st
 		return nil, err
 	}
 	if err = json.Unmarshal(limitations, &run.Limitations); err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(provenance, &run.ResolutionProvenance); err != nil {
 		return nil, err
 	}
 	run.Scopes = []OwnerCoverageScope{}
