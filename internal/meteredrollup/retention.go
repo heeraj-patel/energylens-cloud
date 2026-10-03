@@ -123,6 +123,13 @@ func (j Job) retain(ctx context.Context, now time.Time, limit int) (int, int, er
 		}
 	}
 	summaryCutoff := now.UTC().AddDate(-2, 0, 0)
+	// Saved cycle snapshots have their own bounded lifetime and contain no
+	// raw observations. Prune them in the same bounded retention pass.
+	_, err = tx.Exec(ctx, `DELETE FROM dishwasher_cycle_evidence WHERE ctid IN (
+ SELECT ctid FROM dishwasher_cycle_evidence WHERE expires_at<=$1 ORDER BY expires_at LIMIT $2)`, now.UTC(), limit)
+	if err != nil {
+		return 0, 0, err
+	}
 	for _, table := range []string{"energy_hourly", "energy_daily", "coverage_hourly", "coverage_daily", "power_hourly", "power_daily"} {
 		sql := fmt.Sprintf(`DELETE FROM %s WHERE ctid IN (SELECT ctid FROM %s WHERE bucket_start<$1 ORDER BY bucket_start LIMIT $2)`, table, table)
 		tag, e := tx.Exec(ctx, sql, summaryCutoff, limit)

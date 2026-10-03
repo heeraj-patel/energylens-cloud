@@ -171,6 +171,7 @@ func purgeHomeTx(ctx context.Context, tx pgx.Tx, home string) error {
 		`DELETE FROM estimate_run_invalidations WHERE run_id IN (SELECT id FROM estimate_runs WHERE home_id=$1)`,
 		`DELETE FROM estimate_runs WHERE home_id=$1`,
 		`DELETE FROM question_answers WHERE home_id=$1`,
+		`DELETE FROM dishwasher_cycle_evidence WHERE home_id=$1`,
 		`DELETE FROM tariff_revisions WHERE home_id=$1`,
 		`DELETE FROM kasa_runtime_snapshots WHERE home_id=$1`,
 		`DELETE FROM energy_hourly WHERE home_id=$1`,

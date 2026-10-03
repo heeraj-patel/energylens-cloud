@@ -60,6 +60,7 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	start := now.Add(-2 * time.Hour)
 	end := start.Add(90 * time.Minute)
 	exec(`INSERT INTO users(id) VALUES($1),($2)`, owner, other)
+	exec(`UPDATE account_preferences SET history_disclosure_accepted_at=$2 WHERE user_id IN ($1,$3)`, owner, now, other)
 	exec(`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'House','UTC')`, home, owner)
 	exec(`INSERT INTO hubs(id,local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES($1,'elhub_cycle_test',$2,'test',$3,2)`, hub, make([]byte, 32), home)
 	exec(`INSERT INTO sensor_endpoints(id,home_id,hub_id,ownership_epoch,local_sensor_id,kind) VALUES($1,$2,$3,2,'dishwasher-plug','plug')`, sensor, home, hub)
@@ -115,7 +116,40 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	// not remain visible and cause an overlap.
 	interval(event2, 2, start.Add(45*time.Minute), end, 500)
 	check("available")
+	key := uuid.NewString()
+	saved, e := s.Save(ctx, owner, home, appliance, key, in, now)
+	if e != nil || saved.Status != "available" || saved.MeasuredKWh == nil || *saved.MeasuredKWh != 0.8 || saved.ApplianceVersion != 1 {
+		t.Fatalf("saved cycle: %+v, %v", saved, e)
+	}
+	var refCount int
+	if e = pool.QueryRow(ctx, `SELECT jsonb_array_length(interval_refs) FROM dishwasher_cycle_evidence WHERE id=$1`, saved.ID).Scan(&refCount); e != nil || refCount != 2 {
+		t.Fatalf("interval revision references: %d, %v", refCount, e)
+	}
+	if _, e = s.Get(ctx, other, home, appliance, saved.ID, now); !errors.Is(e, ErrNotFound) {
+		t.Fatalf("foreign owner read: %v", e)
+	}
+	replayed, e := s.Save(ctx, owner, home, appliance, key, in, now)
+	if e != nil || replayed.ID != saved.ID {
+		t.Fatalf("idempotent replay: %+v, %v", replayed, e)
+	}
+	changed := in
+	changed.Start = changed.Start.Add(time.Minute)
+	if _, e = s.Save(ctx, owner, home, appliance, key, changed, now); !errors.Is(e, ErrIdempotencyConflict) {
+		t.Fatalf("changed replay: %v", e)
+	}
+	exec(`UPDATE account_preferences SET history_disclosure_accepted_at=NULL WHERE user_id=$1`, owner)
+	if _, e = s.Get(ctx, owner, home, appliance, saved.ID, now); !errors.Is(e, ErrDisclosureRequired) {
+		t.Fatalf("disclosure read: %v", e)
+	}
+	if _, e = s.Save(ctx, owner, home, appliance, key, in, now); !errors.Is(e, ErrDisclosureRequired) {
+		t.Fatalf("disclosure replay: %v", e)
+	}
+	exec(`UPDATE account_preferences SET history_disclosure_accepted_at=$2 WHERE user_id=$1`, owner, now)
 	interval(event2, 3, start.Add(44*time.Minute), end, 500)
+	stale, e := s.Get(ctx, owner, home, appliance, saved.ID, now)
+	if e != nil || stale.Status != "invalidated" || stale.Reason != "meter_evidence_changed" || stale.MeasuredKWh != nil || stale.DifferenceKWh != nil {
+		t.Fatalf("corrected saved cycle: %+v, %v", stale, e)
+	}
 	check("raw_interval_coverage_or_scope_invalid")
 	interval(event2, 4, start.Add(45*time.Minute), end, 500)
 	gapID := uuid.NewString()
@@ -124,6 +158,19 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	check("coverage_gap_reported")
 	exec(`DELETE FROM coverage_gaps WHERE event_id=$1`, gapID)
 	check("available")
+	attachedSaved, e := s.Save(ctx, owner, home, appliance, uuid.NewString(), in, now)
+	if e != nil || attachedSaved.Status != "available" {
+		t.Fatalf("second saved cycle: %+v, %v", attachedSaved, e)
+	}
+	exec(`UPDATE attachments SET ended_at=$2 WHERE id=$1`, attachment, end.Add(time.Minute))
+	stale, e = s.Get(ctx, owner, home, appliance, attachedSaved.ID, now)
+	if e != nil || stale.Status != "invalidated" || stale.Reason != "attachment_changed" || stale.MeasuredKWh != nil {
+		t.Fatalf("changed attachment: %+v, %v", stale, e)
+	}
+	exec(`UPDATE dishwasher_cycle_evidence SET expires_at=$2 WHERE id=$1`, attachedSaved.ID, now.Add(-time.Second))
+	if _, e = s.Get(ctx, owner, home, appliance, attachedSaved.ID, now); !errors.Is(e, ErrNotFound) {
+		t.Fatalf("expired read: %v", e)
+	}
 	in.DedicatedNoOtherLoads = false
 	check("dedicated_use_unconfirmed")
 	in.DedicatedNoOtherLoads = true

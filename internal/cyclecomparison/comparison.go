@@ -1,5 +1,5 @@
-// Package cyclecomparison computes an ephemeral, owner-scoped comparison of
-// one tagged dishwasher cycle with one reviewed laboratory cycle fact.
+// Package cyclecomparison compares one tagged dishwasher cycle with one
+// reviewed laboratory cycle fact and can save its evidence snapshot.
 package cyclecomparison
 
 import (
@@ -152,18 +152,35 @@ func (s Store) Compare(ctx context.Context, owner, home, appliance string, in Re
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	a, err := loadIdentity(ctx, tx, owner, home, appliance)
-	if err != nil {
+	out, _, err = compareTx(ctx, tx, owner, home, appliance, in, now)
+	if err != nil || out.Status != "available" {
 		return out, err
 	}
+	if err = tx.Commit(ctx); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+type intervalRef struct {
+	EventID  string `json:"event_id"`
+	Revision int64  `json:"revision"`
+}
+
+func compareTx(ctx context.Context, tx pgx.Tx, owner, home, appliance string, in Request, now time.Time) (Result, []intervalRef, error) {
+	out := unavailable(in, "insufficient_evidence")
+	a, err := loadIdentity(ctx, tx, owner, home, appliance)
+	if err != nil {
+		return out, nil, err
+	}
 	if !a.isExactElectricDishwasher() {
-		return unavailable(in, "identity_not_exact"), nil
+		return unavailable(in, "identity_not_exact"), nil, nil
 	}
 	if !in.DedicatedNoOtherLoads {
-		return unavailable(in, "dedicated_use_unconfirmed"), nil
+		return unavailable(in, "dedicated_use_unconfirmed"), nil, nil
 	}
 	if in.Start.Before(now.Add(-30*24*time.Hour)) || in.End.After(now) {
-		return unavailable(in, "outside_detail_retention"), nil
+		return unavailable(in, "outside_detail_retention"), nil, nil
 	}
 	var sensor, hub, kind string
 	var epoch, attachedRevision int64
@@ -171,79 +188,100 @@ func (s Store) Compare(ctx context.Context, owner, home, appliance string, in Re
 	var attachedUntil *time.Time
 	err = tx.QueryRow(ctx, `SELECT a.sensor_id,s.hub_id,s.ownership_epoch,s.kind,a.identity_revision,a.started_at,a.ended_at FROM attachments a JOIN sensor_endpoints s ON s.id=a.sensor_id AND s.home_id=a.home_id JOIN hubs u ON u.id=s.hub_id AND u.home_id=a.home_id AND u.ownership_epoch=s.ownership_epoch WHERE a.id=$1 AND a.home_id=$2 AND a.appliance_id=$3 AND s.archived_at IS NULL`, in.AttachmentID, home, appliance).Scan(&sensor, &hub, &epoch, &kind, &attachedRevision, &attachedFrom, &attachedUntil)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return unavailable(in, "attachment_unavailable"), nil
+		return unavailable(in, "attachment_unavailable"), nil, nil
 	}
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if (kind != "plug" && kind != "strip_outlet") || attachedRevision != a.revision || attachedFrom.After(in.Start) || attachedUntil != nil && attachedUntil.Before(in.End) {
-		return unavailable(in, "attachment_not_dedicated_for_window"), nil
+		return unavailable(in, "attachment_not_dedicated_for_window"), nil, nil
 	}
 	var attachmentCount int
 	err = tx.QueryRow(ctx, `SELECT count(*) FROM attachments WHERE sensor_id=$1 AND started_at<$3 AND COALESCE(ended_at,'infinity'::timestamptz)>$2`, sensor, in.Start, in.End).Scan(&attachmentCount)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if attachmentCount != 1 {
-		return unavailable(in, "attachment_not_dedicated_for_window"), nil
+		return unavailable(in, "attachment_not_dedicated_for_window"), nil, nil
 	}
 	f, reason, err := loadReference(ctx, tx, a)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if f == nil {
-		return unavailable(in, reason), nil
+		return unavailable(in, reason), nil, nil
 	}
 	if f.ID != in.FactID || f.TestBasis != in.ConfirmedTestBasis || f.CycleDefinition != in.ConfirmedCycleDefinition {
-		return unavailable(in, "reviewed_basis_not_confirmed"), nil
+		return unavailable(in, "reviewed_basis_not_confirmed"), nil, nil
 	}
 	// The latest revision is selected before interval filtering: a corrected
 	// event moved out of the window must not leave its old revision visible.
-	rows, err := tx.Query(ctx, `WITH latest AS (SELECT DISTINCT ON (e.hub_id,e.ownership_epoch,e.event_id) e.hub_id,e.ownership_epoch,e.event_id,e.revision,e.event_kind,e.sensor_id FROM ingest_events e WHERE e.home_id=$1 AND e.hub_id=$3 AND e.ownership_epoch=$4 ORDER BY e.hub_id,e.ownership_epoch,e.event_id,e.revision DESC) SELECT o.start_at,o.end_at,o.energy_wh,o.covered_seconds,o.attachment_revision_id,o.fuel,o.quality,o.source FROM latest l JOIN energy_observations o ON (o.hub_id,o.ownership_epoch,o.event_id,o.revision)=(l.hub_id,l.ownership_epoch,l.event_id,l.revision) WHERE l.sensor_id=$2 AND l.event_kind='energy_interval' AND o.start_at<$6 AND o.end_at>$5 ORDER BY o.start_at,o.end_at`, home, sensor, hub, epoch, in.Start, in.End)
+	rows, err := tx.Query(ctx, `WITH latest AS (SELECT DISTINCT ON (e.hub_id,e.ownership_epoch,e.event_id) e.hub_id,e.ownership_epoch,e.event_id,e.revision,e.event_kind,e.sensor_id FROM ingest_events e WHERE e.home_id=$1 AND e.hub_id=$3 AND e.ownership_epoch=$4 ORDER BY e.hub_id,e.ownership_epoch,e.event_id,e.revision DESC) SELECT l.event_id,l.revision,o.start_at,o.end_at,o.energy_wh,o.covered_seconds,o.attachment_revision_id,o.fuel,o.quality,o.source FROM latest l JOIN energy_observations o ON (o.hub_id,o.ownership_epoch,o.event_id,o.revision)=(l.hub_id,l.ownership_epoch,l.event_id,l.revision) WHERE l.sensor_id=$2 AND l.event_kind='energy_interval' AND o.start_at<$6 AND o.end_at>$5 ORDER BY o.start_at,o.end_at`, home, sensor, hub, epoch, in.Start, in.End)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	var cursor = time.Time{}
 	cursor = in.Start
 	var wh float64
 	count := 0
+	refs := make([]intervalRef, 0)
 	for rows.Next() {
+		var ref intervalRef
 		var start, end time.Time
 		var energy float64
 		var covered int
 		var aid, efuel, eq, source *string
-		if err = rows.Scan(&start, &end, &energy, &covered, &aid, &efuel, &eq, &source); err != nil {
+		if err = rows.Scan(&ref.EventID, &ref.Revision, &start, &end, &energy, &covered, &aid, &efuel, &eq, &source); err != nil {
 			rows.Close()
-			return out, err
+			return out, nil, err
 		}
 		count++
 		if !start.Equal(cursor) || end.After(in.End) || aid == nil || *aid != in.AttachmentID || efuel == nil || *efuel != "electricity" || eq == nil || *eq != "metered" || source == nil || *source != "verified_driver" || float64(covered) != end.Sub(start).Seconds() || energy < 0 || math.IsNaN(energy) || math.IsInf(energy, 0) {
 			rows.Close()
-			return unavailable(in, "raw_interval_coverage_or_scope_invalid"), nil
+			return unavailable(in, "raw_interval_coverage_or_scope_invalid"), nil, nil
 		}
+		refs = append(refs, ref)
 		cursor = end
 		wh += energy
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if count == 0 || !cursor.Equal(in.End) {
-		return unavailable(in, "raw_interval_coverage_or_scope_invalid"), nil
+		return unavailable(in, "raw_interval_coverage_or_scope_invalid"), nil, nil
 	}
 	var gaps int
 	err = tx.QueryRow(ctx, `WITH latest AS (SELECT DISTINCT ON (e.hub_id,e.ownership_epoch,e.event_id) e.hub_id,e.ownership_epoch,e.event_id,e.revision,e.event_kind,e.sensor_id FROM ingest_events e WHERE e.home_id=$1 AND e.hub_id=$3 AND e.ownership_epoch=$4 ORDER BY e.hub_id,e.ownership_epoch,e.event_id,e.revision DESC) SELECT count(*) FROM latest l JOIN coverage_gaps g ON (g.hub_id,g.ownership_epoch,g.event_id,g.revision)=(l.hub_id,l.ownership_epoch,l.event_id,l.revision) WHERE l.sensor_id=$2 AND l.event_kind='coverage_gap' AND g.first_at<$6 AND g.last_at>$5`, home, sensor, hub, epoch, in.Start, in.End).Scan(&gaps)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if gaps > 0 {
-		return unavailable(in, "coverage_gap_reported"), nil
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return out, err
+		return unavailable(in, "coverage_gap_reported"), nil, nil
 	}
 	measured := wh / 1000
 	difference := measured - f.ValueKWhPerCycle
-	return Result{Status: "available", Start: in.Start, End: in.End, FactID: f.ID, MeasuredKWh: &measured, LabReferenceKWhPerCycle: &f.ValueKWhPerCycle, DifferenceKWh: &difference, Interpretation: interpretation}, nil
+	return Result{Status: "available", Start: in.Start, End: in.End, FactID: f.ID, MeasuredKWh: &measured, LabReferenceKWhPerCycle: &f.ValueKWhPerCycle, DifferenceKWh: &difference, Interpretation: interpretation}, refs, nil
+}
+
+type SavedEvidence struct {
+	ID                       string    `json:"id"`
+	Status                   string    `json:"status"`
+	Reason                   string    `json:"reason,omitempty"`
+	HomeID                   string    `json:"home_id"`
+	ApplianceID              string    `json:"appliance_id"`
+	ApplianceVersion         int64     `json:"appliance_version"`
+	AttachmentID             string    `json:"attachment_id"`
+	Start                    time.Time `json:"start"`
+	End                      time.Time `json:"end"`
+	FactID                   string    `json:"fact_id"`
+	ConfirmedTestBasis       string    `json:"confirmed_test_basis"`
+	ConfirmedCycleDefinition string    `json:"confirmed_cycle_definition"`
+	DedicatedNoOtherLoads    bool      `json:"dedicated_no_other_loads"`
+	MeasuredKWh              *float64  `json:"measured_kwh,omitempty"`
+	LabReferenceKWhPerCycle  *float64  `json:"lab_reference_kwh_per_cycle,omitempty"`
+	DifferenceKWh            *float64  `json:"difference_kwh,omitempty"`
+	CreatedAt                time.Time `json:"created_at"`
+	Interpretation           string    `json:"interpretation"`
 }

@@ -22,6 +22,8 @@ type Service struct {
 func (s Service) Routes(r chi.Router) {
 	r.With(s.Auth).Get("/homes/{home}/appliances/{appliance}/cycle-comparison/reference", s.reference)
 	r.With(s.Auth).Post("/homes/{home}/appliances/{appliance}/cycle-comparison", s.compare)
+	r.With(s.Auth).Post("/homes/{home}/appliances/{appliance}/cycle-comparison/evidence", s.save)
+	r.With(s.Auth).Get("/homes/{home}/appliances/{appliance}/cycle-comparison/evidence/{id}", s.saved)
 }
 
 func validID(x string) bool { u, e := uuid.Parse(x); return e == nil && u.String() == x }
@@ -89,6 +91,86 @@ func (s Service) compare(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("cycle comparison failed", "error", err)
+		fail(w, 500, "internal_error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (s Service) save(w http.ResponseWriter, r *http.Request) {
+	home, appliance := chi.URLParam(r, "home"), chi.URLParam(r, "appliance")
+	key := r.Header.Get("Idempotency-Key")
+	if !validID(home) || !validID(appliance) {
+		fail(w, 404, "not_found")
+		return
+	}
+	if !validID(key) {
+		fail(w, 400, "invalid_idempotency_key")
+		return
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		fail(w, 415, "unsupported_media_type")
+		return
+	}
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	d.DisallowUnknownFields()
+	var in Request
+	if d.Decode(&in) != nil {
+		fail(w, 400, "invalid_request")
+		return
+	}
+	var extra any
+	if d.Decode(&extra) != io.EOF {
+		fail(w, 400, "invalid_request")
+		return
+	}
+	now := time.Now().UTC()
+	if !valid(in, now) {
+		fail(w, 400, "invalid_request")
+		return
+	}
+	out, err := s.Store.Save(r.Context(), s.UserID(r), home, appliance, key, in, now)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		fail(w, 404, "not_found")
+		return
+	case errors.Is(err, ErrIdempotencyConflict):
+		fail(w, 409, "idempotency_conflict")
+		return
+	case errors.Is(err, ErrDisclosureRequired):
+		fail(w, 403, "history_disclosure_required")
+		return
+	case errors.Is(err, ErrEvidenceUnavailable):
+		fail(w, 409, "evidence_unavailable")
+		return
+	case err != nil:
+		slog.Error("cycle evidence save failed", "error", err)
+		fail(w, 500, "internal_error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (s Service) saved(w http.ResponseWriter, r *http.Request) {
+	home, appliance, id := chi.URLParam(r, "home"), chi.URLParam(r, "appliance"), chi.URLParam(r, "id")
+	if !validID(home) || !validID(appliance) || !validID(id) {
+		fail(w, 404, "not_found")
+		return
+	}
+	out, err := s.Store.Get(r.Context(), s.UserID(r), home, appliance, id, time.Now().UTC())
+	if errors.Is(err, ErrNotFound) {
+		fail(w, 404, "not_found")
+		return
+	}
+	if errors.Is(err, ErrDisclosureRequired) {
+		fail(w, 403, "history_disclosure_required")
+		return
+	}
+	if err != nil {
+		slog.Error("cycle evidence read failed", "error", err)
 		fail(w, 500, "internal_error")
 		return
 	}
