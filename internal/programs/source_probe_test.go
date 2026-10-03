@@ -32,7 +32,7 @@ func TestPageProbeRejectsUnsafeSourceRegistrations(t *testing.T) {
 }
 
 func TestPageProbeRejectsNonPublicAddresses(t *testing.T) {
-	for _, value := range []string{"127.0.0.1", "10.0.0.1", "169.254.169.254", "100.64.1.1", "192.0.0.8", "198.19.0.1", "::1", "fc00::1", "fe80::1", "2001:db8::1", "::ffff:127.0.0.1"} {
+	for _, value := range []string{"127.0.0.1", "10.0.0.1", "169.254.169.254", "100.64.1.1", "192.0.0.8", "192.0.2.1", "198.19.0.1", "198.51.100.1", "203.0.113.1", "::1", "fc00::1", "fe80::1", "2001:db8::1", "::ffff:127.0.0.1"} {
 		if publicSourceIP(netip.MustParseAddr(value)) {
 			t.Errorf("accepted non-public address %s", value)
 		}
