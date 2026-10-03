@@ -3,21 +3,26 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
 
 var ErrPurgeNotReady = errors.New("deletion tombstone or hub revocation missing")
+var ErrPurgeArchiveNotReady = errors.New("deletion journal archive is not ready for purge")
 
 // PurgeHome is an operator-only method; no API route invokes it. It physically
 // removes the private rows for an already tombstoned home, then leaves a
 // minimal disabled home row and the deletion journal for replay/denial.
-func (s PGStore) PurgeHome(ctx context.Context, home string) error {
-	tx, err := s.Pool.Begin(ctx)
+func (s PGStore) PurgeHome(ctx context.Context, home string, archive JournalArchive) error {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = verifyPurgeArchive(ctx, tx, archive); err != nil {
+		return err
+	}
 	if err = purgeHomeTx(ctx, tx, home); err != nil {
 		return err
 	}
@@ -28,12 +33,15 @@ func (s PGStore) PurgeHome(ctx context.Context, home string) error {
 // owned home has been tombstoned and purged. The user ID, disabled identity
 // mapping, and deletion journal remain so the same OIDC subject cannot silently
 // create a new account after deletion.
-func (s PGStore) PurgeAccount(ctx context.Context, owner string) error {
-	tx, err := s.Pool.Begin(ctx)
+func (s PGStore) PurgeAccount(ctx context.Context, owner string, archive JournalArchive) error {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = verifyPurgeArchive(ctx, tx, archive); err != nil {
+		return err
+	}
 	var deleted bool
 	err = tx.QueryRow(ctx, `SELECT deleted_at IS NOT NULL AND EXISTS (SELECT 1 FROM privacy_deletion_journal WHERE kind='account' AND object_id=$1) FROM users WHERE id=$1 FOR UPDATE`, owner).Scan(&deleted)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -84,6 +92,45 @@ func (s PGStore) PurgeAccount(ctx context.Context, owner string) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// verifyPurgeArchive compares the authenticated archive with the complete
+// database journal in one transaction snapshot. Older archive-only entries are
+// valid after a database restore; a missing or changed current entry is not.
+func verifyPurgeArchive(ctx context.Context, tx pgx.Tx, archive JournalArchive) error {
+	if archive == nil {
+		return ErrPurgeArchiveNotReady
+	}
+	entries, err := archive.ReadAll()
+	if err != nil {
+		return fmt.Errorf("read deletion journal archive: %w", err)
+	}
+	bySequence := make(map[int64]DeletionEntry, len(entries))
+	for _, e := range entries {
+		if err := validDeletionEntry(e); err != nil {
+			return fmt.Errorf("invalid archived deletion entry: %w", err)
+		}
+		if _, exists := bySequence[e.Sequence]; exists {
+			return fmt.Errorf("duplicate archived deletion sequence %d: %w", e.Sequence, ErrPurgeArchiveNotReady)
+		}
+		bySequence[e.Sequence] = e
+	}
+	rows, err := tx.Query(ctx, `SELECT sequence,kind,object_id,deleted_at FROM privacy_deletion_journal ORDER BY sequence`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var current DeletionEntry
+		if err := rows.Scan(&current.Sequence, &current.Kind, &current.ObjectID, &current.DeletedAt); err != nil {
+			return err
+		}
+		archived, ok := bySequence[current.Sequence]
+		if !ok || archived.Kind != current.Kind || archived.ObjectID != current.ObjectID || !archived.DeletedAt.Equal(current.DeletedAt) {
+			return fmt.Errorf("deletion sequence %d: %w", current.Sequence, ErrPurgeArchiveNotReady)
+		}
+	}
+	return rows.Err()
 }
 
 func purgeHomeTx(ctx context.Context, tx pgx.Tx, home string) error {

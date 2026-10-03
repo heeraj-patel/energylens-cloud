@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,7 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	}
 
 	store := PGStore{Pool: pool}
+	emptyArchive := testDirectoryJournal(t)
 	ownerIdentity := Identity{Issuer: "https://identity.example", Subject: "owner", Email: "owner@example.test", EmailVerified: true}
 	owner, err := store.Resolve(ctx, ownerIdentity)
 	if err != nil {
@@ -90,13 +92,13 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err = store.PurgeHome(ctx, home); !errors.Is(err, ErrPurgeNotReady) {
+	if err = store.PurgeHome(ctx, home, emptyArchive); !errors.Is(err, ErrPurgeNotReady) {
 		t.Fatalf("untombstoned purge: %v", err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE homes SET deleted_at=now() WHERE id=$1`, secondHome); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.PurgeHome(ctx, secondHome); !errors.Is(err, ErrPurgeNotReady) {
+	if err = store.PurgeHome(ctx, secondHome, emptyArchive); !errors.Is(err, ErrPurgeNotReady) {
 		t.Fatalf("tombstone without journal purge: %v", err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE homes SET deleted_at=NULL WHERE id=$1`, secondHome); err != nil {
@@ -171,6 +173,66 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	if accountEntry.ObjectID != owner.ID {
 		t.Fatalf("missing account entry: %v", entries)
 	}
+	for _, test := range []struct {
+		name    string
+		archive JournalArchive
+	}{
+		{"nil archive", nil},
+		{"unexported archive", emptyArchive},
+	} {
+		if err = store.PurgeHome(ctx, home, test.archive); !errors.Is(err, ErrPurgeArchiveNotReady) {
+			t.Fatalf("%s home purge: %v", test.name, err)
+		}
+		if err = store.PurgeAccount(ctx, owner.ID, test.archive); !errors.Is(err, ErrPurgeArchiveNotReady) {
+			t.Fatalf("%s account purge: %v", test.name, err)
+		}
+	}
+	var privateCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM appliances WHERE home_id=$1`, home).Scan(&privateCount); err != nil || privateCount != 1 {
+		t.Fatalf("private rows changed before export: %d %v", privateCount, err)
+	}
+	staleArchive := testDirectoryJournal(t)
+	for _, entry := range entries[:len(entries)-1] {
+		if err = staleArchive.Append(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = store.PurgeHome(ctx, home, staleArchive); !errors.Is(err, ErrPurgeArchiveNotReady) {
+		t.Fatalf("stale archive home purge: %v", err)
+	}
+	if err = store.PurgeAccount(ctx, owner.ID, staleArchive); !errors.Is(err, ErrPurgeArchiveNotReady) {
+		t.Fatalf("stale archive account purge: %v", err)
+	}
+	missingArchive := testDirectoryJournal(t)
+	missingArchive.Dir = filepath.Join(missingArchive.Dir, "missing")
+	if err = store.PurgeHome(ctx, home, missingArchive); err == nil {
+		t.Fatal("missing archive allowed home purge")
+	}
+	if err = store.PurgeAccount(ctx, owner.ID, missingArchive); err == nil {
+		t.Fatal("missing archive allowed account purge")
+	}
+	corruptArchive := testDirectoryJournal(t)
+	for _, entry := range entries {
+		if err = corruptArchive.Append(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := os.ReadDir(corruptArchive.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(corruptArchive.Dir, files[0].Name()), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.PurgeHome(ctx, home, corruptArchive); err == nil {
+		t.Fatal("corrupt archive allowed home purge")
+	}
+	if err = store.PurgeAccount(ctx, owner.ID, corruptArchive); err == nil {
+		t.Fatal("corrupt archive allowed account purge")
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM appliances WHERE home_id=$1`, home).Scan(&privateCount); err != nil || privateCount != 1 {
+		t.Fatalf("private rows changed after rejected purges: %d %v", privateCount, err)
+	}
 	archive := testDirectoryJournal(t)
 	if count, err := store.ExportDeletionJournal(ctx, archive); err != nil || count != 3 {
 		t.Fatalf("external export: %d %v", count, err)
@@ -210,10 +272,10 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	if accountEntry.DeletedAt.After(time.Now()) {
 		t.Fatal("future deletion time")
 	}
-	if err = store.PurgeHome(ctx, home); err != nil {
+	if err = store.PurgeHome(ctx, home, archive); err != nil {
 		t.Fatalf("purge home: %v", err)
 	}
-	if err = store.PurgeHome(ctx, home); err != nil {
+	if err = store.PurgeHome(ctx, home, archive); err != nil {
 		t.Fatalf("repeat home purge: %v", err)
 	}
 	for _, table := range []string{"home_location_revisions", "report_previews", "report_delivery_requests", "account_home_idempotency", "tariff_revisions", "identity_scan_requests", "interventions", "intervention_idempotency"} {
@@ -222,16 +284,15 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 			t.Fatalf("private table %s: count=%d err=%v", table, count, err)
 		}
 	}
-	if err = store.PurgeAccount(ctx, owner.ID); err != nil {
+	if err = store.PurgeAccount(ctx, owner.ID, archive); err != nil {
 		t.Fatalf("purge account: %v", err)
 	}
-	if err = store.PurgeAccount(ctx, owner.ID); err != nil {
+	if err = store.PurgeAccount(ctx, owner.ID, archive); err != nil {
 		t.Fatalf("repeat account purge: %v", err)
 	}
 	if _, err = store.Resolve(ctx, ownerIdentity); !errors.Is(err, ErrDeleted) {
 		t.Fatalf("purged account resolved: %v", err)
 	}
-	var privateCount int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM account_preferences WHERE user_id=$1`, owner.ID).Scan(&privateCount); err != nil || privateCount != 0 {
 		t.Fatalf("account preferences after purge: %d %v", privateCount, err)
 	}
