@@ -105,6 +105,41 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	}
 	for i := range items {
 		item := &items[i]
+		if item.Fuel == "electricity" && item.Identity == "confirmed_exact" &&
+			(item.Category == "washer" || item.Category == "dryer" || item.Category == "dishwasher") &&
+			item.Details.Brand != "" && item.Details.FullModel != "" && item.Details.Variant != nil && *item.Details.Variant != "" {
+			// A usage publication is independent of the annual catalog link. Count
+			// every row for this identity first so a second or incompatible cycle
+			// fact cannot silently select a favorable source.
+			var count int
+			err = tx.QueryRow(ctx, `SELECT count(*) FROM reviewed_usage_facts
+			 WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel='electricity'
+			 AND variant=$4 AND measurement_kind='cycle_energy'`, item.Category,
+				item.Details.Brand, item.Details.FullModel, *item.Details.Variant).Scan(&count)
+			if err != nil {
+				return nil, err
+			}
+			if count == 1 {
+				var factID string
+				err = tx.QueryRow(ctx, `SELECT id FROM reviewed_usage_facts
+				 WHERE category=$1 AND manufacturer=$2 AND model=$3 AND fuel='electricity'
+				 AND variant=$4 AND measurement_kind='cycle_energy' AND unit='kWh/cycle'
+				 AND value>0 AND match_quality='confirmed_exact'
+				 AND documented_scope=$3 AND matched_model=$3
+				 AND source_kind IN ('oem_pdf','epa_row')
+				 AND nullif(btrim(test_basis),'') IS NOT NULL
+				 AND nullif(btrim(cycle_definition),'') IS NOT NULL AND operation_mode IS NULL
+				 AND included_energy->>'status'='documented'
+				 AND included_energy->'components'='["appliance_electricity"]'::jsonb`,
+					item.Category, item.Details.Brand, item.Details.FullModel, *item.Details.Variant).Scan(&factID)
+				if err == nil {
+					item.Facts = append(item.Facts, Evidence{ID: factID, Kind: "cycle_energy", Revision: 1})
+				}
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return nil, err
+				}
+			}
+		}
 		if item.Category == "dryer" && item.Fuel == "natural_gas" && item.Identity == "confirmed_exact" &&
 			item.Details.Brand != "" && item.Details.FullModel != "" && item.Details.Variant != nil && *item.Details.Variant != "" {
 			var count int
