@@ -48,6 +48,37 @@ func TestEvaluateCategoryAndFuelBoundary(t *testing.T) {
 	}
 }
 
+func TestGasDryerRequiresOptInAndSeparateEvidence(t *testing.T) {
+	a := Appliance{ID: "dryer-1", Category: "dryer", Fuel: "natural_gas", Identity: "confirmed_exact",
+		Tariff: &Evidence{ID: "electric-rate", Kind: "tariff", Revision: 1},
+		Facts:  []Evidence{{ID: "electric-fact", Kind: "cycle_energy", Revision: 1}}}
+	if legacy := Evaluate(a); len(legacy) != 1 || legacy[0].RuleID != "general.gather_information" {
+		t.Fatalf("legacy client saw gas rule: %+v", legacy)
+	}
+	check := func(state, next string, refs int) {
+		t.Helper()
+		got := EvaluateGasEnabled(a)
+		if len(got) != 1 || got[0].RuleID != "dryer.gas_cycle_options" || got[0].State != state ||
+			got[0].NextQuestion != next || len(got[0].EvidenceRefs) != refs || got[0].SavingsAmount != nil {
+			t.Fatalf("gas action: %+v", got)
+		}
+	}
+	check("candidate", "find_reviewed_energy_source", 0)
+	a.GasUsage = &Evidence{ID: "gas-fact", Kind: "gas_cycle_energy", Revision: 1}
+	check("candidate", "cycles_per_week", 1)
+	a.Answers = map[string]Evidence{"cycles_per_week": {ID: "answer", Kind: "confirmed_answer", Revision: 1}}
+	check("candidate", "add_gas_rate", 2)
+	a.GasTariff = &Evidence{ID: "gas-rate", Kind: "gas_tariff", Revision: 1}
+	check("active", "", 3)
+	a.Identity = "unresolved"
+	check("candidate", "confirm_model", 0)
+	a.Identity = "confirmed_exact"
+	a.Fuel = "propane"
+	if got := EvaluateGasEnabled(a); len(got) != 1 || got[0].RuleID != "general.gather_information" {
+		t.Fatalf("propane received natural-gas rule: %+v", got)
+	}
+}
+
 func TestExpandedDeviceRulesRequireExactReviewedEvidence(t *testing.T) {
 	cases := []struct {
 		category, ruleID, factKind, group, answerKind string

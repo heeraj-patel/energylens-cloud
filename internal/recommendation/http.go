@@ -39,10 +39,16 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actions := []Action{}
+	gasEnabled := r.URL.Query().Get("capability") == "gas_dryer_recommendations_v1"
 	for _, appliance := range appliances {
-		actions = append(actions, Evaluate(appliance)...)
+		if gasEnabled {
+			actions = append(actions, EvaluateGasEnabled(appliance)...)
+		} else {
+			actions = append(actions, Evaluate(appliance)...)
+		}
 	}
 	actions = rankActions(actions)
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
 		Actions []Action `json:"actions"`

@@ -104,3 +104,104 @@ func TestCurrentRecommendationEvidenceOwnerAndRevisions(t *testing.T) {
 	}
 	check("candidate", "hours_per_week", 1)
 }
+
+func TestGasDryerRecommendationReadsExactUsageAndFreshThermRate(t *testing.T) {
+	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	schema := "recommendation_gas_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	owner, home, device, fact, answer, rate := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	hash := strings.Repeat("b", 64)
+	identity := `{"brand":"Acme","full_model":"G123","variant":"US-GAS","fuel":"natural_gas","match_quality":"confirmed_exact"}`
+	statements := []struct {
+		q    string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'House','UTC')`, []any{home, owner}},
+		{`INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Gas dryer','dryer',$3)`, []any{device, home, identity}},
+		{`INSERT INTO reviewed_usage_publications(payload_sha256,key_id,envelope_sha256,imported_by,fact_count) VALUES($1,$1,$1,'test',1)`, []any{hash}},
+		{`INSERT INTO reviewed_usage_facts
+		(id,publication_sha256,category,manufacturer,model,fuel,variant,match_quality,documented_scope,matched_model,measurement_kind,value,unit,test_basis,cycle_definition,included_energy,source_kind,source_url,source_sha256,source_page_index,review_sha256,reviewer,reviewed_at,source_manifest,fact_json)
+		VALUES($1,$2,'dryer','Acme','G123','natural_gas','US-GAS','confirmed_exact','G123','G123','cycle_energy',0.25,'therm/cycle','normal cycle','normal cycle','{"status":"documented","components":["appliance_gas"]}','oem_pdf','https://example.org/gas-dryer.pdf',$2,0,$2,'reviewer',$3,'gas-dryer.json','{}')`, []any{fact, hash, now}},
+	}
+	for _, stmt := range statements {
+		if _, err = pool.Exec(ctx, stmt.q, stmt.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := PGStore{Pool: pool}
+	read := func() Action {
+		t.Helper()
+		items, readErr := store.Current(ctx, owner, home, now)
+		if readErr != nil || len(items) != 1 {
+			t.Fatalf("gas evidence: %+v %v", items, readErr)
+		}
+		actions := EvaluateGasEnabled(items[0])
+		if len(actions) != 1 {
+			t.Fatalf("gas actions: %+v", actions)
+		}
+		return actions[0]
+	}
+	if action := read(); action.NextQuestion != "cycles_per_week" || len(action.EvidenceRefs) != 1 {
+		t.Fatalf("source: %+v", action)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(id,home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at)
+	 VALUES($1,$2,$3,1,'dryer.cycles_per_week',1,1,'confirmed','3',$4)`, answer, home, device, now); err != nil {
+		t.Fatal(err)
+	}
+	if action := read(); action.NextQuestion != "add_gas_rate" || len(action.EvidenceRefs) != 2 {
+		t.Fatalf("usage: %+v", action)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from)
+	 VALUES($1,1,'natural_gas',1.10,'therm','USD','user_tariff','old gas bill',$2,false,$3)`, home, now.AddDate(-2, 0, 0), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if action := read(); action.State != "candidate" || action.NextQuestion != "add_gas_rate" {
+		t.Fatalf("stale rate: %+v", action)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(id,home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from)
+	 VALUES($1,$2,2,'natural_gas',1.20,'therm','USD','user_tariff','customer',$3,false,$4)`, rate, home, now, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if action := read(); action.State != "active" || len(action.EvidenceRefs) != 3 || action.SavingsAmount != nil {
+		t.Fatalf("active: %+v", action)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status)
+	 VALUES($1,$2,1,'dryer.cycles_per_week',1,2,'unknown')`, home, device); err != nil {
+		t.Fatal(err)
+	}
+	if action := read(); action.State != "candidate" || action.NextQuestion != "cycles_per_week" {
+		t.Fatalf("unknown cycles: %+v", action)
+	}
+}

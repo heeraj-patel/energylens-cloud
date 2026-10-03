@@ -59,3 +59,40 @@ func TestRecommendationsRouteUsesOwnerAndNeverPromisesSavings(t *testing.T) {
 		t.Fatalf("storage failure: %d", w.Code)
 	}
 }
+
+func TestGasRuleRequiresExplicitRequestCapability(t *testing.T) {
+	home := uuid.NewString()
+	store := &stubStore{appliances: []Appliance{{ID: uuid.NewString(), Category: "dryer", Fuel: "natural_gas", Identity: "confirmed_exact",
+		GasUsage:  &Evidence{ID: uuid.NewString(), Kind: "gas_cycle_energy", Revision: 1},
+		Answers:   map[string]Evidence{"cycles_per_week": {ID: uuid.NewString(), Kind: "confirmed_answer", Revision: 1}},
+		GasTariff: &Evidence{ID: uuid.NewString(), Kind: "gas_tariff", Revision: 1}}}}
+	r := chi.NewRouter()
+	Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return "owner" }}.Routes(r)
+	request := func(query string) Action {
+		t.Helper()
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/homes/"+home+"/recommendations"+query, nil))
+		if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("response: %d %v", w.Code, w.Header())
+		}
+		var body struct {
+			Actions []Action `json:"actions"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Actions) != 1 {
+			t.Fatalf("actions: %+v", body.Actions)
+		}
+		return body.Actions[0]
+	}
+	for _, query := range []string{"", "?capability=unknown", "?capability=gas_dryer_recommendations_v0"} {
+		if action := request(query); action.RuleID != "general.gather_information" || action.SavingsAmount != nil {
+			t.Fatalf("legacy response changed: %+v", action)
+		}
+	}
+	action := request("?capability=gas_dryer_recommendations_v1")
+	if action.RuleID != "dryer.gas_cycle_options" || action.State != "active" || len(action.EvidenceRefs) != 3 || action.SavingsAmount != nil {
+		t.Fatalf("gas action: %+v", action)
+	}
+}

@@ -12,13 +12,15 @@ type Evidence struct {
 }
 
 type Appliance struct {
-	ID       string
-	Category string
-	Fuel     string
-	Identity string // confirmed_exact, documented_variant_family, unresolved
-	Facts    []Evidence
-	Answers  map[string]Evidence // only confirmed, current appliance-revision answers
-	Tariff   *Evidence           // current marginal electricity rate; never used for a savings claim
+	ID        string
+	Category  string
+	Fuel      string
+	Identity  string // confirmed_exact, documented_variant_family, unresolved
+	Facts     []Evidence
+	Answers   map[string]Evidence // only confirmed, current appliance-revision answers
+	Tariff    *Evidence           // current marginal electricity rate; never used for a savings claim
+	GasUsage  *Evidence           // exact reviewed dryer therm/cycle fact
+	GasTariff *Evidence           // fresh USD/therm marginal rate
 }
 
 type Action struct {
@@ -63,7 +65,41 @@ var initial = []rule{
 // otherwise it remains a candidate with an explicit next question. A reviewed
 // annual fact supports only the appliance identity, never a usage-based saving.
 func Evaluate(a Appliance) []Action {
+	return evaluate(a, false)
+}
+
+// EvaluateGasEnabled is used only for clients that explicitly accept the gas
+// dryer rule and follow-up prompt. Legacy recommendation pages keep their
+// original vocabulary and their gather-information fallback.
+func EvaluateGasEnabled(a Appliance) []Action {
+	return evaluate(a, true)
+}
+
+func evaluate(a Appliance, gasEnabled bool) []Action {
 	out := []Action{}
+	if gasEnabled && a.Category == "dryer" && a.Fuel == "natural_gas" {
+		refs := []Evidence{}
+		state, next := "candidate", "confirm_model"
+		if a.Identity == "confirmed_exact" {
+			next = "find_reviewed_energy_source"
+			if a.GasUsage != nil && a.GasUsage.ID != "" && a.GasUsage.Kind == "gas_cycle_energy" && a.GasUsage.Revision > 0 {
+				refs = append(refs, *a.GasUsage)
+				next = "cycles_per_week"
+				if answer, ok := a.Answers["cycles_per_week"]; ok && answer.ID != "" && answer.Kind == "confirmed_answer" && answer.Revision > 0 {
+					refs = append(refs, answer)
+					next = "add_gas_rate"
+					if a.GasTariff != nil && a.GasTariff.ID != "" && a.GasTariff.Kind == "gas_tariff" && a.GasTariff.Revision > 0 {
+						refs = append(refs, *a.GasTariff)
+						state, next = "active", ""
+					}
+				}
+			}
+		}
+		out = append(out, Action{RuleID: "dryer.gas_cycle_options", RuleVersion: 1, ApplianceID: a.ID,
+			State: state, Title: "Review gas dryer cycle options",
+			Explanation:  "Check manufacturer-supported sensor-dry and suitable load settings. Gas and electrical use need separate evidence; this action does not identify waste or establish savings.",
+			NextQuestion: next, BenefitGroup: "laundry_cycle", EvidenceRefs: refs})
+	}
 	for _, r := range initial {
 		if a.Category != r.category || a.Fuel != r.fuel {
 			continue
@@ -153,7 +189,7 @@ func rankActions(actions []Action) []Action {
 
 func readiness(action Action) int {
 	switch action.NextQuestion {
-	case "add_electricity_rate":
+	case "add_electricity_rate", "add_gas_rate":
 		return 3
 	case "hours_per_week", "cycles_per_week":
 		return 2
