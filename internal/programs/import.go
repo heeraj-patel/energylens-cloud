@@ -33,6 +33,7 @@ type ReviewedImport struct {
 	ProgramKey         string
 	GeographyKey       string
 	AdministratorName  string
+	AdministratorKind  string // reviewed authority: utility, city, county, state, tribal, federal, manufacturer
 	Status             string
 	Title              string
 	BenefitKind        string
@@ -47,7 +48,7 @@ type ReviewedImport struct {
 	Applicability      *StructuredApplicability
 }
 
-var requiredEvidence = []string{"title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"}
+var requiredEvidence = []string{"administrator_kind", "title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"}
 var dateFields = []string{"purchase_from", "purchase_to", "installation_from", "installation_to", "reservation_from", "reservation_to", "application_from", "application_to"}
 
 func sourceHost(raw string) (string, error) {
@@ -97,6 +98,11 @@ func validateReviewedImport(in ReviewedImport, now time.Time) error {
 	}
 	if !object(in.BenefitTerms) || !object(in.EligibilityTerms) || !object(in.StackingTerms) {
 		return errors.New("reviewed terms must be nonempty JSON objects")
+	}
+	switch in.AdministratorKind {
+	case "utility", "city", "county", "state", "tribal", "federal", "manufacturer":
+	default:
+		return errors.New("invalid administrator kind")
 	}
 	switch in.Status {
 	case "proposed", "upcoming", "open", "waitlist", "exhausted", "suspended", "closed", "unknown":
@@ -224,9 +230,9 @@ func ImportReviewed(ctx context.Context, db *pgxpool.Pool, in ReviewedImport) (u
 		return uuid.Nil, errors.New("program is bound to a different source")
 	}
 	var revisionID uuid.UUID
-	err = tx.QueryRow(ctx, `INSERT INTO public_program_revisions(program_id,revision,source_snapshot_id,lifecycle,status,title,benefit_kind,benefit_terms,eligibility_terms,stacking_terms,purchase_from,purchase_to,installation_from,installation_to,reservation_from,reservation_to,application_from,application_to,extracted_at,reviewed_at,review_expires_at,reviewed_by,review_note)
- VALUES($1,(SELECT coalesce(max(revision),0)+1 FROM public_program_revisions WHERE program_id=$1),$2,'reviewed',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17,$18,$19,$20) RETURNING id`,
-		programID, snapshotID, in.Status, in.Title, in.BenefitKind, in.BenefitTerms, in.EligibilityTerms, in.StackingTerms,
+	err = tx.QueryRow(ctx, `INSERT INTO public_program_revisions(program_id,revision,source_snapshot_id,lifecycle,administrator_kind,status,title,benefit_kind,benefit_terms,eligibility_terms,stacking_terms,purchase_from,purchase_to,installation_from,installation_to,reservation_from,reservation_to,application_from,application_to,extracted_at,reviewed_at,review_expires_at,reviewed_by,review_note)
+ VALUES($1,(SELECT coalesce(max(revision),0)+1 FROM public_program_revisions WHERE program_id=$1),$2,'reviewed',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$19,$20,$21) RETURNING id`,
+		programID, snapshotID, in.AdministratorKind, in.Status, in.Title, in.BenefitKind, in.BenefitTerms, in.EligibilityTerms, in.StackingTerms,
 		nullableDate(in.Dates["purchase_from"]), nullableDate(in.Dates["purchase_to"]), nullableDate(in.Dates["installation_from"]), nullableDate(in.Dates["installation_to"]), nullableDate(in.Dates["reservation_from"]), nullableDate(in.Dates["reservation_to"]), nullableDate(in.Dates["application_from"]), nullableDate(in.Dates["application_to"]), now, in.ReviewExpiresAt, in.Reviewer, in.ReviewNote).Scan(&revisionID)
 	if err != nil {
 		return uuid.Nil, err

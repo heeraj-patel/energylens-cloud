@@ -60,8 +60,29 @@ func TestImportReviewedRequiresRegisteredAuthorityAndCompleteEvidence(t *testing
 		evidence[f] = "section 2"
 	}
 	evidence["application_to"] = "section 3"
-	input := ReviewedImport{SourceKey: "utility-a", SourceURL: "https://utility.example/program", SourceBytes: []byte("exact official offer bytes"), ContentType: "text/html", SnapshotRef: "operator:artifact-1", ParserVersion: "v1", AdministratorKey: "utility-a", ProgramKey: "washer", GeographyKey: "TX", AdministratorName: "Utility A", Status: "open", Title: "Washer rebate", BenefitKind: "rebate", BenefitTerms: json.RawMessage(`{"amount":"100"}`), EligibilityTerms: json.RawMessage(`{"category":"washer"}`), StackingTerms: json.RawMessage(`{"status":"unknown"}`), Dates: map[string]string{"application_to": "2026-12-31"}, Evidence: evidence, Reviewer: "reviewer", ReviewNote: "Checked offer and source authority", ReviewExpiresAt: now.Add(7 * 24 * time.Hour)}
+	input := ReviewedImport{SourceKey: "utility-a", SourceURL: "https://utility.example/program", SourceBytes: []byte("exact official offer bytes"), ContentType: "text/html", SnapshotRef: "operator:artifact-1", ParserVersion: "v1", AdministratorKey: "utility-a", ProgramKey: "washer", GeographyKey: "TX", AdministratorName: "Utility A", AdministratorKind: "utility", Status: "open", Title: "Washer rebate", BenefitKind: "rebate", BenefitTerms: json.RawMessage(`{"amount":"100"}`), EligibilityTerms: json.RawMessage(`{"category":"washer"}`), StackingTerms: json.RawMessage(`{"status":"unknown"}`), Dates: map[string]string{"application_to": "2026-12-31"}, Evidence: evidence, Reviewer: "reviewer", ReviewNote: "Checked offer and source authority", ReviewExpiresAt: now.Add(7 * 24 * time.Hour)}
 	bad := input
+	bad.AdministratorKind = ""
+	if _, err = ImportReviewed(ctx, pool, bad); err == nil {
+		t.Fatal("missing administrator kind accepted")
+	}
+	bad = input
+	bad.AdministratorKind = "unknown"
+	if _, err = ImportReviewed(ctx, pool, bad); err == nil {
+		t.Fatal("unknown administrator kind accepted")
+	}
+	bad = input
+	bad.Evidence = map[string]string{}
+	for _, field := range requiredEvidence {
+		if field != "administrator_kind" {
+			bad.Evidence[field] = "section 2"
+		}
+	}
+	bad.Evidence["application_to"] = "section 3"
+	if _, err = ImportReviewed(ctx, pool, bad); err == nil {
+		t.Fatal("administrator kind without evidence accepted")
+	}
+	bad = input
 	bad.SourceURL = "https://attacker.example/program"
 	if _, err = ImportReviewed(ctx, pool, bad); err == nil {
 		t.Fatal("unregistered host accepted")
@@ -78,6 +99,10 @@ func TestImportReviewedRequiresRegisteredAuthorityAndCompleteEvidence(t *testing
 	var count int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM current_verified_program_revisions WHERE id=$1`, id).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("verified count %d: %v", count, err)
+	}
+	var storedKind string
+	if err = pool.QueryRow(ctx, `SELECT administrator_kind FROM public_program_revisions WHERE id=$1`, id).Scan(&storedKind); err != nil || storedKind != "utility" {
+		t.Fatalf("reviewed administrator kind: %q %v", storedKind, err)
 	}
 	var sourceID uuid.UUID
 	if err = pool.QueryRow(ctx, `SELECT id FROM program_sources WHERE source_key='utility-a'`).Scan(&sourceID); err != nil {

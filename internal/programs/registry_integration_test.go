@@ -91,10 +91,10 @@ func TestReviewedProgramRequiresFreshUnconflictedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertRevision := `INSERT INTO public_program_revisions
-		(program_id, revision, source_snapshot_id, lifecycle, status, title, benefit_kind,
+		(program_id, revision, source_snapshot_id, lifecycle, administrator_kind, status, title, benefit_kind,
 		 benefit_terms, eligibility_terms, stacking_terms, extracted_at, reviewed_at,
 		 review_expires_at, reviewed_by)
-		VALUES ($1,$2,$3,$4,'open','Washer offer','rebate','{}','{}','{}',$5,$6,$7,$8) RETURNING id`
+		VALUES ($1,$2,$3,$4,'utility','open','Washer offer','rebate','{}','{}','{}',$5,$6,$7,$8) RETURNING id`
 	if err = pool.QueryRow(ctx, insertRevision, programID, 1, snapshotA, "candidate", now.Add(-time.Hour),
 		nil, nil, nil).Scan(&reviewedID); err != nil {
 		t.Fatal(err)
@@ -126,6 +126,11 @@ func TestReviewedProgramRequiresFreshUnconflictedEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	assertCount(0) // Reviewed terms alone do not establish administrator scope.
+	if _, err = pool.Exec(ctx, `INSERT INTO public_program_evidence(revision_id,field_path,snapshot_id,locator)
+		VALUES ($1,'administrator_kind',$2,'section 1')`, acceptedID, snapshotA); err != nil {
+		t.Fatal(err)
+	}
 	assertCount(1)
 	var conflictID uuid.UUID
 	if err = pool.QueryRow(ctx, `INSERT INTO public_program_conflicts
@@ -154,6 +159,26 @@ func TestReviewedProgramRequiresFreshUnconflictedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCount(0) // New extraction invalidates the older reviewed revision.
+	if _, err = pool.Exec(ctx, `INSERT INTO public_program_revisions
+		(program_id,revision,source_snapshot_id,lifecycle,administrator_kind,status,title,benefit_kind,
+		 benefit_terms,eligibility_terms,stacking_terms,extracted_at,reviewed_at,review_expires_at,reviewed_by)
+		 VALUES($1,4,$2,'reviewed','unknown','open','Washer offer','rebate','{}','{}','{}',$3,$3,$4,'reviewer')`, programID, snapshotB, now, now.Add(time.Hour)); err == nil {
+		t.Fatal("unknown administrator kind accepted by storage")
+	}
+	var unclassifiedID uuid.UUID
+	if err = pool.QueryRow(ctx, `INSERT INTO public_program_revisions
+		(program_id,revision,source_snapshot_id,lifecycle,status,title,benefit_kind,
+		 benefit_terms,eligibility_terms,stacking_terms,extracted_at,reviewed_at,review_expires_at,reviewed_by)
+		 VALUES($1,4,$2,'reviewed','open','Washer offer','rebate','{}','{}','{}',$3,$3,$4,'reviewer') RETURNING id`, programID, snapshotB, now, now.Add(time.Hour)).Scan(&unclassifiedID); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"administrator_kind", "title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"} {
+		if _, err = pool.Exec(ctx, `INSERT INTO public_program_evidence(revision_id,field_path,snapshot_id,locator)
+			VALUES($1,$2,$3,'section 1')`, unclassifiedID, field, snapshotB); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertCount(0) // Legacy or unclassified reviews never enter the owner feed.
 	if _, err = pool.Exec(ctx, `DELETE FROM public_program_revisions WHERE id=$1`, acceptedID); err == nil {
 		t.Fatal("accepted source evidence was mutable")
 	}
