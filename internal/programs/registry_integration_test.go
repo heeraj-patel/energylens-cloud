@@ -91,10 +91,10 @@ func TestReviewedProgramRequiresFreshUnconflictedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertRevision := `INSERT INTO public_program_revisions
-		(program_id, revision, source_snapshot_id, lifecycle, administrator_kind, status, title, benefit_kind,
+		(program_id, revision, source_snapshot_id, lifecycle, administrator_kind, status, title, benefit_kind, benefit_display,
 		 benefit_terms, eligibility_terms, stacking_terms, extracted_at, reviewed_at,
 		 review_expires_at, reviewed_by)
-		VALUES ($1,$2,$3,$4,'utility','open','Washer offer','rebate','{}','{}','{}',$5,$6,$7,$8) RETURNING id`
+		VALUES ($1,$2,$3,$4,'utility','open','Washer offer','rebate','official program terms A','{}','{}','{}',$5,$6,$7,$8) RETURNING id`
 	if err = pool.QueryRow(ctx, insertRevision, programID, 1, snapshotA, "candidate", now.Add(-time.Hour),
 		nil, nil, nil).Scan(&reviewedID); err != nil {
 		t.Fatal(err)
@@ -129,6 +129,11 @@ func TestReviewedProgramRequiresFreshUnconflictedEvidence(t *testing.T) {
 	assertCount(0) // Reviewed terms alone do not establish administrator scope.
 	if _, err = pool.Exec(ctx, `INSERT INTO public_program_evidence(revision_id,field_path,snapshot_id,locator)
 		VALUES ($1,'administrator_kind',$2,'section 1')`, acceptedID, snapshotA); err != nil {
+		t.Fatal(err)
+	}
+	assertCount(0) // Display text needs its own citation.
+	if _, err = pool.Exec(ctx, `INSERT INTO public_program_evidence(revision_id,field_path,snapshot_id,locator)
+		VALUES ($1,'benefit_display',$2,'section 1')`, acceptedID, snapshotA); err != nil {
 		t.Fatal(err)
 	}
 	assertCount(1)
@@ -172,13 +177,27 @@ func TestReviewedProgramRequiresFreshUnconflictedEvidence(t *testing.T) {
 		 VALUES($1,4,$2,'reviewed','open','Washer offer','rebate','{}','{}','{}',$3,$3,$4,'reviewer') RETURNING id`, programID, snapshotB, now, now.Add(time.Hour)).Scan(&unclassifiedID); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"administrator_kind", "title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"} {
+	for _, field := range []string{"administrator_kind", "benefit_display", "title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"} {
 		if _, err = pool.Exec(ctx, `INSERT INTO public_program_evidence(revision_id,field_path,snapshot_id,locator)
 			VALUES($1,$2,$3,'section 1')`, unclassifiedID, field, snapshotB); err != nil {
 			t.Fatal(err)
 		}
 	}
 	assertCount(0) // Legacy or unclassified reviews never enter the owner feed.
+	var missingBenefitID uuid.UUID
+	if err = pool.QueryRow(ctx, `INSERT INTO public_program_revisions
+		(program_id,revision,source_snapshot_id,lifecycle,administrator_kind,status,title,benefit_kind,
+		 benefit_terms,eligibility_terms,stacking_terms,extracted_at,reviewed_at,review_expires_at,reviewed_by)
+		 VALUES($1,5,$2,'reviewed','utility','open','Washer offer','rebate','{}','{}','{}',$3,$3,$4,'reviewer') RETURNING id`, programID, snapshotB, now, now.Add(time.Hour)).Scan(&missingBenefitID); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"administrator_kind", "benefit_display", "title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"} {
+		if _, err = pool.Exec(ctx, `INSERT INTO public_program_evidence(revision_id,field_path,snapshot_id,locator)
+			VALUES($1,$2,$3,'section 1')`, missingBenefitID, field, snapshotB); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertCount(0) // A citation cannot supply a missing reviewed display value.
 	if _, err = pool.Exec(ctx, `DELETE FROM public_program_revisions WHERE id=$1`, acceptedID); err == nil {
 		t.Fatal("accepted source evidence was mutable")
 	}

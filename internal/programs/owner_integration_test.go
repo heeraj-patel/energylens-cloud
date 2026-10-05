@@ -81,7 +81,7 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	for _, f := range []string{"country_code", "postal_codes", "category", "fuel", "provider_key", "provider_role", "requires_income", "requires_address", "additional_conditions"} {
 		evidence["applicability."+f] = "section 2"
 	}
-	input := ReviewedImport{SourceKey: "utility-a", SourceURL: "https://utility.example/program", SourceBytes: []byte("source terms"), ContentType: "text/html", SnapshotRef: "test-source", ParserVersion: "v1", AdministratorKey: "utility-a", ProgramKey: "washer", GeographyKey: "78732", AdministratorName: "Utility A", AdministratorKind: "utility", Status: "open", Title: "Washer rebate", BenefitKind: "rebate", BenefitTerms: json.RawMessage(`{"amount":"100"}`), EligibilityTerms: json.RawMessage(`{"category":"washer"}`), StackingTerms: json.RawMessage(`{"status":"unknown"}`), Evidence: evidence, Reviewer: "reviewer", ReviewNote: "reviewed", ReviewExpiresAt: now.Add(7 * 24 * time.Hour), Applicability: &StructuredApplicability{CountryCode: "US", PostalCodes: []string{"78732"}, Category: "washer", Fuel: "electricity", ProviderKey: "utility-a", ProviderRole: "electric_distributor"}}
+	input := ReviewedImport{SourceKey: "utility-a", SourceURL: "https://utility.example/program", SourceBytes: []byte("source terms; fixture benefit text"), ContentType: "text/html", SnapshotRef: "test-source", ParserVersion: "v1", AdministratorKey: "utility-a", ProgramKey: "washer", GeographyKey: "78732", AdministratorName: "Utility A", AdministratorKind: "utility", Status: "open", Title: "Washer rebate", BenefitKind: "rebate", BenefitDisplay: "fixture benefit text", BenefitTerms: json.RawMessage(`{"amount":"100"}`), EligibilityTerms: json.RawMessage(`{"category":"washer"}`), StackingTerms: json.RawMessage(`{"status":"unknown"}`), Evidence: evidence, Reviewer: "reviewer", ReviewNote: "reviewed", ReviewExpiresAt: now.Add(7 * 24 * time.Hour), Applicability: &StructuredApplicability{CountryCode: "US", PostalCodes: []string{"78732"}, Category: "washer", Fuel: "electricity", ProviderKey: "utility-a", ProviderRole: "electric_distributor"}}
 	rev, err := ImportReviewed(ctx, pool, input)
 	if err != nil {
 		t.Fatal(err)
@@ -123,8 +123,8 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if len(got.Programs) != 1 || got.Programs[0].RevisionID != rev.String() || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "provider_unknown") {
 		t.Fatalf("provider candidate asserted: %+v", got)
 	}
-	if got.Programs[0].AdministratorKind != "utility" {
-		t.Fatalf("reviewed administrator kind missing from owner feed: %+v", got.Programs[0])
+	if got.Programs[0].AdministratorKind != "utility" || got.Programs[0].BenefitDisplay != input.BenefitDisplay {
+		t.Fatalf("reviewed administrator kind or benefit missing from owner feed: %+v", got.Programs[0])
 	}
 	var terms map[string]any
 	if got.Programs[0].AvailabilityStatus != "open" || json.Unmarshal(got.Programs[0].BenefitTerms, &terms) != nil || terms["amount"] != "100" {
@@ -137,7 +137,7 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	// It remains only a potential match and never an eligibility approval.
 	input.ProgramKey = "washer-general"
 	input.Applicability = &StructuredApplicability{CountryCode: "US", PostalCodes: []string{"78732"}, Category: "washer", Fuel: "electricity"}
-	input.SourceBytes = []byte("separately recorded source terms")
+	input.SourceBytes = []byte("separately recorded source terms; fixture benefit text")
 	if _, err = ImportReviewed(ctx, pool, input); err != nil {
 		t.Fatal(err)
 	}
