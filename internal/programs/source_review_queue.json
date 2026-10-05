@@ -139,6 +139,108 @@
         "Verify active meter service at the installation address; a Los Angeles ZIP alone does not prove service.",
         "Review equipment thresholds and purchase, installation and application windows for each offer separately."
       ]
+    },
+    {
+      "source_key_suggestion": "irs-residential-energy-credits-historical",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "Internal Revenue Service",
+      "canonical_url": "https://www.irs.gov/instructions/i5695",
+      "allowed_host_candidate": "www.irs.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Federal 2025 Form 5695 instructions state that 25C and 25D residential credits terminate for relevant post-2025 dates; historical tax review only.",
+      "coverage_status": "national_historical_lead_only",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review IRS primary instructions and applicable tax-year law before any historical calculation.",
+        "Do not map 25C or 25D as a current 2026 purchase incentive.",
+        "Keep taxpayer qualification and placed-in-service or expenditure dates for human review."
+      ]
+    },
+    {
+      "source_key_suggestion": "harris-county-home-repair",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "Harris County Housing and Community Development",
+      "canonical_url": "https://hcd.harriscountytx.gov/Residents/Home-Repair-Program",
+      "allowed_host_candidate": "hcd.harriscountytx.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official county page currently accepts only septic and well health-and-safety projects; it has no current appliance or energy offer.",
+      "coverage_status": "county_boundary_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review current intake, funding, source access terms, controlling eligibility and work scope.",
+        "Verify property is in the Harris County service area and outside any excluded municipality or overlapping jurisdiction.",
+        "Treat repair services as conditional and do not infer a cash amount for a device."
+      ]
+    },
+    {
+      "source_key_suggestion": "cps-energy-casa-verde-weatherization",
+      "observed_on": "2026-10-05",
+      "source_kind": "utility",
+      "authority_name": "CPS Energy",
+      "canonical_url": "https://www.cpsenergy.com/casaverde",
+      "allowed_host_candidate": "www.cpsenergy.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official San Antonio municipal utility weatherization page describes income guidelines and home upgrades.",
+      "coverage_status": "service_territory_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review access terms, 2026 income rules, qualified trade allies, current funding and measure scope.",
+        "Verify active CPS Energy service at the address; city or ZIP alone is insufficient.",
+        "Separate conditional installed measures from fixed cash rebates."
+      ]
+    },
+    {
+      "source_key_suggestion": "sce-energy-savings-assistance",
+      "observed_on": "2026-10-05",
+      "source_kind": "utility",
+      "authority_name": "Southern California Edison",
+      "canonical_url": "https://www.sce.com/save-money/income-qualified-programs/energy-savings-assistance-program",
+      "allowed_host_candidate": "www.sce.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official ESA page describes no-cost measures for eligible customers and says some electrification enrollment is closed.",
+      "coverage_status": "service_territory_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review access terms, current program status, income, dwelling, meter and measure rules.",
+        "Verify active SCE service and address-level measure availability.",
+        "Keep closed or exhausted components out of current offers."
+      ]
+    },
+    {
+      "source_key_suggestion": "bosch-us-specials",
+      "observed_on": "2026-10-05",
+      "source_kind": "manufacturer",
+      "authority_name": "Bosch Home Appliances",
+      "canonical_url": "https://www.bosch-home.com/us/specials/",
+      "allowed_host_candidate": "www.bosch-home.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official promotions directory leads to time-limited product and package offers; a directory is not an individual offer.",
+      "coverage_status": "offer_geography_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review access terms and capture the controlling form for each specific offer.",
+        "Verify model, retailer, bundle, purchase, submission, state and county restrictions and remaining funds.",
+        "Do not assign a package rebate to an individual appliance."
+      ]
+    },
+    {
+      "source_key_suggestion": "doe-tribal-home-electrification-gateway",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "U.S. Department of Energy",
+      "canonical_url": "https://www.energy.gov/sites/default/files/2024-04/tribal-rebates-fact-sheet_040424.pdf",
+      "allowed_host_candidate": "www.energy.gov",
+      "access_method_candidate": "pdf",
+      "observed_page_role": "Federal Tribal HEAR fact sheet documents a grant path for sovereign administrators; it is not an individual Tribe program notice or household offer.",
+      "coverage_status": "tribal_administrator_unidentified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review DOE access terms and current grant/award status; identify each sovereign administrator separately.",
+        "Seek current Tribe-issued program notices, membership and service geography, and controlling benefits.",
+        "Do not infer program launch or household eligibility from a formula allocation."
+      ]
     }
   ]
 }
