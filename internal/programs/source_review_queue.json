@@ -1,10 +1,12 @@
 {
   "schema_version": 1,
-  "observed_on": "2026-10-03",
+  "observed_on": "2026-10-05",
+  "observation_note": "Top-level date is the latest queue update; each candidate retains its own observation date.",
   "purpose": "Operator research leads only; this file is not a program_sources import or a terms review.",
   "candidates": [
     {
       "source_key_suggestion": "austin-energy-residential-instant-savings",
+      "observed_on": "2026-10-03",
       "source_kind": "utility",
       "authority_name": "Austin Energy",
       "canonical_url": "https://austinenergy.com/energy-efficiency/rebates-incentives/residential/home-improvements/instant-savings",
@@ -21,6 +23,7 @@
     },
     {
       "source_key_suggestion": "texas-gas-service-efficiency",
+      "observed_on": "2026-10-03",
       "source_kind": "utility",
       "authority_name": "Texas Gas Service",
       "canonical_url": "https://www.texasgasservice.com/save-money/energy-saving-tools-tips/energy-efficiency-program",
@@ -37,6 +40,7 @@
     },
     {
       "source_key_suggestion": "texas-seco-home-energy-rebates",
+      "observed_on": "2026-10-03",
       "source_kind": "government",
       "authority_name": "Texas State Energy Conservation Office",
       "canonical_url": "https://comptroller.texas.gov/programs/seco/funding/ira/",
@@ -53,6 +57,7 @@
     },
     {
       "source_key_suggestion": "ge-appliances-rebates-promotions",
+      "observed_on": "2026-10-03",
       "source_kind": "manufacturer",
       "authority_name": "GE Appliances",
       "canonical_url": "https://www.geappliances.com/ge/rebates-promotions",
@@ -65,6 +70,74 @@
         "Review access terms and capture current controlling offer documents, including eligible models and dates.",
         "Map geography and appliance categories only from reviewed offer terms.",
         "Do not treat this directory as a reviewed customer offer."
+      ]
+    },
+    {
+      "source_key_suggestion": "texas-tdhca-weatherization",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "Texas Department of Housing and Community Affairs",
+      "canonical_url": "https://www.tdhca.texas.gov/weatherization-assistance-program",
+      "allowed_host_candidate": "www.tdhca.texas.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official WAP overview says subrecipients collectively cover all 254 Texas counties; it does not establish current household service capacity or a cash rebate.",
+      "coverage_status": "state_lead_only",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review source access terms and capture current program and subrecipient documents.",
+        "Verify county-to-subrecipient assignment, service capacity, income and measure rules with the responsible administrator.",
+        "Represent any eligible service as conditional in-kind work, not an advertised cash amount."
+      ]
+    },
+    {
+      "source_key_suggestion": "california-cec-home-energy-rebates",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "California Energy Commission",
+      "canonical_url": "https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs",
+      "allowed_host_candidate": "www.energy.ca.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official overview distinguishes HEEHRA Phase I approved-reservation processing, Phase II development, and HOMES implementation; it is not a live household offer or regional funding determination.",
+      "coverage_status": "state_lead_only",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review source access terms and capture current CEC and controlling TECH Clean California documents.",
+        "Check current regional funding and reservation status, income verification, certified-contractor and pre-purchase requirements.",
+        "Separate Phase I, Phase II, HOMES and dwelling-specific terms; do not publish headline maximums as household awards."
+      ]
+    },
+    {
+      "source_key_suggestion": "california-csd-weatherization",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "California Department of Community Services and Development",
+      "canonical_url": "https://www.csd.ca.gov/Pages/Residential-Energy-Efficiency.aspx",
+      "allowed_host_candidate": "www.csd.ca.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official residential efficiency overview describes DOE WAP and LIWP through local providers with income and other household screening; LIWP components have different dwelling scopes.",
+      "coverage_status": "state_lead_only",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review source access terms and capture current WAP, LIWP, provider and eligibility documents.",
+        "Verify county provider, dwelling type, measure eligibility, capacity and household conditions before any geographic mapping.",
+        "Distinguish conditional in-kind service from a cash rebate and keep WAP and LIWP as separate program reviews."
+      ]
+    },
+    {
+      "source_key_suggestion": "ladwp-consumer-rebate-program",
+      "observed_on": "2026-10-05",
+      "source_kind": "utility",
+      "authority_name": "Los Angeles Department of Water and Power",
+      "canonical_url": "https://www.ladwp.com/residential-services/assistance-programs/consumer-rebate-program?redirect=false",
+      "allowed_host_candidate": "www.ladwp.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official Consumer Rebate Program page describes equipment-specific rebates and requires an active LADWP residential electric meter at the installation address.",
+      "coverage_status": "service_territory_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review source access terms, canonical redirects and controlling application, terms and product tables.",
+        "Verify active meter service at the installation address; a Los Angeles ZIP alone does not prove service.",
+        "Review equipment thresholds and purchase, installation and application windows for each offer separately."
       ]
     }
   ]

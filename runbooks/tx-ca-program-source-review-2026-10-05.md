@@ -8,6 +8,25 @@ Publication requires a captured immutable source artifact, human access/terms
 review, field evidence, verified geographic and product scope, dated terms,
 and a current availability check.
 
+## Queue advance on October 5
+
+Four additional official leads are recorded as disabled candidates in
+`internal/programs/source_review_queue.json`: Texas TDHCA WAP, California CEC
+residential rebates, California CSD weatherization, and LADWP Consumer Rebate
+Program. Their candidate dates are October 5; the four earlier queue entries
+retain October 3 observation dates. The queue now has eight candidates; it
+contains no approved registrations or imported offers. These page observations are not
+immutable source captures or permission to fetch them with the Cloud worker.
+
+| Lead | Official page observation | Field and geography evidence still needed |
+| --- | --- | --- |
+| [TDHCA WAP](https://www.tdhca.texas.gov/weatherization-assistance-program) | Subrecipients collectively cover 254 counties. | Current county assignment, subrecipient capacity, household income and measure rules; statewide administrative coverage alone does not establish household service. |
+| [CEC residential rebates](https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs) | HEEHRA Phase I continues processing completed projects with approved reservations; the page distinguishes Phase II and HOMES. | Current TECH regional budget, reservation availability, trained contractor, verified income, dwelling and equipment conditions for a particular phase. |
+| [CSD residential efficiency](https://www.csd.ca.gov/Pages/Residential-Energy-Efficiency.aspx) | WAP uses local providers; LIWP has separate farmworker and multifamily components. | Provider geography, capacity, dwelling, income and measure rules for each program; these are conditional services rather than fixed rebates. |
+| [LADWP Consumer Rebate Program](https://www.ladwp.com/residential-services/assistance-programs/consumer-rebate-program?redirect=false) | Equipment-specific rebates require active residential electric meter service. | Controlling application and product tables, address-level service, equipment thresholds, purchase/install/application windows and current funds. The page may redirect to another official LADWP host, which needs separate host and access review. |
+
+## Broader official-source leads
+
 | Layer | Geography | Official lead and observed review question | Publication gate |
 | --- | --- | --- | --- |
 | State | TX | [SECO home energy rebates](https://comptroller.texas.gov/programs/seco/funding/ira/) says HOMES and HEAR rebates are unavailable while Texas designs them (page update August 21, 2026). | Monitor launch and DOE approval; do not publish the advertised maximums as available offers. |
