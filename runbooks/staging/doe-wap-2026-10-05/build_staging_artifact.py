@@ -18,8 +18,8 @@ def main():
     metadata = json.loads((folder / "capture.json").read_text())
     review = json.loads((folder / "review.json").read_text())
     copy = json.loads((folder / "proposed-copy.json").read_text())
-    if copy["approval_status"] != "pending_owner_review":
-        raise SystemExit("this builder accepts only the unapproved staging packet")
+    if copy["approval_status"] != "owner_approved_exact_words_2026-10-05":
+        raise SystemExit("exact owner-approved staging copy required")
 
     source = args.capture.read_bytes()
     digest = hashlib.sha256(source).hexdigest()

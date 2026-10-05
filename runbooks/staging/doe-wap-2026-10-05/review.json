@@ -9,7 +9,7 @@
   "geography_key": "US",
   "administrator_name": "U.S. Department of Energy",
   "administrator_kind": "federal",
-  "status": "unknown",
+  "status": "open",
   "benefit_kind": "other",
   "benefit_terms": {
     "kind": "conditional_in_kind_weatherization_service",
@@ -26,7 +26,7 @@
   "stacking_terms": {"status": "unknown"},
   "dates": {},
   "reviewer": "staging-only-review",
-  "review_note": "STAGING ONLY: national application route is published; local intake, funding, eligibility, measures and award remain unknown; no production publication",
+  "review_note": "STAGING ONLY: open means DOE publishes a current national application and inquiry route; local intake, funding, eligibility, measures and award remain unknown; no production publication",
   "review_expires_at": "2026-10-12T00:00:00Z",
   "applicability": {
     "country_code": "US",

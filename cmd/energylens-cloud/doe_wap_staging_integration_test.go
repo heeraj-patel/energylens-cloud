@@ -82,10 +82,13 @@ func TestDOEWAPStagingOwnerFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := (programs.PGOwnerStore{Pool: pool}).ListHome(ctx, owner.String(), home.String(), time.Now().UTC())
-	if err != nil || len(got.Programs) != 1 || got.Programs[0].RevisionID != result["revision_id"] || got.Programs[0].SourceSHA256 != result["source_sha256"] || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "income_unknown") || !slices.Contains(got.Programs[0].Reasons, "address_unknown") || !slices.Contains(got.Programs[0].Reasons, "additional_conditions_unknown") {
+	if err != nil || len(got.Programs) != 1 || got.Programs[0].RevisionID != result["revision_id"] || got.Programs[0].SourceSHA256 != result["source_sha256"] || got.Programs[0].AvailabilityStatus != "open" || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "income_unknown") || !slices.Contains(got.Programs[0].Reasons, "address_unknown") || !slices.Contains(got.Programs[0].Reasons, "additional_conditions_unknown") {
 		t.Fatalf("staging owner feed must preserve uncertainty: %+v %v", got, err)
 	}
 	if got.Programs[0].SourceURL != "https://www.energy.gov/cmei/scep/wap/how-apply-weatherization-assistance" {
 		t.Fatalf("wrong source URL: %+v", got.Programs[0])
+	}
+	if got.Programs[0].Title != "Weatherization Assistance Program" || got.Programs[0].BenefitDisplay != "Weatherization services" || got.Programs[0].AdministratorKind != "federal" || got.Programs[0].AdministratorName != "U.S. Department of Energy" {
+		t.Fatalf("owner-approved staging display fields: %+v", got.Programs[0])
 	}
 }
