@@ -68,21 +68,37 @@ type OwnerProgramResult struct {
 
 type OwnerStore interface {
 	List(context.Context, string, string, string, time.Time) (OwnerProgramResult, error)
+	ListHome(context.Context, string, string, time.Time) (OwnerProgramResult, error)
 }
 type PGOwnerStore struct{ Pool *pgxpool.Pool }
 
 // List reads the owned home, current appliance and reviewed public terms in one
 // snapshot. Reviewed terms are source-backed data, not an award estimate.
 func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, now time.Time) (OwnerProgramResult, error) {
+	return s.list(ctx, owner, home, appliance, now)
+}
+
+// ListHome includes reviewed household offers and offers matching at least one
+// current appliance. It does not infer household eligibility or an award.
+func (s PGOwnerStore) ListHome(ctx context.Context, owner, home string, now time.Time) (OwnerProgramResult, error) {
+	return s.list(ctx, owner, home, "", now)
+}
+
+func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, now time.Time) (OwnerProgramResult, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return OwnerProgramResult{}, err
 	}
 	defer tx.Rollback(ctx)
 	var country, zip, zone, category, fuel string
-	err = tx.QueryRow(ctx, `SELECT h.timezone,a.category,coalesce(a.identity->>'fuel','')
+	if appliance == "" {
+		err = tx.QueryRow(ctx, `SELECT h.timezone FROM homes h
+ WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner).Scan(&zone)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT h.timezone,a.category,coalesce(a.identity->>'fuel','')
  FROM homes h JOIN appliances a ON a.home_id=h.id AND a.id=$3 AND a.archived_at IS NULL
  WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner, appliance).Scan(&zone, &category, &fuel)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return OwnerProgramResult{}, ErrOwnerHomeNotFound
 	}
@@ -104,9 +120,17 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 	if err != nil {
 		return OwnerProgramResult{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.administrator_kind,r.benefit_kind,r.benefit_display,r.benefit_terms,r.eligibility_terms,r.stacking_terms,r.status,
+	match := `a.category=$3 AND a.fuel=$4`
+	args := []any{country, zip, category, fuel}
+	if appliance == "" {
+		match = `(a.category='home' AND a.fuel='any' OR EXISTS (
+ SELECT 1 FROM appliances device WHERE device.home_id=$3 AND device.archived_at IS NULL
+ AND device.category=a.category AND coalesce(device.identity->>'fuel','')=a.fuel))`
+		args = []any{country, zip, home}
+	}
+	query := `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.administrator_kind,r.benefit_kind,r.benefit_display,r.benefit_terms,r.eligibility_terms,r.stacking_terms,r.status,
  r.reviewed_at,r.review_expires_at,LEAST(r.review_expires_at,s.terms_review_expires_at),
- snap.source_url,snap.content_sha256,a.postal_codes,a.category,a.fuel,coalesce(a.provider_key,''),coalesce(a.provider_role,''),
+ snap.source_url,snap.content_sha256,a.postal_codes,a.geography_scope,a.category,a.fuel,coalesce(a.provider_key,''),coalesce(a.provider_role,''),
 	 a.requires_income,a.requires_address,a.additional_conditions,r.application_from,r.application_to,
 	 (r.purchase_from IS NOT NULL OR r.purchase_to IS NOT NULL OR r.installation_from IS NOT NULL OR
 	 r.installation_to IS NOT NULL OR r.reservation_from IS NOT NULL OR r.reservation_to IS NOT NULL)
@@ -114,12 +138,14 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
  JOIN public_programs p ON p.id=r.program_id JOIN program_sources s ON s.id=p.source_id
  JOIN program_source_snapshots snap ON snap.id=r.source_snapshot_id
  JOIN reviewed_program_applicability a ON a.revision_id=r.id
- WHERE a.country_code=$1 AND a.postal_codes @> ARRAY[$2]::text[] AND a.category=$3 AND a.fuel=$4 AND r.status IN ('open','upcoming','waitlist','exhausted','suspended','closed','unknown')
+	WHERE a.country_code=$1 AND (a.geography_scope='country' OR a.postal_codes @> ARRAY[$2]::text[]) AND ` + match + ` AND r.status IN ('open','upcoming','waitlist','exhausted','suspended','closed','unknown')
  AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['country_code','postal_codes','category','fuel','provider_key','provider_role','requires_income','requires_address','additional_conditions']) f
   WHERE NOT EXISTS (SELECT 1 FROM public_program_evidence e WHERE e.revision_id=r.id AND e.snapshot_id=r.source_snapshot_id AND e.field_path='applicability.'||f))
+	AND (a.geography_scope <> 'country' OR EXISTS (SELECT 1 FROM public_program_evidence e WHERE e.revision_id=r.id AND e.snapshot_id=r.source_snapshot_id AND e.field_path='applicability.geography_scope'))
 	AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['administrator_kind','title','status','benefit_kind','benefit_display','benefit_terms','eligibility_terms','stacking_terms']) f
   WHERE NOT EXISTS (SELECT 1 FROM public_program_evidence e WHERE e.revision_id=r.id AND e.snapshot_id=r.source_snapshot_id AND e.field_path=f))
- ORDER BY p.id LIMIT 101`, country, zip, category, fuel)
+ ORDER BY p.id LIMIT 101`
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return OwnerProgramResult{}, err
 	}
@@ -130,11 +156,11 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 		var reviewed, expires, effectiveExpires time.Time
 		var status string
 		var zips []string
-		var pCategory, pFuel, provider, providerRole string
+		var geographyScope, pCategory, pFuel, provider, providerRole string
 		var income, address, extra bool
 		var otherWindows bool
 		var from, to *time.Time
-		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.AdministratorKind, &o.BenefitKind, &o.BenefitDisplay, &o.BenefitTerms, &o.EligibilityTerms, &o.StackingTerms, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
+		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.AdministratorKind, &o.BenefitKind, &o.BenefitDisplay, &o.BenefitTerms, &o.EligibilityTerms, &o.StackingTerms, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &geographyScope, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
 			return OwnerProgramResult{}, err
 		}
 		program := Program{ID: o.ProgramID, Status: status, ZIPs: zips, Category: pCategory, Fuel: pFuel, ProviderID: provider, RequiresIncome: income, RequiresAddress: address, ReviewedAt: reviewed, ReviewExpiresAt: effectiveExpires}
@@ -155,7 +181,14 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 				}
 			}
 		}
-		result := Evaluate(program, Household{ZIP: zip, Category: category, Fuel: fuel, CandidateProvider: map[string]bool{provider: candidate}}, now.In(loc))
+		if geographyScope == "country" {
+			program.ZIPs = nil
+		}
+		householdCategory, householdFuel := category, fuel
+		if appliance == "" {
+			householdCategory, householdFuel = pCategory, pFuel // SQL proved an active device match or household scope.
+		}
+		result := Evaluate(program, Household{ZIP: zip, Category: householdCategory, Fuel: householdFuel, CandidateProvider: map[string]bool{provider: candidate}}, now.In(loc))
 		if result.Status == "ineligible" {
 			continue
 		}
@@ -247,16 +280,27 @@ func (s OwnerService) list(w http.ResponseWriter, r *http.Request) {
 		ownerFail(w, http.StatusNotFound, "not_found")
 		return
 	}
-	if _, err := uuid.Parse(appliance); err != nil {
-		ownerFail(w, http.StatusBadRequest, "invalid_appliance_id")
-		return
-	}
-	if len(r.URL.Query()) != 1 || len(r.URL.Query()["appliance_id"]) != 1 {
+	if len(r.URL.Query()) > 1 || (len(r.URL.Query()) == 1 && len(r.URL.Query()["appliance_id"]) != 1) {
 		ownerFail(w, http.StatusBadRequest, "invalid_query")
 		return
 	}
+	if appliance != "" {
+		if _, err := uuid.Parse(appliance); err != nil {
+			ownerFail(w, http.StatusBadRequest, "invalid_appliance_id")
+			return
+		}
+	} else if len(r.URL.Query()) != 0 {
+		ownerFail(w, http.StatusBadRequest, "invalid_appliance_id")
+		return
+	}
 	now := time.Now().UTC()
-	result, err := s.Store.List(r.Context(), s.UserID(r), home, appliance, now)
+	var result OwnerProgramResult
+	var err error
+	if appliance == "" {
+		result, err = s.Store.ListHome(r.Context(), s.UserID(r), home, now)
+	} else {
+		result, err = s.Store.List(r.Context(), s.UserID(r), home, appliance, now)
+	}
 	if errors.Is(err, ErrOwnerHomeNotFound) {
 		ownerFail(w, http.StatusNotFound, "not_found")
 		return

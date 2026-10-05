@@ -97,6 +97,9 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if _, err = store.List(ctx, owner.String(), noLocationHome.String(), noLocationAppliance.String(), now); !errorsIs(err, ErrLocationRequired) {
 		t.Fatalf("missing location: %v", err)
 	}
+	if _, err = store.ListHome(ctx, owner.String(), noLocationHome.String(), now); !errorsIs(err, ErrLocationRequired) {
+		t.Fatalf("missing home location: %v", err)
+	}
 	if _, err = store.List(ctx, foreign.String(), noLocationHome.String(), noLocationAppliance.String(), now); !errorsIs(err, ErrOwnerHomeNotFound) {
 		t.Fatalf("foreign missing-location read: %v", err)
 	}
@@ -144,6 +147,10 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
 	if err != nil || len(got.Programs) != 2 {
 		t.Fatalf("reviewed household assessment: %+v %v", got, err)
+	}
+	homeGot, err := store.ListHome(ctx, owner.String(), home.String(), now)
+	if err != nil || len(homeGot.Programs) != 2 {
+		t.Fatalf("home read must include matching appliance offers: %+v %v", homeGot, err)
 	}
 	var potential bool
 	for _, item := range got.Programs {
@@ -233,6 +240,59 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
 	if err != nil || len(got.Programs) != 0 {
 		t.Fatalf("expired review: %+v %v", got, err)
+	}
+	// A source-cited national household program needs no appliance and no
+	// fabricated ZIP enumeration. Income and other conditions stay unknown.
+	_, err = pool.Exec(ctx, `INSERT INTO program_sources(source_key,source_kind,authority_name,administrator_name,canonical_url,allowed_hosts,access_method,terms_url,terms_reviewed_at,terms_review_expires_at,terms_reviewed_by,parser_version,canonicalization_version,geography_coverage,category_coverage,refresh_interval,max_requests_per_run,max_response_bytes,enabled) VALUES('federal-a','government','Federal A','Federal A','https://federal.example/program',ARRAY['federal.example'],'html','https://federal.example/terms',$1,$2,'reviewer','v1','v1','{}','[]',interval '7 days',20,1000000,true)`, now.Add(-time.Hour), now.Add(30*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.SourceKey = "federal-a"
+	input.SourceURL = "https://federal.example/program"
+	input.SourceBytes = []byte("national household assistance fixture benefit and conditions")
+	input.AdministratorKey = "federal-a"
+	input.AdministratorName = "Federal A"
+	input.AdministratorKind = "federal"
+	input.ProgramKey = "home-assistance"
+	input.GeographyKey = "US"
+	input.Title = "Home assistance"
+	input.Evidence["applicability.geography_scope"] = "section 2"
+	input.Applicability = &StructuredApplicability{CountryCode: "US", GeographyScope: "country", Category: "home", Fuel: "any", RequiresIncome: true, AdditionalConditions: true}
+	if _, err = ImportReviewed(ctx, pool, input); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.ListHome(ctx, owner.String(), home.String(), now)
+	if err != nil || len(got.Programs) != 1 || got.Programs[0].AdministratorKind != "federal" || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "income_unknown") || !slices.Contains(got.Programs[0].Reasons, "additional_conditions_unknown") {
+		t.Fatalf("national household offer: %+v %v", got, err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,4,'CA','H0H0H0','postal_code','user_entered')`, home); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.ListHome(ctx, owner.String(), home.String(), now)
+	if err != nil || len(got.Programs) != 0 {
+		t.Fatalf("national country boundary: %+v %v", got, err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,5,'US','78732','postal_code','user_entered')`, home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.ListHome(ctx, foreign.String(), home.String(), now); !errorsIs(err, ErrOwnerHomeNotFound) {
+		t.Fatalf("foreign home read: %v", err)
+	}
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/homes/"+home.String()+"/programs", nil))
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &response) != nil || len(response.Programs) != 1 || response.Programs[0].SourceURL != input.SourceURL {
+		t.Fatalf("home HTTP response: %d %s", w.Code, w.Body.String())
+	}
+	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
+	if err != nil || len(got.Programs) != 0 {
+		t.Fatalf("household program leaked into appliance read: %+v %v", got, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE program_sources SET terms_review_expires_at=now()-interval '1 second' WHERE source_key='federal-a'`); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.ListHome(ctx, owner.String(), home.String(), now)
+	if err != nil || len(got.Programs) != 0 {
+		t.Fatalf("expired national review: %+v %v", got, err)
 	}
 }
 func errorsIs(err, target error) bool { return err == target }

@@ -96,6 +96,9 @@ func validateReviewedImport(in ReviewedImport, now time.Time) error {
 				return fmt.Errorf("missing evidence for applicability.%s", field)
 			}
 		}
+		if in.Applicability.GeographyScope == "country" && strings.TrimSpace(in.Evidence["applicability.geography_scope"]) == "" {
+			return errors.New("missing evidence for applicability.geography_scope")
+		}
 	}
 	if !object(in.BenefitTerms) || !object(in.EligibilityTerms) || !object(in.StackingTerms) {
 		return errors.New("reviewed terms must be nonempty JSON objects")
@@ -243,7 +246,15 @@ func ImportReviewed(ctx context.Context, db *pgxpool.Pool, in ReviewedImport) (u
 	}
 	if in.Applicability != nil {
 		a := in.Applicability
-		_, err = tx.Exec(ctx, `INSERT INTO reviewed_program_applicability(revision_id,country_code,postal_codes,category,fuel,provider_key,provider_role,requires_income,requires_address,additional_conditions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, revisionID, a.CountryCode, a.PostalCodes, a.Category, a.Fuel, nullableString(a.ProviderKey), nullableString(a.ProviderRole), a.RequiresIncome, a.RequiresAddress, a.AdditionalConditions)
+		scope := a.GeographyScope
+		if scope == "" {
+			scope = "postal_code"
+		}
+		postalCodes := a.PostalCodes
+		if postalCodes == nil {
+			postalCodes = []string{}
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO reviewed_program_applicability(revision_id,country_code,postal_codes,category,fuel,provider_key,provider_role,requires_income,requires_address,additional_conditions,geography_scope) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, revisionID, a.CountryCode, postalCodes, a.Category, a.Fuel, nullableString(a.ProviderKey), nullableString(a.ProviderRole), a.RequiresIncome, a.RequiresAddress, a.AdditionalConditions, scope)
 		if err != nil {
 			return uuid.Nil, err
 		}
