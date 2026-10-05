@@ -62,7 +62,8 @@ func Evaluate(p Program, h Household, localDay time.Time) Result {
 		r.Status = "unknown"
 		r.Reasons = append(r.Reasons, "program_upcoming")
 	} else if p.Status != "open" {
-		return Result{ProgramID: p.ID, Status: "unknown", Reasons: []string{"status_unknown"}}
+		r.Status = "unknown"
+		r.Reasons = append(r.Reasons, "status_unknown")
 	}
 	day := localDay.Format("2006-01-02")
 	if p.StartsOn != "" && day < p.StartsOn {

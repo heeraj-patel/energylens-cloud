@@ -1,0 +1,15 @@
+{
+  "source_url": "https://www.energy.gov/cmei/scep/wap/how-apply-weatherization-assistance",
+  "source_sha256": "05d32356150408fec895bc2751a369e20273abafa471e3e1fd959cab9bf4fc74",
+  "content_bytes": 135665,
+  "content_type": "text/html; charset=utf-8",
+  "http_status": 200,
+  "redirects": 0,
+  "captured_on": "2026-10-05",
+  "private_capture_path": "/Users/nik/.local/share/energylens/program-captures/doe-wap-2026-10-05/source.html",
+  "access_review": {
+    "robots_url": "https://www.energy.gov/robots.txt",
+    "policy_url": "https://www.energy.gov/web-policies",
+    "finding": "The WAP application path is not disallowed for User-agent *; DOE government information is public domain, with DOE acknowledgement requested. The capture is retained privately; the customer link points to DOE. No recurring fetch is configured."
+  }
+}

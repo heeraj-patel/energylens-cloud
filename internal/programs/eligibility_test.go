@@ -46,3 +46,14 @@ func TestExpiredAndUnknownRequirements(t *testing.T) {
 		t.Fatalf("invalid date: %+v", got)
 	}
 }
+
+func TestUnknownAvailabilityRetainsHouseholdUnknowns(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	p := Program{ID: "wap", Status: "unknown", ReviewedAt: now.Add(-time.Hour), RequiresIncome: true, RequiresAddress: true}
+	got := Evaluate(p, Household{}, now)
+	for _, reason := range []string{"status_unknown", "income_unknown", "address_unknown"} {
+		if got.Status != "unknown" || !slices.Contains(got.Reasons, reason) {
+			t.Fatalf("missing %s: %+v", reason, got)
+		}
+	}
+}
