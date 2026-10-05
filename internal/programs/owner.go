@@ -19,16 +19,20 @@ var ErrOwnerHomeNotFound = errors.New("owner home or appliance not found")
 var ErrLocationRequired = errors.New("home location required")
 
 type OwnerProgram struct {
-	ProgramID         string   `json:"program_id"`
-	RevisionID        string   `json:"revision_id"`
-	Title             string   `json:"title"`
-	AdministratorName string   `json:"administrator_name"`
-	BenefitKind       string   `json:"benefit_kind"`
-	Status            string   `json:"status"`
-	Reasons           []string `json:"reasons"`
-	SourceURL         string   `json:"source_url"`
-	SourceSHA256      string   `json:"source_sha256"`
-	ReviewExpiresAt   string   `json:"review_expires_at"`
+	ProgramID          string          `json:"program_id"`
+	RevisionID         string          `json:"revision_id"`
+	Title              string          `json:"title"`
+	AdministratorName  string          `json:"administrator_name"`
+	BenefitKind        string          `json:"benefit_kind"`
+	BenefitTerms       json.RawMessage `json:"benefit_terms"`
+	EligibilityTerms   json.RawMessage `json:"eligibility_terms"`
+	StackingTerms      json.RawMessage `json:"stacking_terms"`
+	AvailabilityStatus string          `json:"availability_status"`
+	Status             string          `json:"status"`
+	Reasons            []string        `json:"reasons"`
+	SourceURL          string          `json:"source_url"`
+	SourceSHA256       string          `json:"source_sha256"`
+	ReviewExpiresAt    string          `json:"review_expires_at"`
 }
 
 type OwnerCoverageScope struct {
@@ -66,7 +70,7 @@ type OwnerStore interface {
 type PGOwnerStore struct{ Pool *pgxpool.Pool }
 
 // List reads the owned home, current appliance and reviewed public terms in one
-// snapshot. It intentionally omits benefit figures and unstructured revisions.
+// snapshot. Reviewed terms are source-backed data, not an award estimate.
 func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, now time.Time) (OwnerProgramResult, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -98,7 +102,7 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 	if err != nil {
 		return OwnerProgramResult{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.benefit_kind,r.status,
+	rows, err := tx.Query(ctx, `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.benefit_kind,r.benefit_terms,r.eligibility_terms,r.stacking_terms,r.status,
  r.reviewed_at,r.review_expires_at,LEAST(r.review_expires_at,s.terms_review_expires_at),
  snap.source_url,snap.content_sha256,a.postal_codes,a.category,a.fuel,coalesce(a.provider_key,''),coalesce(a.provider_role,''),
 	 a.requires_income,a.requires_address,a.additional_conditions,r.application_from,r.application_to,
@@ -111,6 +115,8 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
  WHERE a.country_code=$1 AND a.postal_codes @> ARRAY[$2]::text[] AND a.category=$3 AND a.fuel=$4 AND r.status IN ('open','upcoming','waitlist','exhausted','suspended','closed','unknown')
  AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['country_code','postal_codes','category','fuel','provider_key','provider_role','requires_income','requires_address','additional_conditions']) f
   WHERE NOT EXISTS (SELECT 1 FROM public_program_evidence e WHERE e.revision_id=r.id AND e.snapshot_id=r.source_snapshot_id AND e.field_path='applicability.'||f))
+	AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['title','status','benefit_kind','benefit_terms','eligibility_terms','stacking_terms']) f
+  WHERE NOT EXISTS (SELECT 1 FROM public_program_evidence e WHERE e.revision_id=r.id AND e.snapshot_id=r.source_snapshot_id AND e.field_path=f))
  ORDER BY p.id LIMIT 101`, country, zip, category, fuel)
 	if err != nil {
 		return OwnerProgramResult{}, err
@@ -126,7 +132,7 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 		var income, address, extra bool
 		var otherWindows bool
 		var from, to *time.Time
-		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.BenefitKind, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
+		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.BenefitKind, &o.BenefitTerms, &o.EligibilityTerms, &o.StackingTerms, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
 			return OwnerProgramResult{}, err
 		}
 		program := Program{ID: o.ProgramID, Status: status, ZIPs: zips, Category: pCategory, Fuel: pFuel, ProviderID: provider, RequiresIncome: income, RequiresAddress: address, ReviewedAt: reviewed, ReviewExpiresAt: effectiveExpires}
@@ -161,6 +167,7 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 			result.Status = "unknown"
 			result.Reasons = append(result.Reasons, "transaction_windows_unconfirmed")
 		}
+		o.AvailabilityStatus = status
 		o.Status, o.Reasons = result.Status, result.Reasons
 		o.ReviewExpiresAt = effectiveExpires.UTC().Format(time.RFC3339)
 		out = append(out, o)

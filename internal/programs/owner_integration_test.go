@@ -123,6 +123,13 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if len(got.Programs) != 1 || got.Programs[0].RevisionID != rev.String() || got.Programs[0].Status != "unknown" || !slices.Contains(got.Programs[0].Reasons, "provider_unknown") {
 		t.Fatalf("provider candidate asserted: %+v", got)
 	}
+	var terms map[string]any
+	if got.Programs[0].AvailabilityStatus != "open" || json.Unmarshal(got.Programs[0].BenefitTerms, &terms) != nil || terms["amount"] != "100" {
+		t.Fatalf("reviewed benefit terms or availability missing: %+v", got.Programs[0])
+	}
+	if len(got.Programs[0].EligibilityTerms) == 0 || len(got.Programs[0].StackingTerms) == 0 {
+		t.Fatalf("reviewed conditions missing: %+v", got.Programs[0])
+	}
 	// A reviewed, fully modeled non-utility offer can be a potential match.
 	// It remains only a potential match and never an eligibility approval.
 	input.ProgramKey = "washer-general"
@@ -200,6 +207,12 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	}
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &page) != nil || page.Coverage == nil || page.Coverage.RunID != latestRun.String() {
 		t.Fatalf("owner coverage response: %d %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Programs []OwnerProgram `json:"programs"`
+	}
+	if json.Unmarshal(w.Body.Bytes(), &response) != nil || len(response.Programs) != 2 || response.Programs[0].AvailabilityStatus != "open" {
+		t.Fatalf("availability must be independent of discovery coverage: %s", w.Body.String())
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,2,'US','78733','postal_code','user_entered')`, home); err != nil {
 		t.Fatal(err)
