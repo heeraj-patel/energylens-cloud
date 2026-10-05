@@ -38,6 +38,7 @@ import (
 	"energylens.local/cloud/internal/sensors"
 	"energylens.local/cloud/internal/tariff"
 	"energylens.local/cloud/internal/telemetry"
+	"energylens.local/cloud/internal/usagefactapi"
 	"energylens.local/cloud/internal/weather"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,7 +52,6 @@ type Module struct {
 type Runtime struct {
 	Pool *pgxpool.Pool
 	API  http.Handler
-	Hub  http.Handler
 }
 
 func (r *Runtime) Close() {
@@ -124,7 +124,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			}},
 		})
 		modules = append(modules, Module{Name: "energy-rates", Mount: rates.Routes})
-		if rt.Pool != nil && (c.OIDCIssuer != "" || c.LocalAuthEnabled) {
+		if rt.Pool != nil && (c.OIDCIssuer != "" || c.LocalAuthEnabled || c.DevAuthEnabled) {
 			var verifier account.Verifier
 			if c.OIDCIssuer != "" {
 				verifier = &account.OIDCVerifier{Issuer: c.OIDCIssuer, Audience: c.OIDCAudience, JWKSURL: c.OIDCJWKSURL}
@@ -142,6 +142,11 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				}
 				modules = append(modules, Module{Name: "local-auth", Mount: localHTTP.Routes})
 			}
+			if c.DevAuthEnabled {
+				dev := newDevAuth(c)
+				verifier = dev
+				modules = append(modules, Module{Name: "dev-auth", Mount: dev.Routes})
+			}
 			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Verifier: verifier}
 			if c.AccountDeletionEnabled {
 				accounts.Deletion = account.PGStore{Pool: rt.Pool}
@@ -151,6 +156,8 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
 			products := catalog.Service{Store: catalog.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
 			modules = append(modules, Module{Name: "reviewed-catalog", Mount: products.Routes})
+			usageFacts := usagefactapi.Service{Store: usagefactapi.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
+			modules = append(modules, Module{Name: "reviewed-usage-facts", Mount: usageFacts.Routes})
 			tariffs := tariff.Service{Store: tariff.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-tariffs", Mount: tariffs.Routes})
 			estimates := estimation.Service{Store: estimation.PGRunStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
@@ -206,8 +213,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		}
 		return rt.Pool.Ping(ctx)
 	}
-	rt.API = apiRouter(modules, ready)
-	rt.Hub = hubRouter(ready, hubModule, rt.Pool)
+	rt.API = cloudRouter(modules, ready, hubModule, rt.Pool)
 	return rt, nil
 }
 
@@ -244,6 +250,13 @@ func probes(r chi.Router, ready func(context.Context) error) {
 }
 
 func apiRouter(modules []Module, ready func(context.Context) error) http.Handler {
+	return cloudRouter(modules, ready, nil, nil)
+}
+
+// cloudRouter places bearer, enrollment, and client-certificate routes on the
+// same path-routed listener. Hub handlers retain their durable revocation and
+// ownership checks after this transport-level certificate gate.
+func cloudRouter(modules []Module, ready func(context.Context) error, hub *hubtrust.Service, pool *pgxpool.Pool) http.Handler {
 	r := chi.NewRouter()
 	probes(r, ready)
 	r.Route("/v1", func(v chi.Router) {
@@ -252,34 +265,46 @@ func apiRouter(modules []Module, ready func(context.Context) error) http.Handler
 				m.Mount(v)
 			}
 		}
+		if hub != nil {
+			v.Group(func(h chi.Router) {
+				h.Use(requireVerifiedHubCertificate)
+				hub.HubRoutes(h)
+				if pool != nil {
+					(catalog.Service{Store: catalog.PGStore{Pool: pool}, HubAuth: catalog.HubAuthentication(hubtrust.Store{Pool: pool})}).HubRoutes(h)
+					(usagefactapi.Service{Store: usagefactapi.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
+					(sensors.Service{Store: sensors.Store{Pool: pool}}).HubRoutes(h)
+					(attachments.Service{Store: attachments.Store{Pool: pool}}).HubRoutes(h)
+					(telemetry.Service{Store: telemetry.Store{Pool: pool}}).HubRoutes(h)
+					(kasaruntime.Service{Store: kasaruntime.Store{Pool: pool}}).HubRoutes(h)
+				}
+			})
+		}
 	})
 	return stripIdentity(r)
 }
 
-// Hub operations are deliberately absent until certificate revocation and
-// current ownership epoch can be checked against the durable hub store.
-func hubRouter(ready func(context.Context) error, hub *hubtrust.Service, pools ...*pgxpool.Pool) http.Handler {
-	r := chi.NewRouter()
-	probes(r, ready)
-	if hub != nil {
-		r.Route("/v1", func(v chi.Router) {
-			hub.HubRoutes(v)
-			if len(pools) > 0 && pools[0] != nil {
-				sensorModule := sensors.Service{Store: sensors.Store{Pool: pools[0]}}
-				sensorModule.HubRoutes(v)
-				attachmentModule := attachments.Service{Store: attachments.Store{Pool: pools[0]}}
-				attachmentModule.HubRoutes(v)
-				ingest := telemetry.Service{Store: telemetry.Store{Pool: pools[0]}}
-				ingest.HubRoutes(v)
-				runtimeModule := kasaruntime.Service{Store: kasaruntime.Store{Pool: pools[0]}}
-				runtimeModule.HubRoutes(v)
-			}
-		})
-	}
-	return r
+func requireVerifiedHubCertificate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
+			http.Error(w, "hub certificate required", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func Serve(ctx context.Context, c Config) error {
+	if c.Role != RoleWorker && (c.HubCertFile == "" || c.HubKeyFile == "" || c.HubCAFile == "") {
+		return errors.New("Cloud TLS listener requires server certificate, key, and hub client CA")
+	}
+	var tlsCfg *tls.Config
+	if c.Role != RoleWorker {
+		var err error
+		tlsCfg, err = c.hubTLSConfig()
+		if err != nil {
+			return err
+		}
+	}
 	if c.KBScanPython != "" {
 		if err := (identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA}).Validate(); err != nil {
 			return err
@@ -297,31 +322,18 @@ func Serve(ctx context.Context, c Config) error {
 			return err
 		}
 	}
-	apiListener, err := net.Listen("tcp", c.APIListen)
-	if err != nil {
-		return fmt.Errorf("listen API: %w", err)
-	}
-	defer apiListener.Close()
-	apiServer := &http.Server{Handler: rt.API, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
-	servers := []*http.Server{apiServer}
-	listeners := []net.Listener{apiListener}
-	if c.HubListen != "" {
-		tlsCfg, err := c.hubTLSConfig()
+	var server *http.Server
+	var result <-chan error
+	if c.Role != RoleWorker {
+		plain, err := net.Listen("tcp", c.APIListen)
 		if err != nil {
-			return err
-		}
-		plain, err := net.Listen("tcp", c.HubListen)
-		if err != nil {
-			return fmt.Errorf("listen hub mTLS: %w", err)
+			return fmt.Errorf("listen Cloud TLS: %w", err)
 		}
 		defer plain.Close()
-		listeners = append(listeners, tls.NewListener(plain, tlsCfg))
-		servers = append(servers, &http.Server{Handler: rt.Hub, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second})
-	}
-	result := make(chan error, len(servers))
-	for i, server := range servers {
-		listener := listeners[i]
-		go func(s *http.Server) { result <- s.Serve(listener) }(server)
+		server = &http.Server{Handler: rt.API, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+		serveResult := make(chan error, 1)
+		result = serveResult
+		go func() { serveResult <- server.Serve(tls.NewListener(plain, tlsCfg)) }()
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
@@ -390,7 +402,7 @@ func Serve(ctx context.Context, c Config) error {
 			}
 		}()
 	}
-	slog.Info("energylens-cloud listening", "role", c.Role, "api", c.APIListen, "hub_mtls", c.HubListen)
+	slog.Info("energylens-cloud running", "role", c.Role, "tls_listen", c.APIListen)
 	var serveErr error
 	select {
 	case <-ctx.Done():
@@ -404,7 +416,7 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, server := range servers {
+	if server != nil {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			serveErr = errors.Join(serveErr, err)
 		}

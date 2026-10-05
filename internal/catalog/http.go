@@ -4,11 +4,14 @@ package catalog
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -26,13 +29,24 @@ type Search struct {
 }
 
 type Store interface {
-	Search(context.Context, Search) ([]json.RawMessage, error)
-	Get(context.Context, string) (json.RawMessage, error)
+	SnapshotSearch(context.Context, Search) ([]json.RawMessage, int64, error)
+	SnapshotGet(context.Context, string) (json.RawMessage, int64, error)
 }
 
 type Service struct {
-	Store Store
-	Auth  func(http.Handler) http.Handler
+	Store   Store
+	Auth    func(http.Handler) http.Handler
+	HubAuth func(http.Handler) http.Handler
+}
+
+// HubRoutes shares the reviewed store and response format with the owner API.
+// Authentication is checked before parsing the request or reading catalog data.
+func (s Service) HubRoutes(r chi.Router) {
+	r.Route("/hubs/{hub}/catalog", func(r chi.Router) {
+		r.Use(s.HubAuth)
+		r.Post("/model-search", s.search)
+		r.Get("/products/{product}", s.get)
+	})
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -51,6 +65,23 @@ func respond(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func respondCatalog(w http.ResponseWriter, value any, generation int64) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		failure(w, 500, "internal_error", "catalog response failed")
+		return
+	}
+	body = append(body, '\n')
+	digest := sha256.Sum256(body)
+	hexDigest := hex.EncodeToString(digest[:])
+	w.Header().Set("X-Catalog-Generation", strconv.FormatInt(generation, 10))
+	w.Header().Set("X-Catalog-Response-SHA256", hexDigest)
+	w.Header().Set("ETag", `"sha256-`+hexDigest+`"`)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, _ = w.Write(body)
 }
 
 func (s Service) search(w http.ResponseWriter, r *http.Request) {
@@ -104,13 +135,13 @@ func (s Service) search(w http.ResponseWriter, r *http.Request) {
 		failure(w, 400, "invalid_request", "invalid model search")
 		return
 	}
-	products, err := s.Store.Search(r.Context(), q)
+	products, generation, err := s.Store.SnapshotSearch(r.Context(), q)
 	if err != nil {
 		slog.Error("catalog search failed", "error", err)
 		failure(w, 500, "internal_error", "catalog search failed")
 		return
 	}
-	respond(w, 200, map[string]any{"products": products})
+	respondCatalog(w, map[string]any{"products": products}, generation)
 }
 
 func (s Service) get(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +150,7 @@ func (s Service) get(w http.ResponseWriter, r *http.Request) {
 		failure(w, 404, "not_found", "catalog product not found")
 		return
 	}
-	product, err := s.Store.Get(r.Context(), id)
+	product, generation, err := s.Store.SnapshotGet(r.Context(), id)
 	if errors.Is(err, ErrNotFound) {
 		failure(w, 404, "not_found", "catalog product not found")
 		return
@@ -129,5 +160,5 @@ func (s Service) get(w http.ResponseWriter, r *http.Request) {
 		failure(w, 500, "internal_error", "catalog product lookup failed")
 		return
 	}
-	respond(w, 200, product)
+	respondCatalog(w, product, generation)
 }

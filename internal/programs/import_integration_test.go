@@ -79,6 +79,36 @@ func TestImportReviewedRequiresRegisteredAuthorityAndCompleteEvidence(t *testing
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM current_verified_program_revisions WHERE id=$1`, id).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("verified count %d: %v", count, err)
 	}
+	var sourceID uuid.UUID
+	if err = pool.QueryRow(ctx, `SELECT id FROM program_sources WHERE source_key='utility-a'`).Scan(&sourceID); err != nil {
+		t.Fatal(err)
+	}
+	source := RegisteredSource{ID: sourceID, CanonicalURL: input.SourceURL, ParserVersion: "v1", MaxResponseBytes: 1000000}
+	if err = storeSourceSnapshot(ctx, pool, source, FetchedSource{Content: input.SourceBytes, ContentType: input.ContentType}); err != nil {
+		t.Fatal(err)
+	}
+	var fetchedID uuid.UUID
+	var fetchedRef string
+	if err = pool.QueryRow(ctx, `SELECT id,snapshot_ref FROM program_source_snapshots WHERE source_id=$1 AND snapshot_ref LIKE 'fetch:sha256:%' ORDER BY fetched_at DESC LIMIT 1`, sourceID).Scan(&fetchedID, &fetchedRef); err != nil {
+		t.Fatal(err)
+	}
+	reviewFetched := input
+	reviewFetched.ProgramKey = "washer-from-fetch"
+	reviewFetched.ExistingSnapshotID = fetchedID
+	reviewFetched.SnapshotRef = fetchedRef
+	bad = reviewFetched
+	bad.SourceBytes = []byte("different terms")
+	if _, err = ImportReviewed(ctx, pool, bad); err == nil {
+		t.Fatal("review accepted bytes different from fetched snapshot")
+	}
+	fetchedRevision, err := ImportReviewed(ctx, pool, reviewFetched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reviewedSnapshot uuid.UUID
+	if err = pool.QueryRow(ctx, `SELECT source_snapshot_id FROM public_program_revisions WHERE id=$1`, fetchedRevision).Scan(&reviewedSnapshot); err != nil || reviewedSnapshot != fetchedID {
+		t.Fatalf("review did not reuse fetched snapshot: %s %v", reviewedSnapshot, err)
+	}
 	if _, err = pool.Exec(ctx, `UPDATE program_source_snapshot_content SET content=decode('00','hex')`); err == nil {
 		t.Fatal("source bytes were mutable")
 	}

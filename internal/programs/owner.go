@@ -94,9 +94,13 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 	if err != nil {
 		return OwnerProgramResult{}, fmt.Errorf("invalid home timezone: %w", err)
 	}
+	coverage, err := readOwnerCoverage(ctx, tx, country, zip, category)
+	if err != nil {
+		return OwnerProgramResult{}, err
+	}
 	rows, err := tx.Query(ctx, `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.benefit_kind,r.status,
  r.reviewed_at,r.review_expires_at,LEAST(r.review_expires_at,s.terms_review_expires_at),
- snap.source_url,snap.content_sha256,a.postal_codes,a.category,a.fuel,coalesce(a.provider_key,''),
+ snap.source_url,snap.content_sha256,a.postal_codes,a.category,a.fuel,coalesce(a.provider_key,''),coalesce(a.provider_role,''),
 	 a.requires_income,a.requires_address,a.additional_conditions,r.application_from,r.application_to,
 	 (r.purchase_from IS NOT NULL OR r.purchase_to IS NOT NULL OR r.installation_from IS NOT NULL OR
 	 r.installation_to IS NOT NULL OR r.reservation_from IS NOT NULL OR r.reservation_to IS NOT NULL)
@@ -118,11 +122,11 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 		var reviewed, expires, effectiveExpires time.Time
 		var status string
 		var zips []string
-		var pCategory, pFuel, provider string
+		var pCategory, pFuel, provider, providerRole string
 		var income, address, extra bool
 		var otherWindows bool
 		var from, to *time.Time
-		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.BenefitKind, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
+		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.BenefitKind, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
 			return OwnerProgramResult{}, err
 		}
 		program := Program{ID: o.ProgramID, Status: status, ZIPs: zips, Category: pCategory, Fuel: pFuel, ProviderID: provider, RequiresIncome: income, RequiresAddress: address, ReviewedAt: reviewed, ReviewExpiresAt: effectiveExpires}
@@ -132,7 +136,18 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 		if to != nil {
 			program.EndsOn = to.Format("2006-01-02")
 		}
-		result := Evaluate(program, Household{ZIP: zip, Category: category, Fuel: fuel}, now.In(loc))
+		// ZIP discovery identifies a provider candidate, never confirmed service
+		// at the home's address. Match the reviewed provider role as well as key.
+		candidate := false
+		if coverage != nil {
+			for _, scope := range coverage.Scopes {
+				if scope.Kind == "utility" && scope.Key == provider && scope.ProviderRole != nil && *scope.ProviderRole == providerRole {
+					candidate = true
+					break
+				}
+			}
+		}
+		result := Evaluate(program, Household{ZIP: zip, Category: category, Fuel: fuel, CandidateProvider: map[string]bool{provider: candidate}}, now.In(loc))
 		if result.Status == "ineligible" {
 			continue
 		}
@@ -156,10 +171,6 @@ func (s PGOwnerStore) List(ctx context.Context, owner, home, appliance string, n
 	rows.Close()
 	if len(out) > 100 {
 		return OwnerProgramResult{}, fmt.Errorf("too many reviewed programs")
-	}
-	coverage, err := readOwnerCoverage(ctx, tx, country, zip, category)
-	if err != nil {
-		return OwnerProgramResult{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return OwnerProgramResult{}, err

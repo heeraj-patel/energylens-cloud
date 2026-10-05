@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "observed_on": "2026-10-03",
+  "purpose": "Operator research leads only; this file is not a program_sources import or a terms review.",
+  "candidates": [
+    {
+      "source_key_suggestion": "austin-energy-residential-instant-savings",
+      "source_kind": "utility",
+      "authority_name": "Austin Energy",
+      "canonical_url": "https://austinenergy.com/energy-efficiency/rebates-incentives/residential/home-improvements/instant-savings",
+      "allowed_host_candidate": "austinenergy.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Residential instant-savings program page; appliance offers and customer verification are described on the official page.",
+      "coverage_status": "unmapped",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review source access terms, robots policy, and fetch budget with the operator.",
+        "Verify current offer terms, dates, eligible products, and controlling linked documents from captured source bytes.",
+        "Map only verified ZIP and category scopes; ZIP presence must not establish Austin Energy service at an address."
+      ]
+    },
+    {
+      "source_key_suggestion": "texas-gas-service-efficiency",
+      "source_kind": "utility",
+      "authority_name": "Texas Gas Service",
+      "canonical_url": "https://www.texasgasservice.com/save-money/energy-saving-tools-tips/energy-efficiency-program",
+      "allowed_host_candidate": "www.texasgasservice.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official page says its energy efficiency rebate program has expired and rebates are unavailable.",
+      "coverage_status": "unmapped",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Monitor the official page for a newly approved program before considering any current offer.",
+        "Review source access terms and map verified gas service geography separately from ZIP candidate discovery.",
+        "Do not use historical rebate PDFs as current terms."
+      ]
+    },
+    {
+      "source_key_suggestion": "texas-seco-home-energy-rebates",
+      "source_kind": "government",
+      "authority_name": "Texas State Energy Conservation Office",
+      "canonical_url": "https://comptroller.texas.gov/programs/seco/funding/ira/",
+      "allowed_host_candidate": "comptroller.texas.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official Texas status page says HOMES and HEAR rebates are not currently available and remain in design.",
+      "coverage_status": "state_lead_only",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Monitor the official state page for DOE approval and launch details.",
+        "Review access terms and any controlling program documents after launch.",
+        "Derive ZIP/category mappings from verified data before enabling discovery fanout."
+      ]
+    },
+    {
+      "source_key_suggestion": "ge-appliances-rebates-promotions",
+      "source_kind": "manufacturer",
+      "authority_name": "GE Appliances",
+      "canonical_url": "https://www.geappliances.com/ge/rebates-promotions",
+      "allowed_host_candidate": "www.geappliances.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official manufacturer promotions directory; offer terms vary by model, purchase window, retailer, and geography.",
+      "coverage_status": "unmapped",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review access terms and capture current controlling offer documents, including eligible models and dates.",
+        "Map geography and appliance categories only from reviewed offer terms.",
+        "Do not treat this directory as a reviewed customer offer."
+      ]
+    }
+  ]
+}

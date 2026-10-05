@@ -11,11 +11,62 @@ import (
 )
 
 type PGStore struct{ Pool *pgxpool.Pool }
+type catalogQueries interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+type catalogReader struct{ db catalogQueries }
+
+// SnapshotSearch and SnapshotGet bind the catalog body and its generation to
+// one MVCC snapshot, including every fact lookup in a search response.
+func (s PGStore) SnapshotSearch(ctx context.Context, q Search) ([]json.RawMessage, int64, error) {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx)
+	var generation int64
+	if err = tx.QueryRow(ctx, `SELECT generation FROM catalog_generation WHERE singleton=true`).Scan(&generation); err != nil {
+		return nil, 0, err
+	}
+	products, err := (catalogReader{tx}).Search(ctx, q)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, 0, err
+	}
+	return products, generation, nil
+}
+
+func (s PGStore) SnapshotGet(ctx context.Context, id string) (json.RawMessage, int64, error) {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx)
+	var generation int64
+	if err = tx.QueryRow(ctx, `SELECT generation FROM catalog_generation WHERE singleton=true`).Scan(&generation); err != nil {
+		return nil, 0, err
+	}
+	product, err := (catalogReader{tx}).Get(ctx, id)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, 0, err
+	}
+	return product, generation, nil
+}
+
+func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error) {
+	return (catalogReader{s.Pool}).Search(ctx, q)
+}
 
 // Search never contacts an external provider. An absent region matches only
 // region-neutral records; a specified region also includes neutral records.
-func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id FROM catalog_products
+func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage, error) {
+	rows, err := s.db.Query(ctx, `SELECT id FROM catalog_products
         WHERE lower(brand)=lower($1) AND lower(full_model)=lower($2) AND fuel=$3
           AND (region IS NULL OR ($4::text IS NOT NULL AND lower(region)=lower($4)))
 	      AND ($5::text IS NULL OR variant IS NULL OR lower(variant)=lower($5))
@@ -37,6 +88,7 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
+	rows.Close()
 	products := make([]json.RawMessage, 0, len(ids))
 	for _, id := range ids {
 		p, err := s.Get(ctx, id)
@@ -51,8 +103,8 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 	if len(products) == 25 || normalizedModel(q.Model) == "" {
 		return products, nil
 	}
-	rows, err = s.Pool.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model'
-	    FROM catalog_products p JOIN catalog_fact_revisions f ON f.product_id=p.id
+	rows, err = s.db.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model'
+	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id
 	    WHERE lower(p.brand)=lower($1) AND p.fuel=$2
 	      AND p.match_quality='documented_variant_family'
 	      AND f.source_kind IN ('oem_family', 'other_official')
@@ -86,6 +138,9 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 			break
 		}
 	}
+	// A bounded search may stop before exhausting rows. Release that connection
+	// before Get acquires another, including when the pool has only one slot.
+	rows.Close()
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
@@ -121,11 +176,15 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 }
 
 func (s PGStore) Get(ctx context.Context, id string) (json.RawMessage, error) {
+	return (catalogReader{s.Pool}).Get(ctx, id)
+}
+
+func (s catalogReader) Get(ctx context.Context, id string) (json.RawMessage, error) {
 	var product []byte
 	var facts []byte
-	err := s.Pool.QueryRow(ctx, `SELECT p.product_json,
+	err := s.db.QueryRow(ctx, `SELECT p.product_json,
         COALESCE((SELECT jsonb_agg(f.fact_json || jsonb_build_object('source_fetched_at', f.source_fetched_at) ORDER BY f.reviewed_at DESC, f.id)
-                  FROM catalog_fact_revisions f WHERE f.product_id=p.id), '[]'::jsonb)
+	                  FROM active_catalog_facts f WHERE f.product_id=p.id), '[]'::jsonb)
         FROM catalog_products p WHERE p.id=$1`, id).Scan(&product, &facts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

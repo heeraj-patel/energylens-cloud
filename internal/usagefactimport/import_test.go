@@ -89,6 +89,55 @@ func TestPythonSignedUsageFixture(t *testing.T) {
 		t.Fatal("unexpected KB fixture content")
 	}
 }
+
+func TestPythonSignedUsageV2RevisionFixtures(t *testing.T) {
+	key, err := os.ReadFile("testdata/kb_python_signed_usage_v2.pub.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name             string
+		action           string
+		factCount        int
+		replacementIsNil bool
+	}{
+		{name: "retract", action: "retract", factCount: 0, replacementIsNil: true},
+		{name: "supersede", action: "supersede", factCount: 1, replacementIsNil: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			artifact, err := os.ReadFile("testdata/kb_python_signed_usage_v2_" + tc.name + ".json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			verified, err := ParseAndVerify(artifact, key)
+			if err != nil {
+				t.Fatalf("KB Python v2 publication is incompatible: %v", err)
+			}
+			payload := verified.Envelope.Payload
+			if payload.SchemaVersion != 2 || payload.Revision == nil {
+				t.Fatalf("unexpected v2 payload shape: version=%d revision=%+v", payload.SchemaVersion, payload.Revision)
+			}
+			revision := payload.Revision
+			if revision.Action != tc.action {
+				t.Errorf("revision action = %q, want %q", revision.Action, tc.action)
+			}
+			if revision.PriorFactID == "" {
+				t.Error("revision prior_fact_id is empty")
+			}
+			if len(payload.Facts) != tc.factCount {
+				t.Errorf("facts count = %d, want %d", len(payload.Facts), tc.factCount)
+			}
+			if (revision.ReplacementFactID == nil) != tc.replacementIsNil {
+				t.Errorf("replacement_fact_id nil = %t, want %t", revision.ReplacementFactID == nil, tc.replacementIsNil)
+			}
+			if revision.ReplacementFactID != nil && len(payload.Facts) == 1 && *revision.ReplacementFactID != payload.Facts[0].ID {
+				t.Errorf("replacement_fact_id = %q, want replacement fact %q", *revision.ReplacementFactID, payload.Facts[0].ID)
+			}
+		})
+	}
+}
+
 func TestNegativeUsageFacts(t *testing.T) {
 	p, der, priv, key := fixture(t)
 	cases := map[string]func(*Fact){

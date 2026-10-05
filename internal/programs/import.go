@@ -1,6 +1,7 @@
 package programs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,28 +20,31 @@ import (
 // ReviewedImport is supplied by a human operator through an offline workflow.
 // SourceBytes are the exact private source artifact, not extracted text.
 type ReviewedImport struct {
-	SourceKey         string
-	SourceURL         string
-	SourceBytes       []byte
-	ContentType       string
-	SnapshotRef       string
-	ParserVersion     string
-	AdministratorKey  string
-	ProgramKey        string
-	GeographyKey      string
-	AdministratorName string
-	Status            string
-	Title             string
-	BenefitKind       string
-	BenefitTerms      json.RawMessage
-	EligibilityTerms  json.RawMessage
-	StackingTerms     json.RawMessage
-	Dates             map[string]string // purchase_from/to, installation_from/to, reservation_from/to, application_from/to
-	Evidence          map[string]string // reviewed field path -> nonempty locator in SourceBytes
-	Reviewer          string
-	ReviewNote        string
-	ReviewExpiresAt   time.Time
-	Applicability     *StructuredApplicability
+	SourceKey string
+	// ExistingSnapshotID binds this review to a previously fetched, immutable
+	// source artifact. When omitted, SourceBytes are stored as a new artifact.
+	ExistingSnapshotID uuid.UUID
+	SourceURL          string
+	SourceBytes        []byte
+	ContentType        string
+	SnapshotRef        string
+	ParserVersion      string
+	AdministratorKey   string
+	ProgramKey         string
+	GeographyKey       string
+	AdministratorName  string
+	Status             string
+	Title              string
+	BenefitKind        string
+	BenefitTerms       json.RawMessage
+	EligibilityTerms   json.RawMessage
+	StackingTerms      json.RawMessage
+	Dates              map[string]string // purchase_from/to, installation_from/to, reservation_from/to, application_from/to
+	Evidence           map[string]string // reviewed field path -> nonempty locator in SourceBytes
+	Reviewer           string
+	ReviewNote         string
+	ReviewExpiresAt    time.Time
+	Applicability      *StructuredApplicability
 }
 
 var requiredEvidence = []string{"title", "status", "benefit_kind", "benefit_terms", "eligibility_terms", "stacking_terms"}
@@ -176,14 +180,36 @@ func ImportReviewed(ctx context.Context, db *pgxpool.Pool, in ReviewedImport) (u
 	digest := sha256.Sum256(in.SourceBytes)
 	hash := hex.EncodeToString(digest[:])
 	var snapshotID uuid.UUID
-	err = tx.QueryRow(ctx, `INSERT INTO program_source_snapshots(source_id,source_url,content_sha256,content_type,content_bytes,fetched_at,parser_version,snapshot_ref)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-		sourceID, in.SourceURL, hash, in.ContentType, len(in.SourceBytes), now, in.ParserVersion, in.SnapshotRef).Scan(&snapshotID)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	if _, err = tx.Exec(ctx, `INSERT INTO program_source_snapshot_content(snapshot_id,content) VALUES($1,$2)`, snapshotID, in.SourceBytes); err != nil {
-		return uuid.Nil, err
+	if in.ExistingSnapshotID != uuid.Nil {
+		var actualSource uuid.UUID
+		var actualURL, actualHash, actualType, actualParser, actualRef string
+		var actualBytes int64
+		var actualContent []byte
+		err = tx.QueryRow(ctx, `SELECT snap.source_id,snap.source_url,snap.content_sha256,snap.content_type,
+			snap.content_bytes,snap.parser_version,snap.snapshot_ref,content.content
+			FROM program_source_snapshots snap JOIN program_source_snapshot_content content ON content.snapshot_id=snap.id
+			WHERE snap.id=$1 AND snap.fetched_at <= $2`, in.ExistingSnapshotID, now).
+			Scan(&actualSource, &actualURL, &actualHash, &actualType, &actualBytes, &actualParser, &actualRef, &actualContent)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("existing source snapshot: %w", err)
+		}
+		if actualSource != sourceID || actualURL != in.SourceURL || actualHash != hash ||
+			actualType != in.ContentType || actualBytes != int64(len(in.SourceBytes)) ||
+			actualParser != in.ParserVersion || actualRef != in.SnapshotRef ||
+			!bytes.Equal(actualContent, in.SourceBytes) {
+			return uuid.Nil, errors.New("existing source snapshot does not match review artifact")
+		}
+		snapshotID = in.ExistingSnapshotID
+	} else {
+		err = tx.QueryRow(ctx, `INSERT INTO program_source_snapshots(source_id,source_url,content_sha256,content_type,content_bytes,fetched_at,parser_version,snapshot_ref)
+	 VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+			sourceID, in.SourceURL, hash, in.ContentType, len(in.SourceBytes), now, in.ParserVersion, in.SnapshotRef).Scan(&snapshotID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO program_source_snapshot_content(snapshot_id,content) VALUES($1,$2)`, snapshotID, in.SourceBytes); err != nil {
+			return uuid.Nil, err
+		}
 	}
 	var programID, registeredSource uuid.UUID
 	_, err = tx.Exec(ctx, `INSERT INTO public_programs(administrator_key,program_key,geography_key,administrator_name,source_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, in.AdministratorKey, in.ProgramKey, in.GeographyKey, in.AdministratorName, sourceID)

@@ -28,6 +28,7 @@ import (
 )
 
 const messagePrefix = "energylens.reviewed-catalog-facts.v1\n"
+const revisionMessagePrefix = "energylens.reviewed-catalog-facts.v2\n"
 const maxArtifactBytes = 16 << 20
 
 var hexHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -45,6 +46,17 @@ type Payload struct {
 	Schema        string    `json:"schema"`
 	SchemaVersion int       `json:"schema_version"`
 	Products      []Product `json:"products"`
+	Revision      *Revision `json:"revision,omitempty"`
+}
+type Revision struct {
+	ID                string  `json:"id"`
+	Action            string  `json:"action"`
+	PriorFactID       string  `json:"prior_fact_id"`
+	ReplacementFactID *string `json:"replacement_fact_id"`
+	Reason            string  `json:"reason"`
+	Reviewer          string  `json:"reviewer"`
+	ReviewedAt        string  `json:"reviewed_at"`
+	ReviewSHA256      string  `json:"review_sha256"`
 }
 type Product struct {
 	ID           string  `json:"id"`
@@ -78,6 +90,8 @@ type Verified struct {
 	Envelope     Envelope
 	EnvelopeHash string
 	PayloadHash  string
+	artifact     []byte
+	publicPEM    []byte
 }
 
 func canonical(v any) ([]byte, error) {
@@ -140,7 +154,7 @@ func ParseAndVerify(artifact []byte, publicPEM []byte) (Verified, error) {
 	if err = decodeEnvelope(artifact, &env); err != nil {
 		return Verified{}, err
 	}
-	if env.SchemaVersion != 1 || env.Algorithm != "Ed25519" || env.Payload.Schema != "energylens.reviewed-catalog-facts" || env.Payload.SchemaVersion != 1 {
+	if env.SchemaVersion != env.Payload.SchemaVersion || (env.SchemaVersion != 1 && env.SchemaVersion != 2) || env.Algorithm != "Ed25519" || env.Payload.Schema != "energylens.reviewed-catalog-facts" {
 		return Verified{}, errors.New("unsupported publication format")
 	}
 	if env.KeyID != hex.EncodeToString(keyID[:]) {
@@ -161,14 +175,18 @@ func ParseAndVerify(artifact []byte, publicPEM []byte) (Verified, error) {
 	if err != nil || len(sig) != ed25519.SignatureSize || base64.RawURLEncoding.EncodeToString(sig) != env.Signature {
 		return Verified{}, errors.New("invalid signature encoding")
 	}
-	if !ed25519.Verify(key, append([]byte(messagePrefix), payload...), sig) {
+	domain := messagePrefix
+	if env.SchemaVersion == 2 {
+		domain = revisionMessagePrefix
+	}
+	if !ed25519.Verify(key, append([]byte(domain), payload...), sig) {
 		return Verified{}, errors.New("signature verification failed")
 	}
 	if err = validatePayload(env.Payload); err != nil {
 		return Verified{}, err
 	}
 	envelopeHash := sha256.Sum256(artifact)
-	return Verified{Envelope: env, EnvelopeHash: hex.EncodeToString(envelopeHash[:]), PayloadHash: env.PayloadSHA256}, nil
+	return Verified{Envelope: env, EnvelopeHash: hex.EncodeToString(envelopeHash[:]), PayloadHash: env.PayloadSHA256, artifact: bytes.Clone(artifact), publicPEM: bytes.Clone(publicPEM)}, nil
 }
 
 func decodeEnvelope(raw []byte, out *Envelope) error {
@@ -193,8 +211,30 @@ func stringField(m map[string]json.RawMessage, k string) bool {
 	return json.Unmarshal(m[k], &v) == nil && nonblank(v)
 }
 func validatePayload(p Payload) error {
-	if len(p.Products) == 0 {
-		return errors.New("publication has no products")
+	if p.SchemaVersion == 1 {
+		if len(p.Products) == 0 || p.Revision != nil {
+			return errors.New("invalid initial publication")
+		}
+	} else {
+		r := p.Revision
+		if r == nil || !validUUID(r.ID) || !validUUID(r.PriorFactID) || !nonblank(r.Reason) || len(r.Reason) > 1000 || !nonblank(r.Reviewer) || !hexHash.MatchString(r.ReviewSHA256) {
+			return errors.New("invalid revision provenance")
+		}
+		reviewed, err := time.Parse(time.RFC3339, r.ReviewedAt)
+		if err != nil || reviewed.IsZero() || reviewed.After(time.Now().Add(5*time.Minute)) {
+			return errors.New("invalid revision review time")
+		}
+		if r.Action == "retract" {
+			if len(p.Products) != 0 || r.ReplacementFactID != nil {
+				return errors.New("retraction must contain no replacement")
+			}
+		} else if r.Action == "supersede" {
+			if len(p.Products) != 1 || len(p.Products[0].Facts) != 1 || r.ReplacementFactID == nil || !validUUID(*r.ReplacementFactID) || *r.ReplacementFactID != p.Products[0].Facts[0].ID || r.PriorFactID == *r.ReplacementFactID {
+				return errors.New("supersession must contain one replacement fact")
+			}
+		} else {
+			return errors.New("invalid revision action")
+		}
 	}
 	products := map[string]bool{}
 	facts := map[string]bool{}
@@ -210,7 +250,7 @@ func validatePayload(p Payload) error {
 			return errors.New("invalid product details")
 		}
 		for _, fact := range product.Facts {
-			if !validUUID(fact.ID) || facts[fact.ID] || fact.Kind != "annual_energy" || fact.Unit != "kWh" || fact.Revision != 1 {
+			if !validUUID(fact.ID) || facts[fact.ID] || fact.Kind != "annual_energy" || fact.Unit != "kWh" || fact.Revision < 1 || (p.SchemaVersion == 1 && fact.Revision != 1) {
 				return errors.New("invalid or duplicate fact")
 			}
 			facts[fact.ID] = true
@@ -280,6 +320,7 @@ func ReadAndVerify(path, keyPath string) (Verified, error) {
 
 type Result struct {
 	PayloadSHA256 string `json:"payload_sha256"`
+	Generation    int64  `json:"generation"`
 	Products      int    `json:"products"`
 	Facts         int    `json:"facts"`
 	Replayed      bool   `json:"replayed"`
@@ -289,6 +330,11 @@ func Import(ctx context.Context, pool *pgxpool.Pool, verified Verified, actor st
 	if !nonblank(actor) {
 		return Result{}, errors.New("imported-by is required")
 	}
+	rechecked, err := ParseAndVerify(verified.artifact, verified.publicPEM)
+	if err != nil || verified.PayloadHash != rechecked.PayloadHash || verified.EnvelopeHash != rechecked.EnvelopeHash {
+		return Result{}, errors.New("verified publication changed before import")
+	}
+	verified = rechecked
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return Result{}, err
@@ -299,19 +345,49 @@ func Import(ctx context.Context, pool *pgxpool.Pool, verified Verified, actor st
 		return Result{}, err
 	}
 	var existingKey, existingEnvelope string
-	err = tx.QueryRow(ctx, `SELECT key_id,envelope_sha256 FROM catalog_publications WHERE payload_sha256=$1`, verified.PayloadHash).Scan(&existingKey, &existingEnvelope)
+	var existingGeneration int64
+	err = tx.QueryRow(ctx, `SELECT key_id,envelope_sha256,generation FROM catalog_publications WHERE payload_sha256=$1`, verified.PayloadHash).Scan(&existingKey, &existingEnvelope, &existingGeneration)
 	if err == nil {
 		if existingKey != verified.Envelope.KeyID || existingEnvelope != verified.EnvelopeHash {
 			return Result{}, errors.New("publication replay differs from prior envelope")
 		}
-		return Result{PayloadSHA256: verified.PayloadHash, Products: len(verified.Envelope.Payload.Products), Facts: countFacts(verified.Envelope.Payload), Replayed: true}, tx.Commit(ctx)
+		return Result{PayloadSHA256: verified.PayloadHash, Generation: existingGeneration, Products: len(verified.Envelope.Payload.Products), Facts: countFacts(verified.Envelope.Payload), Replayed: true}, tx.Commit(ctx)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Result{}, err
 	}
+	if r := verified.Envelope.Payload.Revision; r != nil {
+		var priorProduct string
+		var priorRevision int
+		var priorReviewed time.Time
+		err = tx.QueryRow(ctx, `SELECT product_id,revision,reviewed_at FROM active_catalog_facts WHERE id=$1`, r.PriorFactID).Scan(&priorProduct, &priorRevision, &priorReviewed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Result{}, errors.New("revision target is not an active catalog fact")
+		}
+		if err != nil {
+			return Result{}, err
+		}
+		changeReviewed, _ := time.Parse(time.RFC3339, r.ReviewedAt)
+		if !changeReviewed.After(priorReviewed) {
+			return Result{}, errors.New("revision review must follow prior fact review")
+		}
+		if r.Action == "supersede" {
+			p := verified.Envelope.Payload.Products[0]
+			if p.ID != priorProduct || p.Facts[0].Revision != priorRevision+1 {
+				return Result{}, errors.New("replacement changes product identity or revision sequence")
+			}
+			factReviewed, _ := time.Parse(time.RFC3339, p.Facts[0].ReviewedAt)
+			if !factReviewed.After(priorReviewed) || factReviewed.After(changeReviewed) {
+				return Result{}, errors.New("replacement review time is outside revision window")
+			}
+		}
+	}
 	result := Result{PayloadSHA256: verified.PayloadHash, Products: len(verified.Envelope.Payload.Products), Facts: countFacts(verified.Envelope.Payload)}
 	_, err = tx.Exec(ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$2,$3,$4,$5,$6)`, verified.PayloadHash, verified.Envelope.KeyID, verified.EnvelopeHash, actor, result.Products, result.Facts)
 	if err != nil {
+		return Result{}, err
+	}
+	if err = tx.QueryRow(ctx, `SELECT generation FROM catalog_publications WHERE payload_sha256=$1`, verified.PayloadHash).Scan(&result.Generation); err != nil {
 		return Result{}, err
 	}
 	for _, p := range verified.Envelope.Payload.Products {
@@ -340,15 +416,22 @@ func Import(ctx context.Context, pool *pgxpool.Pool, verified Verified, actor st
 			return Result{}, err
 		}
 		for _, f := range p.Facts {
-			factJSON, _ := json.Marshal(f)
-			var oldFact []byte
-			var oldProduct string
-			err = tx.QueryRow(ctx, `SELECT product_id,fact_json FROM catalog_fact_revisions WHERE id=$1`, f.ID).Scan(&oldProduct, &oldFact)
-			if err == nil {
-				if oldProduct != p.ID || !jsonEqual(oldFact, factJSON) {
-					return Result{}, fmt.Errorf("fact %s conflicts with immutable revision", f.ID)
+			if verified.Envelope.Payload.Revision == nil {
+				var priorChange *time.Time
+				err = tx.QueryRow(ctx, `SELECT max(c.reviewed_at) FROM catalog_fact_changes c JOIN catalog_fact_revisions prior ON prior.id=c.prior_fact_id WHERE prior.product_id=$1`, p.ID).Scan(&priorChange)
+				if err != nil {
+					return Result{}, err
 				}
-				continue
+				reviewed, _ := time.Parse(time.RFC3339, f.ReviewedAt)
+				if priorChange != nil && !reviewed.After(*priorChange) {
+					return Result{}, errors.New("initial fact review predates a signed catalog change")
+				}
+			}
+			factJSON, _ := json.Marshal(f)
+			var oldProduct string
+			err = tx.QueryRow(ctx, `SELECT product_id FROM catalog_fact_revisions WHERE id=$1`, f.ID).Scan(&oldProduct)
+			if err == nil {
+				return Result{}, fmt.Errorf("fact %s already exists for product %s", f.ID, oldProduct)
 			}
 			if !errors.Is(err, pgx.ErrNoRows) {
 				return Result{}, err
@@ -360,6 +443,13 @@ func Import(ctx context.Context, pool *pgxpool.Pool, verified Verified, actor st
 			if err != nil {
 				return Result{}, err
 			}
+		}
+	}
+	if r := verified.Envelope.Payload.Revision; r != nil {
+		reviewed, _ := time.Parse(time.RFC3339, r.ReviewedAt)
+		_, err = tx.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,replacement_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, r.ID, verified.PayloadHash, r.PriorFactID, r.ReplacementFactID, r.Action, r.Reason, r.Reviewer, reviewed, r.ReviewSHA256)
+		if err != nil {
+			return Result{}, err
 		}
 	}
 	return result, tx.Commit(ctx)

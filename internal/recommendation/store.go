@@ -182,7 +182,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			}
 		}
 		if item.ProductID != nil {
-			factRows, queryErr := tx.Query(ctx, `SELECT DISTINCT ON (kind) id,kind,revision FROM catalog_fact_revisions
+			factRows, queryErr := tx.Query(ctx, `SELECT DISTINCT ON (kind) id,kind,revision FROM active_catalog_facts
 			 WHERE product_id=$1 ORDER BY kind,reviewed_at DESC,revision DESC,id DESC`, *item.ProductID)
 			if queryErr != nil {
 				return nil, queryErr

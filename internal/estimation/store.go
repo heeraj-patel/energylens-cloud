@@ -33,6 +33,7 @@ type factEvidence struct {
 	Count      int64
 	Distinct   int64
 	NonExact   int64
+	Changes    int64
 	SourceKind string
 }
 type rateEvidence struct {
@@ -112,15 +113,19 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 	}
 	var f factEvidence
 	if a.Fuel == "electricity" && a.ProductID != nil {
-		err := tx.QueryRow(ctx, `SELECT count(*),count(DISTINCT (value,test_basis,included_energy)),count(*) FILTER (WHERE source_kind NOT IN ('epa_exact','oem_exact')) FROM catalog_fact_revisions WHERE product_id=$1 AND kind='annual_energy' AND unit='kWh'`, *a.ProductID).Scan(&f.Count, &f.Distinct, &f.NonExact)
+		err := tx.QueryRow(ctx, `SELECT count(*),count(DISTINCT (value,test_basis,included_energy)),count(*) FILTER (WHERE source_kind NOT IN ('epa_exact','oem_exact')) FROM active_catalog_facts WHERE product_id=$1 AND kind='annual_energy' AND unit='kWh'`, *a.ProductID).Scan(&f.Count, &f.Distinct, &f.NonExact)
 		if err != nil {
 			return nil, err
 		}
 		if f.Count > 0 {
-			err = tx.QueryRow(ctx, `SELECT id,revision,value::text,source_kind FROM catalog_fact_revisions WHERE product_id=$1 AND kind='annual_energy' AND unit='kWh' ORDER BY reviewed_at DESC,revision DESC,id DESC LIMIT 1`, *a.ProductID).Scan(&f.ID, &f.Revision, &f.Value, &f.SourceKind)
+			err = tx.QueryRow(ctx, `SELECT id,revision,value::text,source_kind FROM active_catalog_facts WHERE product_id=$1 AND kind='annual_energy' AND unit='kWh' ORDER BY reviewed_at DESC,revision DESC,id DESC LIMIT 1`, *a.ProductID).Scan(&f.ID, &f.Revision, &f.Value, &f.SourceKind)
 			if err != nil {
 				return nil, err
 			}
+		}
+		err = tx.QueryRow(ctx, `SELECT count(*) FROM catalog_fact_changes c JOIN catalog_fact_revisions f ON f.id=c.prior_fact_id WHERE f.product_id=$1`, *a.ProductID).Scan(&f.Changes)
+		if err != nil {
+			return nil, err
 		}
 	}
 	var rate rateEvidence
@@ -205,9 +210,9 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 		}
 		quality["consumption"] = calc.ConsumptionQuality
 	}
-	// Count every immutable fact and tariff revision, including records that
-	// cause no value change, so trigger invalidation always produces a new key.
-	snapshot := map[string]any{"appliance_version": a.Version, "catalog_product_id": a.ProductID, "catalog_fact_id": f.ID, "catalog_fact_revision": f.Revision, "catalog_fact_source_kind": f.SourceKind, "catalog_fact_count": f.Count, "catalog_distinct_values": f.Distinct, "catalog_nonexact_sources": f.NonExact, "tariff_id": rate.ID, "tariff_revision": rate.Revision, "tariff_count": rate.Count, "confirmed_usage_revision": usage.AnswerRevision, "generic_usage_revision": usage.GenericRevision, "reviewed_usage_fact_id": usage.FactID, "reviewed_usage_question_id": usage.QuestionID, "reviewed_usage_cycle_definition": usage.CycleDefinition, "reviewed_usage_publication_sha256": usage.PublicationHash, "reviewed_usage_fact_count": usage.FactCount, "reviewed_usage_status": usage.Status, "weekly_usage": usage.Weekly, "projected_usage": usage.Projected, "period_start": start, "period_end": end, "timezone": timezone, "formula_version": "reviewed-energy/v1"}
+	// The change count distinguishes a restored active set from an earlier,
+	// already-invalidated immutable run with otherwise identical dependencies.
+	snapshot := map[string]any{"appliance_version": a.Version, "catalog_product_id": a.ProductID, "catalog_fact_id": f.ID, "catalog_fact_revision": f.Revision, "catalog_fact_source_kind": f.SourceKind, "catalog_fact_count": f.Count, "catalog_fact_change_count": f.Changes, "catalog_distinct_values": f.Distinct, "catalog_nonexact_sources": f.NonExact, "tariff_id": rate.ID, "tariff_revision": rate.Revision, "tariff_count": rate.Count, "confirmed_usage_revision": usage.AnswerRevision, "generic_usage_revision": usage.GenericRevision, "reviewed_usage_fact_id": usage.FactID, "reviewed_usage_question_id": usage.QuestionID, "reviewed_usage_cycle_definition": usage.CycleDefinition, "reviewed_usage_publication_sha256": usage.PublicationHash, "reviewed_usage_fact_count": usage.FactCount, "reviewed_usage_status": usage.Status, "weekly_usage": usage.Weekly, "projected_usage": usage.Projected, "period_start": start, "period_end": end, "timezone": timezone, "formula_version": "reviewed-energy/v1"}
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return nil, err

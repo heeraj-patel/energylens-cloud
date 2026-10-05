@@ -59,6 +59,9 @@ type Config struct {
 	LocalAuthLinkOrigin          string
 	LocalAuthProxyCIDRs          string
 	LocalAuthEnabled             bool
+	DevAuthEnabled               bool
+	DevAuthEmail                 string
+	DevAuthPassword              string
 	AccountDeletionEnabled       bool
 	LocalAuthActiveKeyID         string
 	LocalAuthPrivateKey          string
@@ -84,7 +87,7 @@ func LoadConfig(role string) (Config, error) {
 	c := Config{
 		Role: Role(strings.TrimSpace(role)), Environment: strings.TrimSpace(os.Getenv("ENERGYLENS_CLOUD_ENV")),
 		APIListen: os.Getenv("ENERGYLENS_CLOUD_BIND"), HubListen: os.Getenv("ENERGYLENS_CLOUD_HUB_BIND"),
-		HubCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_TLS_CERT"), HubKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_TLS_KEY"), HubCAFile: os.Getenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA"), HubSignCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_CERT"), HubSignKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_KEY"),
+		HubCertFile: os.Getenv("ENERGYLENS_CLOUD_TLS_CERT"), HubKeyFile: os.Getenv("ENERGYLENS_CLOUD_TLS_KEY"), HubCAFile: os.Getenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA"), HubSignCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_CERT"), HubSignKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_KEY"),
 		DatabaseURL: os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"), EIAAPIKey: os.Getenv("EIA_API_KEY"),
 		WeatherOpenMeteoAPIKey: os.Getenv("ENERGYLENS_CLOUD_OPEN_METEO_API_KEY"), WeatherCoarseCells: os.Getenv("ENERGYLENS_CLOUD_WEATHER_COARSE_CELLS"),
 		OIDCIssuer: os.Getenv("ENERGYLENS_CLOUD_OIDC_ISSUER"), OIDCAudience: os.Getenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE"), OIDCJWKSURL: os.Getenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL"),
@@ -93,6 +96,7 @@ func LoadConfig(role string) (Config, error) {
 		LocalAuthResendAPIKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY"), LocalAuthResendFrom: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM"), LocalAuthLinkOrigin: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN"), LocalAuthProxyCIDRs: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_TRUSTED_PROXY_CIDRS"),
 		LocalAuthActiveKeyID: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ACTIVE_KEY_ID"), LocalAuthPrivateKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PRIVATE_KEY_FILE"), LocalAuthPublicKeys: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PUBLIC_KEY_FILES"), LocalAuthAudience: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_AUDIENCE"),
 		LocalAuthRegisterKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_REGISTER_RATE_KEY_FILE"), LocalAuthLoginKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LOGIN_RATE_KEY_FILE"), LocalAuthRecoveryKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RECOVERY_RATE_KEY_FILE"),
+		DevAuthEmail: os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_EMAIL"), DevAuthPassword: os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_PASSWORD"),
 		OEDIIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
 	}
@@ -166,6 +170,13 @@ func LoadConfig(role string) (Config, error) {
 		}
 		c.LocalAuthEnabled = enabled
 	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_DEV_AUTH_ENABLED: %w", err)
+		}
+		c.DevAuthEnabled = enabled
+	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_ACCOUNT_DELETION_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
 		if err != nil {
@@ -173,16 +184,35 @@ func LoadConfig(role string) (Config, error) {
 		}
 		c.AccountDeletionEnabled = enabled
 	}
+	if c.DevAuthEnabled && c.Environment == "" {
+		return Config{}, errors.New("development auth requires explicit ENERGYLENS_CLOUD_ENV=dev")
+	}
 	if c.Environment == "" {
 		c.Environment = "dev"
 	}
 	if c.APIListen == "" {
-		c.APIListen = "127.0.0.1:8091"
+		c.APIListen = "127.0.0.1:18091"
+	}
+	// The old names remain accepted for deployments during the single-port
+	// migration. They configure the same server certificate, never a listener.
+	if c.HubCertFile == "" {
+		c.HubCertFile = os.Getenv("ENERGYLENS_CLOUD_HUB_TLS_CERT")
+	}
+	if c.HubKeyFile == "" {
+		c.HubKeyFile = os.Getenv("ENERGYLENS_CLOUD_HUB_TLS_KEY")
 	}
 	return c, c.Validate()
 }
 
 func (c Config) Validate() error {
+	if c.DevAuthEnabled || c.DevAuthEmail != "" || c.DevAuthPassword != "" {
+		if !c.DevAuthEnabled || c.Environment != "dev" || c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || c.OIDCIssuer != "" || c.LocalAuthEnabled || c.LocalAuthMailEnabled {
+			return errors.New("development auth requires dev API with database and no other owner authentication")
+		}
+		if c.DevAuthEmail == "" || c.DevAuthEmail != strings.TrimSpace(c.DevAuthEmail) || !strings.Contains(c.DevAuthEmail, "@") || len(c.DevAuthEmail) > 254 || len(c.DevAuthPassword) < 12 || len(c.DevAuthPassword) > 256 {
+			return errors.New("development auth requires fixed email and 12-256 character password")
+		}
+	}
 	if (c.WeatherOpenMeteoAPIKey == "") != (c.WeatherCoarseCells == "") {
 		return errors.New("commercial weather API key and coarse cell map must be configured together")
 	}
@@ -378,8 +408,11 @@ func (c Config) Validate() error {
 			}
 		}
 	}
-	if c.Environment == "production" && c.Role != RoleWorker && c.HubListen == "" {
-		return errors.New("production API requires separate hub mTLS listener")
+	if c.HubListen != "" {
+		return errors.New("ENERGYLENS_CLOUD_HUB_BIND is obsolete; all routes use ENERGYLENS_CLOUD_BIND")
+	}
+	if c.Role != RoleWorker && c.Environment != "dev" && c.Environment != "test" && (c.HubCertFile == "" || c.HubKeyFile == "" || c.HubCAFile == "") {
+		return errors.New("Cloud TLS requires server certificate, key, and hub client CA")
 	}
 	if c.Environment == "production" && c.Role != RoleWorker && c.HubSignCertFile == "" {
 		return errors.New("production API requires hub signing certificate and key")
@@ -390,18 +423,10 @@ func (c Config) Validate() error {
 	if (c.HubSignCertFile == "") != (c.HubSignKeyFile == "") {
 		return errors.New("hub signing certificate and key must be configured together")
 	}
-	if c.HubListen != "" {
-		if c.Role == RoleWorker {
-			return errors.New("worker cannot serve hub listener")
+	if c.HubCertFile != "" || c.HubKeyFile != "" || c.HubCAFile != "" {
+		if c.Role == RoleWorker || c.HubCertFile == "" || c.HubKeyFile == "" || c.HubCAFile == "" {
+			return errors.New("Cloud TLS requires API role, server certificate, key, and hub client CA")
 		}
-		if c.HubListen == c.APIListen {
-			return errors.New("hub listener must use a distinct address")
-		}
-		if c.HubCertFile == "" || c.HubKeyFile == "" || c.HubCAFile == "" {
-			return errors.New("hub listener requires TLS certificate, key, and client CA")
-		}
-	} else if c.HubCertFile != "" || c.HubKeyFile != "" || c.HubCAFile != "" {
-		return errors.New("hub TLS settings require ENERGYLENS_CLOUD_HUB_BIND")
 	}
 	return nil
 }
@@ -451,5 +476,5 @@ func (c Config) hubTLSConfig() (*tls.Config, error) {
 	if !pool.AppendCertsFromPEM(data) {
 		return nil, errors.New("hub client CA contains no certificates")
 	}
-	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}, nil
+	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{pair}, ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: pool}, nil
 }

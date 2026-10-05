@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
@@ -35,6 +36,7 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	cfg.MaxConns = 1
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +74,10 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 	results, err := store.Search(ctx, Search{Brand: "acme", Model: "a123", Fuel: "electricity"})
 	if err != nil || len(results) != 1 {
 		t.Fatalf("neutral search: %d %v", len(results), err)
+	}
+	snapshotResults, snapshotGeneration, err := store.SnapshotSearch(ctx, Search{Brand: "acme", Model: "a123", Fuel: "electricity"})
+	if err != nil || len(snapshotResults) != 1 || snapshotGeneration != 1 {
+		t.Fatalf("snapshot search: %d generation %d error %v", len(snapshotResults), snapshotGeneration, err)
 	}
 	var product struct {
 		ID    string           `json:"id"`
@@ -203,5 +209,53 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 	candidate.Facts = nil
 	if err = json.Unmarshal(results[0], &candidate); err != nil || candidate.ID != energuideID || candidate.QueryMatch != "documented_family" || candidate.MatchedModel != "KSSC48QT500" || candidate.VariantMatch != "unresolved" || len(candidate.Facts) != 0 {
 		t.Fatalf("EnerGuide family lead exposed a rating: %+v %v", candidate, err)
+	}
+	// More than the response limit forces the family scan to stop before its
+	// result set is exhausted. It must release the only pool slot before Get.
+	for i := 0; i < 30; i++ {
+		productID, factID := uuid.NewString(), uuid.NewString()
+		if _, err = pool.Exec(ctx, `INSERT INTO catalog_products(id,category,brand,full_model,variant,region,fuel,match_quality,product_json)
+			 SELECT $1,category,brand,full_model,variant,region,fuel,match_quality,jsonb_set(product_json,'{id}',to_jsonb($1::uuid::text)) FROM catalog_products WHERE id=$2`, productID, familyID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json)
+			 SELECT $1,$2,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,jsonb_set(fact_json,'{id}',to_jsonb($1::uuid::text)) FROM catalog_fact_revisions WHERE id=$3`, factID, productID, familyFactID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	results, err = store.Search(bounded, Search{Brand: "LG", Model: "WM3070HZA", Fuel: "electricity", Region: &us})
+	if err != nil || len(results) != 25 {
+		t.Fatalf("bounded family search held pool connection: %d %v", len(results), err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256)
+		VALUES($1,$2,$3,'retract','source withdrawn','reviewer',now(),$2)`, uuid.NewString(), hash, familyFactID); err != nil {
+		t.Fatal(err)
+	}
+	withdrawn, err := store.Get(ctx, familyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var withdrawnProduct struct {
+		Facts []json.RawMessage `json:"facts"`
+	}
+	if err = json.Unmarshal(withdrawn, &withdrawnProduct); err != nil || len(withdrawnProduct.Facts) != 0 {
+		t.Fatalf("withdrawn family rating remained visible: %s %v", withdrawn, err)
+	}
+	results, err = store.Search(ctx, Search{Brand: "LG", Model: "WM3070HZA", Fuel: "electricity", Region: &us})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		var candidate struct {
+			ID string `json:"id"`
+		}
+		if err = json.Unmarshal(result, &candidate); err != nil {
+			t.Fatal(err)
+		}
+		if candidate.ID == familyID {
+			t.Fatal("withdrawn family lead remained visible")
+		}
 	}
 }

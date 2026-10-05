@@ -171,6 +171,28 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if err != nil || got.Coverage == nil || got.Coverage.RunID != latestRun.String() || got.Coverage.State != "partial" || len(got.Coverage.Scopes) != 2 || got.Coverage.Scopes[1].Status != "checked" {
 		t.Fatalf("latest matching discovery run: %+v %v", got.Coverage, err)
 	}
+	var utility *OwnerProgram
+	for i := range got.Programs {
+		if got.Programs[i].RevisionID == rev.String() {
+			utility = &got.Programs[i]
+		}
+	}
+	if utility == nil || utility.Status != "unknown" || !slices.Contains(utility.Reasons, "provider_unconfirmed") {
+		t.Fatalf("ZIP provider candidate must remain unconfirmed: %+v", got.Programs)
+	}
+	// A candidate for a different service role cannot satisfy this requirement.
+	if _, err = pool.Exec(ctx, `UPDATE program_discovery_coverage SET provider_role='gas_distributor' WHERE run_id=$1 AND scope_key='utility-a'`, latestRun); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range got.Programs {
+		if item.RevisionID == rev.String() && (item.Status != "unknown" || !slices.Contains(item.Reasons, "provider_unknown")) {
+			t.Fatalf("mismatched provider role asserted: %+v", item)
+		}
+	}
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/homes/"+home.String()+"/programs?appliance_id="+appliance.String(), nil))
 	var page struct {

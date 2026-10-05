@@ -34,6 +34,7 @@ type estimateBody struct {
 	} `json:"energy"`
 	Waste        string `json:"waste"`
 	EvidenceRefs []struct {
+		ID       string `json:"id"`
 		Kind     string `json:"kind"`
 		Revision int64  `json:"revision"`
 	} `json:"evidence_refs"`
@@ -187,7 +188,8 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	if third.ID == second.ID {
 		t.Fatal("appliance change reused run")
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',365,'kWh','{}','{}','oem_family','https://example.org/family',$4,'reviewed_row_manifest','sources/family.json',now(),2,'{}')`, uuid.NewString(), productID, publication, strings.Repeat("b", 64)); err != nil {
+	familyID := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',365,'kWh','{}','{}','oem_family','https://example.org/family',$4,'reviewed_row_manifest','sources/family.json',now(),2,'{}')`, familyID, productID, publication, strings.Repeat("b", 64)); err != nil {
 		t.Fatal(err)
 	}
 	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(3*time.Second))
@@ -198,7 +200,8 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	if family.Kind != "unavailable" || family.UnavailableReason != "basis_incomparable" {
 		t.Fatalf("family source promoted to exact: %+v", family)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',400,'kWh','{}','{}','epa_exact','https://example.org/conflict',$4,'reviewed_row_manifest','sources/conflict.json',now(),2,'{}')`, uuid.NewString(), productID, publication, strings.Repeat("c", 64)); err != nil {
+	conflictID := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',400,'kWh','{}','{}','epa_exact','https://example.org/conflict',$4,'reviewed_row_manifest','sources/conflict.json',now(),2,'{}')`, conflictID, productID, publication, strings.Repeat("c", 64)); err != nil {
 		t.Fatal(err)
 	}
 	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(4*time.Second))
@@ -208,6 +211,50 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	conflict := decodeEstimate(t, runs[0])
 	if conflict.Kind != "unavailable" || conflict.UnavailableReason != "basis_incomparable" {
 		t.Fatalf("conflicting facts accepted: %+v", conflict)
+	}
+	for _, prior := range []string{familyID, conflictID} {
+		if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','fixture cleanup','reviewer',now(),$4)`, uuid.NewString(), publication, prior, strings.Repeat("d", 64)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := decodeEstimate(t, runs[0])
+	if restored.Kind != "estimated_operating_cost" || restored.Energy == nil || restored.Cost == nil || restored.EvidenceRefs[0].ID != factID {
+		t.Fatalf("retracted conflicting facts still block original estimate: %+v", restored)
+	}
+	replacementID := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',730,'kWh','{}','{}','epa_exact','https://example.org/correction',$4,'reviewed_row_manifest','sources/correction.json',now(),2,'{}')`, replacementID, productID, publication, strings.Repeat("e", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,replacement_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,$4,'supersede','correct annual figure','reviewer',now(),$5)`, uuid.NewString(), publication, factID, replacementID, strings.Repeat("f", 64)); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(6*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrected := decodeEstimate(t, runs[0])
+	if corrected.Kind != "estimated_operating_cost" || corrected.Energy == nil || corrected.Cost == nil || corrected.ID == restored.ID || corrected.Energy.Value == restored.Energy.Value || corrected.Cost.Value == restored.Cost.Value || len(corrected.EvidenceRefs) != 2 || corrected.EvidenceRefs[0].ID != replacementID {
+		t.Fatalf("corrected annual fact did not change estimate and evidence: %+v", corrected)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','withdraw corrected figure','reviewer',now(),$4)`, uuid.NewString(), publication, replacementID, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(7*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retracted := decodeEstimate(t, runs[0])
+	if retracted.Kind != "unavailable" || retracted.UnavailableReason != "source_unreviewed" || retracted.Energy != nil || retracted.Cost != nil || retracted.ID == corrected.ID {
+		t.Fatalf("retracted annual fact still produced numeric estimate: %+v", retracted)
+	}
+	for _, ref := range retracted.EvidenceRefs {
+		if ref.Kind == "catalog_fact" {
+			t.Fatalf("retracted catalog evidence exposed: %+v", retracted.EvidenceRefs)
+		}
 	}
 	if _, err = pool.Exec(ctx, `UPDATE estimate_runs SET formula_version='forged' WHERE id=$1`, second.ID); err == nil {
 		t.Fatal("estimate run changed")

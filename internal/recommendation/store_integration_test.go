@@ -103,6 +103,22 @@ func TestCurrentRecommendationEvidenceOwnerAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("candidate", "hours_per_week", 1)
+	replacement := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',40,'kWh','{}','{}','epa_exact','https://example.org/correction',$4,'reviewed_row_manifest','sources/correction.json',$5,2,'{}')`, replacement, product, hash, strings.Repeat("b", 64), now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,replacement_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,$4,'supersede','correct annual figure','reviewer',$5,$6)`, uuid.NewString(), hash, fact, replacement, now.Add(time.Second), strings.Repeat("c", 64)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.Current(ctx, owner, home, now)
+	if err != nil || len(items) != 1 || len(items[0].Facts) != 1 || items[0].Facts[0].ID != replacement {
+		t.Fatalf("recommendation retained superseded fact: %+v %v", items, err)
+	}
+	check("candidate", "hours_per_week", 1)
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','withdraw corrected figure','reviewer',$4,$5)`, uuid.NewString(), hash, replacement, now.Add(2*time.Second), strings.Repeat("d", 64)); err != nil {
+		t.Fatal(err)
+	}
+	check("candidate", "find_reviewed_energy_source", 0)
 }
 
 func TestGasDryerRecommendationReadsExactUsageAndFreshThermRate(t *testing.T) {

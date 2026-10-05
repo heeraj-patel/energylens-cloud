@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,14 +19,14 @@ type fakeStore struct {
 	reads int
 }
 
-func (s *fakeStore) Search(_ context.Context, q Search) ([]json.RawMessage, error) {
+func (s *fakeStore) SnapshotSearch(_ context.Context, q Search) ([]json.RawMessage, int64, error) {
 	s.query = q
 	s.reads++
-	return []json.RawMessage{}, nil
+	return []json.RawMessage{}, 7, nil
 }
-func (s *fakeStore) Get(_ context.Context, _ string) (json.RawMessage, error) {
+func (s *fakeStore) SnapshotGet(_ context.Context, _ string) (json.RawMessage, int64, error) {
 	s.reads++
-	return json.RawMessage(`{"id":"` + uuid.NewString() + `","facts":[]}`), nil
+	return json.RawMessage(`{"id":"` + uuid.NewString() + `","facts":[]}`), 7, nil
 }
 
 func TestCatalogRoutesValidateAuthAndSearch(t *testing.T) {
@@ -73,9 +75,16 @@ func TestCatalogRoutesValidateAuthAndSearch(t *testing.T) {
 	}
 	if w := call("POST", path, valid, "owner", uuid.NewString()); w.Code != 200 || w.Body.String() != "{\"products\":[]}\n" {
 		t.Fatalf("valid search = %d %s", w.Code, w.Body.String())
+	} else {
+		assertCatalogHeaders(t, w, "7")
 	}
 	if store.query.Brand != "Acme" || store.query.Model != "A123" || store.query.Fuel != "electricity" {
 		t.Fatalf("normalized search = %+v", store.query)
+	}
+	first := call("POST", path, valid, "owner", uuid.NewString())
+	second := call("POST", path, valid, "owner", uuid.NewString())
+	if first.Header().Get("ETag") != second.Header().Get("ETag") || first.Body.String() != second.Body.String() {
+		t.Fatal("identical search representations changed digest")
 	}
 	if w := call("POST", path, `{"brand":"LG","model":"WM3070HXA","variant":" US-120V "}`, "owner", uuid.NewString()); w.Code != 200 || store.query.Variant == nil || *store.query.Variant != "US-120V" {
 		t.Fatalf("variant search = %d %+v", w.Code, store.query)
@@ -85,5 +94,22 @@ func TestCatalogRoutesValidateAuthAndSearch(t *testing.T) {
 	}
 	if w := call("GET", "/v1/catalog/products/"+uuid.NewString(), "", "owner", ""); w.Code != 200 {
 		t.Fatalf("valid product ID = %d %s", w.Code, w.Body.String())
+	} else {
+		assertCatalogHeaders(t, w, "7")
+	}
+}
+
+func assertCatalogHeaders(t *testing.T, w *httptest.ResponseRecorder, generation string) {
+	t.Helper()
+	digest := sha256.Sum256(w.Body.Bytes())
+	want := hex.EncodeToString(digest[:])
+	if got := w.Header().Get("X-Catalog-Generation"); got != generation {
+		t.Fatalf("generation = %q, want %q", got, generation)
+	}
+	if got := w.Header().Get("X-Catalog-Response-SHA256"); got != want {
+		t.Fatalf("response digest = %q, want %q", got, want)
+	}
+	if got := w.Header().Get("ETag"); got != `"sha256-`+want+`"` {
+		t.Fatalf("ETag = %q, want digest ETag", got)
 	}
 }

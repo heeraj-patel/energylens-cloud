@@ -28,7 +28,7 @@ func fixture(t *testing.T) ([]byte, []byte, Payload) {
 		t.Fatal(err)
 	}
 	basis := map[string]json.RawMessage{"usage_basis": json.RawMessage(`"annual official"`), "matched_model": json.RawMessage(`"A123"`), "profile_contract_version": json.RawMessage(`"v1"`)}
-	f := Fact{ID: uuid.NewString(), Kind: "annual_energy", Value: "123.4", Unit: "kWh", TestBasis: basis, SourceKind: "epa_exact", SourceURL: "https://example.test/official", SourceHash: strings.Repeat("a", 64), SourceHashBasis: "reviewed_row_manifest", SourceManifest: "sources/epa/a.json", ReviewedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339), Revision: 1}
+	f := Fact{ID: uuid.NewString(), Kind: "annual_energy", Value: "123.4", Unit: "kWh", TestBasis: basis, SourceKind: "epa_exact", SourceURL: "https://example.test/official", SourceHash: strings.Repeat("a", 64), SourceHashBasis: "reviewed_row_manifest", SourceManifest: "sources/epa/a.json", ReviewedAt: time.Now().UTC().Add(-time.Minute).Truncate(time.Second).Format(time.RFC3339), Revision: 1}
 	f.IncludedEnergy.Status = "not_specified_by_source"
 	p := Payload{Schema: "energylens.reviewed-catalog-facts", SchemaVersion: 1, Products: []Product{{ID: uuid.NewString(), Category: "refrigerator", Brand: "A", FullModel: "A123", Fuel: "electricity", MatchQuality: "confirmed_exact", Facts: []Fact{f}}}}
 	envelope := signFixture(t, p, der, priv)
@@ -42,12 +42,41 @@ func signFixture(t *testing.T, p Payload, der []byte, priv ed25519.PrivateKey) [
 	}
 	hash := sha256.Sum256(payload)
 	keyID := sha256.Sum256(der)
-	envelope := Envelope{SchemaVersion: 1, Algorithm: "Ed25519", Payload: p, PayloadSHA256: hex.EncodeToString(hash[:]), KeyID: hex.EncodeToString(keyID[:]), Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, append([]byte(messagePrefix), payload...)))}
+	domain := messagePrefix
+	if p.SchemaVersion == 2 {
+		domain = revisionMessagePrefix
+	}
+	envelope := Envelope{SchemaVersion: p.SchemaVersion, Algorithm: "Ed25519", Payload: p, PayloadSHA256: hex.EncodeToString(hash[:]), KeyID: hex.EncodeToString(keyID[:]), Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, append([]byte(domain), payload...)))}
 	raw, err := canonical(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw
+}
+func TestValidateAnnualRevisionShape(t *testing.T) {
+	_, _, initial := fixture(t)
+	prior := initial.Products[0].Facts[0].ID
+	r := &Revision{ID: uuid.NewString(), Action: "retract", PriorFactID: prior, Reason: "official source withdrawn", Reviewer: "reviewer", ReviewedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339), ReviewSHA256: strings.Repeat("b", 64)}
+	p := Payload{Schema: initial.Schema, SchemaVersion: 2, Products: []Product{}, Revision: r}
+	if err := validatePayload(p); err != nil {
+		t.Fatal(err)
+	}
+	p.Products = initial.Products
+	if err := validatePayload(p); err == nil {
+		t.Fatal("retraction accepted a product")
+	}
+	r.Action = "supersede"
+	replacement := uuid.NewString()
+	r.ReplacementFactID = &replacement
+	p.Products[0].Facts[0].ID = replacement
+	p.Products[0].Facts[0].Revision = 2
+	if err := validatePayload(p); err != nil {
+		t.Fatal(err)
+	}
+	r.ReplacementFactID = &prior
+	if err := validatePayload(p); err == nil {
+		t.Fatal("wrong replacement ID accepted")
+	}
 }
 func TestVerifySignedReviewedPublication(t *testing.T) {
 	artifact, key, _ := fixture(t)

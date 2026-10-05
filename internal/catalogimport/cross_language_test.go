@@ -28,6 +28,53 @@ func TestPythonSignedPublicationFixture(t *testing.T) {
 	}
 }
 
+func TestKBPythonSignedAnnualV2Fixtures(t *testing.T) {
+	publicKey, err := os.ReadFile("testdata/kb-python-signed-annual-v2.pub.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify := func(name string) Verified {
+		t.Helper()
+		artifact, readErr := os.ReadFile(filepath.Join("testdata", name))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		verified, verifyErr := ParseAndVerify(artifact, publicKey)
+		if verifyErr != nil {
+			t.Fatalf("KB Python-signed fixture %s did not verify: %v", name, verifyErr)
+		}
+		return verified
+	}
+	factCount := func(verified Verified) int {
+		total := 0
+		for _, product := range verified.Envelope.Payload.Products {
+			total += len(product.Facts)
+		}
+		return total
+	}
+
+	prior := verify("kb-python-signed-annual-v2-prior.json")
+	if prior.Envelope.Payload.SchemaVersion != 1 || factCount(prior) != 2 || prior.Envelope.Payload.Revision != nil {
+		t.Fatalf("unexpected v1 prior fixture: schema=%d facts=%d revision=%+v", prior.Envelope.Payload.SchemaVersion, factCount(prior), prior.Envelope.Payload.Revision)
+	}
+
+	replacement := verify("kb-python-signed-annual-v2-replacement.json")
+	if replacement.Envelope.Payload.SchemaVersion != 1 || factCount(replacement) != 1 || replacement.Envelope.Payload.Revision != nil {
+		t.Fatalf("unexpected v1 replacement fixture: schema=%d facts=%d revision=%+v", replacement.Envelope.Payload.SchemaVersion, factCount(replacement), replacement.Envelope.Payload.Revision)
+	}
+	replacementID := replacement.Envelope.Payload.Products[0].Facts[0].ID
+
+	retract := verify("kb-python-signed-annual-v2-retract.json")
+	if payload := retract.Envelope.Payload; payload.SchemaVersion != 2 || payload.Revision == nil || payload.Revision.Action != "retract" || factCount(retract) != 0 || payload.Revision.ReplacementFactID != nil {
+		t.Fatalf("unexpected v2 retract fixture: schema=%d facts=%d revision=%+v", payload.SchemaVersion, factCount(retract), payload.Revision)
+	}
+
+	supersede := verify("kb-python-signed-annual-v2-supersede.json")
+	if payload := supersede.Envelope.Payload; payload.SchemaVersion != 2 || payload.Revision == nil || payload.Revision.Action != "supersede" || factCount(supersede) != 1 || payload.Revision.ReplacementFactID == nil || *payload.Revision.ReplacementFactID != replacementID || payload.Products[0].Facts[0].ID != replacementID {
+		t.Fatalf("unexpected v2 supersede fixture: schema=%d facts=%d revision=%+v replacement_id=%s", payload.SchemaVersion, factCount(supersede), payload.Revision, replacementID)
+	}
+}
+
 func TestRejectWritablePinnedPublicKey(t *testing.T) {
 	artifact, err := os.ReadFile("testdata/python-reviewed-facts-v1.json")
 	if err != nil {
