@@ -97,13 +97,13 @@
       "canonical_url": "https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs",
       "allowed_host_candidate": "www.energy.ca.gov",
       "access_method_candidate": "html",
-      "observed_page_role": "Official overview distinguishes HEEHRA Phase I approved-reservation processing, Phase II development, and HOMES implementation; it is not a live household offer or regional funding determination.",
+      "observed_page_role": "CEC program overview describes HEEHRA, but the TECH program administrator reports all single-family reservations fully reserved since February 24, 2026 and multifamily reservations fully reserved since September 1, 2026; no new HEEHRA reservations are accepted.",
       "coverage_status": "state_lead_only",
       "registration_status": "unreviewed_disabled_candidate",
       "review_tasks": [
-        "Review source access terms and capture current CEC and controlling TECH Clean California documents.",
-        "Check current regional funding and reservation status, income verification, certified-contractor and pre-purchase requirements.",
-        "Separate Phase I, Phase II, HOMES and dwelling-specific terms; do not publish headline maximums as household awards."
+        "Check the TECH administrator funding/status page before treating any CEC headline amount as available.",
+        "Track HEEHRA, HOMES and future phases separately; no new HEEHRA reservation is available on the observed date.",
+        "Review source access terms and controlling eligibility documents before automated retrieval or mapping."
       ]
     },
     {
@@ -131,13 +131,13 @@
       "canonical_url": "https://www.ladwp.com/residential-services/assistance-programs/consumer-rebate-program?redirect=false",
       "allowed_host_candidate": "www.ladwp.com",
       "access_method_candidate": "html",
-      "observed_page_role": "Official Consumer Rebate Program page describes equipment-specific rebates and requires an active LADWP residential electric meter at the installation address.",
+      "observed_page_role": "Official live Consumer Rebate Program offers up to $2,500 per qualifying heat-pump water heater and up to $2,500 per ton for qualifying heat-pump HVAC, subject to active residential electric meter service, product tiers, application timing and limited funding.",
       "coverage_status": "service_territory_unverified",
       "registration_status": "unreviewed_disabled_candidate",
       "review_tasks": [
-        "Review source access terms, canonical redirects and controlling application, terms and product tables.",
-        "Verify active meter service at the installation address; a Los Angeles ZIP alone does not prove service.",
-        "Review equipment thresholds and purchase, installation and application windows for each offer separately."
+        "Review source access terms, redirects, 2026 application and program terms before automated retrieval.",
+        "For heat-pump water heaters, capture capacity/UEF tiers, equipment model, installation permit and 12-month application deadline; verify active LADWP residential electric service at the address.",
+        "Confirm funding and product-specific terms at decision time; up-to amounts are not a household award."
       ]
     },
     {
@@ -240,6 +240,91 @@
         "Review DOE access terms and current grant/award status; identify each sovereign administrator separately.",
         "Seek current Tribe-issued program notices, membership and service geography, and controlling benefits.",
         "Do not infer program launch or household eligibility from a formula allocation."
+      ]
+    },
+    {
+      "source_key_suggestion": "doe-weatherization-assistance",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "U.S. Department of Energy",
+      "canonical_url": "https://www.energy.gov/cmei/scep/wap/how-apply-weatherization-assistance",
+      "allowed_host_candidate": "www.energy.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "Federal WAP is an active household weatherization service delivered by state and local providers; income, provider capacity and audit determine services. It is not a national cash rebate.",
+      "coverage_status": "national_delivery_by_state",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Review official DOE and state/local eligibility, provider, funding and measure terms.",
+        "Do not duplicate state WAP offers as separate federal awards.",
+        "Review host access terms before automated retrieval."
+      ]
+    },
+    {
+      "source_key_suggestion": "texas-ceap-2026",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "Texas Department of Housing and Community Affairs",
+      "canonical_url": "https://www.tdhca.texas.gov/comprehensive-energy-assistance-program-ceap",
+      "allowed_host_candidate": "www.tdhca.texas.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "2026 LIHEAP-backed CEAP provides conditional utility-bill assistance through subrecipients covering all 254 counties; 2026 state plan and amendment are posted.",
+      "coverage_status": "state_delivery_by_subrecipient",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Verify county provider, income, household priority, benefit calculation and remaining local funds.",
+        "Keep utility-bill assistance distinct from appliance purchase rebates.",
+        "Review host access terms before automated retrieval."
+      ]
+    },
+    {
+      "source_key_suggestion": "california-liheap-2026",
+      "observed_on": "2026-10-05",
+      "source_kind": "government",
+      "authority_name": "California Department of Community Services and Development",
+      "canonical_url": "https://csd.ca.gov/Pages/LIHEAPProgram.aspx",
+      "allowed_host_candidate": "csd.ca.gov",
+      "access_method_candidate": "html",
+      "observed_page_role": "California reports FY2026 LIHEAP funding for energy-bill and weatherization assistance; local providers determine service and prioritize vulnerable households.",
+      "coverage_status": "state_delivery_by_local_provider",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Verify local provider, income, priority, available service and funding.",
+        "Do not imply every income-eligible household receives a benefit.",
+        "Review host access terms before automated retrieval."
+      ]
+    },
+    {
+      "source_key_suggestion": "austin-energy-heat-pump-water-heater",
+      "observed_on": "2026-10-05",
+      "source_kind": "utility",
+      "authority_name": "Austin Energy",
+      "canonical_url": "https://austinenergy.com/energy-efficiency/rebates-incentives/residential/appliances-equipment/hp-water-heater",
+      "allowed_host_candidate": "austinenergy.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official current $1,000 rebate for qualifying ENERGY STAR heat-pump water heater, installed with permanent Austin Energy electric service; application within 90 days of purchase, subject to limited funding.",
+      "coverage_status": "service_territory_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Verify active electric service, equipment model, size, age of any replaced heat-pump unit, permit and 90-day application window.",
+        "Check funding and application approval; published amount is conditional.",
+        "Review host access terms before automated retrieval."
+      ]
+    },
+    {
+      "source_key_suggestion": "ladwp-efficient-product-marketplace",
+      "observed_on": "2026-10-05",
+      "source_kind": "utility",
+      "authority_name": "Los Angeles Department of Water and Power",
+      "canonical_url": "https://www.ladwp.com/residential-services/assistance-programs/efficient-product-marketplace-epm",
+      "allowed_host_candidate": "www.ladwp.com",
+      "access_method_candidate": "html",
+      "observed_page_role": "Official marketplace lists October 2026 purchase-window rebates for selected window AC units, refrigerators and smart thermostats; active LADWP residential account required.",
+      "coverage_status": "service_territory_unverified",
+      "registration_status": "unreviewed_disabled_candidate",
+      "review_tasks": [
+        "Verify product model, active electric account and October 2026 purchase and December 31, 2026 application windows.",
+        "Check marketplace rebate display and funding for specific items; do not present up-to amounts as guaranteed.",
+        "Review host access terms before automated retrieval."
       ]
     }
   ]

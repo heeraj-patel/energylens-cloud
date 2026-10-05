@@ -1,12 +1,27 @@
 # Texas and California program source review packet — 2026-10-05
 
-Operator research only. None of these leads is a `program_sources` registration, a
-terms/access review, a verified offer, or proof that a household qualifies. The
-existing `internal/programs/source_review_queue.json` remains disabled. Page
-observations below are leads for capture and human review, not import values.
-Publication requires a captured immutable source artifact, human access/terms
-review, field evidence, verified geographic and product scope, dated terms,
-and a current availability check.
+Source research as of October 5, 2026. Public household offers do exist in the
+federal, state, and city layers. The entries below distinguish a publicly offered
+program from a confirmed award to a particular household. The source queue remains
+disabled; no Cloud source registration or offer import was made. The remaining
+checks concern source accuracy, current availability, household eligibility, and
+site access terms. They do not constitute EnergyLens endorsement or approval of a
+public program.
+
+## Current public household offers found
+
+| Layer and geography | Specific public benefit | Controlling eligibility and status evidence |
+| --- | --- | --- |
+| Federal, delivered in TX and CA | [DOE Weatherization Assistance Program](https://www.energy.gov/cmei/scep/wap/how-apply-weatherization-assistance): energy audit and installed weatherization measures rather than a fixed cash rebate. | DOE directs households to state administrators and local providers. Income is a primary criterion. [Texas TDHCA](https://www.tdhca.texas.gov/weatherization-assistance-program) lists audits, insulation and possible heating/cooling repair or replacement through subrecipients covering 254 counties; [California CSD](https://www.csd.ca.gov/Pages/Residential-Energy-Efficiency.aspx) lists local providers and eligibility screening. Specific work and capacity depend on the local provider and audit. This is one federally funded program with local delivery, not three additive awards. |
+| Federal LIHEAP, TX | [Texas CEAP](https://www.tdhca.texas.gov/comprehensive-energy-assistance-program-ceap): conditional help with immediate utility bills. | TDHCA posts a 2026 LIHEAP plan and amendment and says subrecipients collectively cover 254 counties. The local provider determines the household's income eligibility, benefit and available funds. CEAP is bill assistance, not an appliance purchase rebate. |
+| Federal LIHEAP, CA | [California LIHEAP](https://csd.ca.gov/Pages/LIHEAPProgram.aspx): energy bill help and free weatherization services. | CSD reports FY2026 federal funding and says local providers prioritize vulnerable households; some income-eligible households may receive no benefit. The [2026 income table](https://www.csd.ca.gov/energybills) and local service availability govern a household inquiry. |
+| City utility, Austin TX | [Austin Energy heat-pump water heater rebate](https://austinenergy.com/energy-efficiency/rebates-incentives/residential/appliances-equipment/hp-water-heater): $1,000 for a qualifying ENERGY STAR hybrid water heater. | Official page reviewed July 2, 2026: permanent Austin Energy electric service, new equipment of at least 40 gallons and energy factor at least 2.0, permits, and application within 90 days of purchase. Funding is limited and award follows utility review. An Austin ZIP does not establish electric service. |
+| City utility, Los Angeles CA | [LADWP Consumer Rebate Program](https://www.ladwp.com/residential-services/assistance-programs/consumer-rebate-program?redirect=false): qualifying heat-pump water heater rebate up to $2,500 per unit; heat-pump HVAC up to $2,500 per ton. | Active LADWP residential electric meter required; application within 12 months of purchase. [March 2026 application](https://www.ladwp.com/sites/default/files/2026-04/2026_FORMS_CRP_Application_NoAtticRebate.pdf) sets water-heater capacity/UEF tiers and documentation. Funds are first come, first served, and up-to figures are not guaranteed awards. |
+| City utility, Los Angeles CA | [LADWP Efficient Product Marketplace](https://www.ladwp.com/residential-services/assistance-programs/efficient-product-marketplace-epm): selected window AC, refrigerator and thermostat rebates. | Active residential electric account required. The page posts an October 31, 2026 purchase deadline and December 31, 2026 application deadline for listed limited-time offers; product-specific amount and eligibility must be checked in the marketplace. |
+
+The [IRS 2025 law-change FAQ](https://www.irs.gov/newsroom/faqs-for-modification-of-sections-25c-25d-25e-30c-30d-45l-45w-and-179d-under-public-law-119-21-139-stat-72-july-4-2025-commonly-known-as-the-one-big-beautiful-bill-obbb) rules out a new 2026 section 25C home-improvement credit for property placed in service after December 31, 2025 and a new 25D residential clean-energy credit for expenditures after that date. Those expired tax credits do not rule out federal WAP, LIHEAP, or locally administered rebates. Older IRS and local pages still advertise obsolete tax-credit end dates, so the newer IRS guidance controls.
+
+Two publicized rebate programs are **not** open to new households on this observation date. [Texas SECO](https://comptroller.texas.gov/programs/seco/funding/ira/faq.php) says its HOMES and HEAR programs remain in design with no launch date. The California HEEHRA [program administrator status page](https://techcleanca.com/incentives/heehrarebates/) says single-family reservations were fully reserved February 24, 2026 and multifamily reservations were fully reserved September 1, 2026; it accepts no new reservations. The [CEC overview](https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs) contains older language about multifamily availability, so the administrator's dated funding status must control until CEC reconciles it. Approved earlier reservations may still be processed.
 
 ## Queue advance on October 5
 
@@ -18,17 +33,19 @@ retain October 3 observation dates. That first pass had eight candidates; it
 contains no approved registrations or imported offers. These page observations are not
 immutable source captures or permission to fetch them with the Cloud worker.
 
-Six further disabled review leads now cover an IRS historical-credit gate,
+Six further disabled review leads covered an IRS historical-credit gate,
 Harris County home repair, CPS Energy Casa Verde, SCE Energy Savings Assistance,
-Bosch promotions, and the DOE Tribal HEAR administrator gateway. The queue has
-14 candidates after this research pass. No candidate is an approved registration,
-current household offer, or autonomous fetch target. The DOE gateway is federal
-evidence for identifying sovereign administrators, not a Tribal administrator.
+Bosch promotions, and the DOE Tribal HEAR administrator gateway. Five more
+disabled leads now cover DOE WAP, Texas CEAP, California LIHEAP, Austin Energy's
+water-heater rebate, and LADWP's product marketplace. The queue has 19 candidates.
+Some correspond to current public offers in the table above; none is a Cloud
+registration, imported offer, or autonomous fetch target. The DOE Tribal gateway
+identifies potential sovereign administrators; it is not a Tribe-issued offer.
 
 | Lead | Official page observation | Field and geography evidence still needed |
 | --- | --- | --- |
 | [TDHCA WAP](https://www.tdhca.texas.gov/weatherization-assistance-program) | Subrecipients collectively cover 254 counties. | Current county assignment, subrecipient capacity, household income and measure rules; statewide administrative coverage alone does not establish household service. |
-| [CEC residential rebates](https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs) | HEEHRA Phase I continues processing completed projects with approved reservations; the page distinguishes Phase II and HOMES. | Current TECH regional budget, reservation availability, trained contractor, verified income, dwelling and equipment conditions for a particular phase. |
+| [CEC residential rebates](https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs) | HEEHRA Phase I continues processing completed projects with approved reservations; TECH reports no new single-family or multifamily reservations. The page also distinguishes Phase II and HOMES. | Monitor reopening and other phases separately; verify trained contractor, income, dwelling and equipment conditions if reservations reopen. |
 | [CSD residential efficiency](https://www.csd.ca.gov/Pages/Residential-Energy-Efficiency.aspx) | WAP uses local providers; LIWP has separate farmworker and multifamily components. | Provider geography, capacity, dwelling, income and measure rules for each program; these are conditional services rather than fixed rebates. |
 | [LADWP Consumer Rebate Program](https://www.ladwp.com/residential-services/assistance-programs/consumer-rebate-program?redirect=false) | Equipment-specific rebates require active residential electric meter service. | Controlling application and product tables, address-level service, equipment thresholds, purchase/install/application windows and current funds. The page may redirect to another official LADWP host, which needs separate host and access review. |
 
@@ -38,7 +55,7 @@ evidence for identifying sovereign administrators, not a Tribal administrator.
 | --- | --- | --- | --- |
 | State | TX | [SECO home energy rebates](https://comptroller.texas.gov/programs/seco/funding/ira/) says HOMES and HEAR rebates are unavailable while Texas designs them (page update August 21, 2026). | Monitor launch and DOE approval; do not publish the advertised maximums as available offers. |
 | State / federal delivery | TX | [TDHCA Weatherization Assistance Program](https://www.tdhca.texas.gov/weatherization-assistance-program) describes income-targeted services through subrecipients across 254 counties. | Obtain current subrecipient geography, service capacity, household and measure rules; service is not a fixed cash rebate. |
-| State | CA | [CEC IRA residential rebate page](https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs) describes HEEHRA Phase I and HOMES. CEC says HEEHRA requires income verification, a trained contractor and approved reservation before purchase. | Check live regional budget and reservation status, controlling TECH documents, dwelling/technology scope, and dates. Do not equate CEC's headline maximum with a household award. |
+| State | CA | [CEC IRA residential rebate page](https://www.energy.ca.gov/programs-and-topics/programs/inflation-reduction-act-residential-energy-rebate-programs) describes HEEHRA Phase I and HOMES. [TECH's newer status](https://techcleanca.com/incentives/heehrarebates/) says HEEHRA is fully reserved for both single-family and multifamily projects. | Monitor future funding or phases and controlling TECH documents; do not present HEEHRA headline maximums as available to new applicants. |
 | State / federal delivery | CA | [CSD residential energy efficiency](https://www.csd.ca.gov/Pages/Residential-Energy-Efficiency.aspx) lists WAP and LIWP with local providers and household eligibility review. | Obtain current provider/service map and measure rules; distinguish in-kind services from cash benefits. |
 | City / municipal utility | TX, Austin | [Austin Energy residential rebates](https://austinenergy.com/energy-efficiency/rebates-incentives/residential) lists appliance and home improvement programs. | Review each linked offer and Austin Energy service requirement; a ZIP match is only a candidate. Existing instant-savings queue lead remains unreviewed. |
 | City / municipal utility | CA, Los Angeles | [LADWP Consumer Rebate Program](https://www.ladwp.com/residential-services/assistance-programs/consumer-rebate-program?redirect=false) lists equipment-specific rebates and requires active residential electric service. | Capture current application and product tables; validate purchase/install/application windows, model thresholds, and address service. |
@@ -74,15 +91,16 @@ must be screened for product relevance before it enters appliance discovery.
 
 Access terms and robots permissions were **not** reviewed for any listed host.
 The links are manual research leads. Each distinct host, redirect and PDF needs
-operator approval and an immutable capture before automated retrieval, mapping,
-registration or offer import. Current funding and application status must be
-checked again at review time; the observation date is not a validity window.
+an access review and immutable capture before automated retrieval, mapping,
+registration or offer import. That operational check is separate from whether
+the public program exists. Current funding and application status must be checked
+again at import time; the observation date is not a validity window.
 
 ## Work required before coverage can be called comprehensive
 
-1. Human operator reviews site access terms/robots, host allowlists and fetch
-   budgets for every source; capture the controlling page/PDF bytes and review
-   dates. This packet itself supplies no access approval.
+1. Review site access terms/robots, host allowlists and fetch budgets for every
+   source; capture the controlling page/PDF bytes and observation dates. This
+   packet itself supplies no access determination.
 2. Enumerate Texas and California state, municipal, county, Tribal, utility and
    OEM administrators. The examples above establish leads, not a complete
    census. Texas county-administered and individual Tribal household offers
@@ -96,6 +114,6 @@ checked again at review time; the observation date is not a validity window.
    technology, income, address, provider, contractor, purchase, installation,
    reservation, application and stacking conditions. Keep unsatisfied household
    facts unknown, not ineligible or approved.
-5. Import only after independent human review; then verify the owner API and
-   mobile journey against real reviewed terms. Customer-facing copy needs owner
-   approval before mobile work.
+5. Import source-backed offers after field, scope and availability checks; then
+   verify the owner API and mobile journey against their terms. Customer-facing
+   copy needs owner approval before mobile work.
