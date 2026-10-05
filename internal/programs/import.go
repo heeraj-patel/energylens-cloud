@@ -20,33 +20,33 @@ import (
 // ReviewedImport is supplied by a human operator through an offline workflow.
 // SourceBytes are the exact private source artifact, not extracted text.
 type ReviewedImport struct {
-	SourceKey string
+	SourceKey string `json:"source_key"`
 	// ExistingSnapshotID binds this review to a previously fetched, immutable
 	// source artifact. When omitted, SourceBytes are stored as a new artifact.
-	ExistingSnapshotID uuid.UUID
-	SourceURL          string
-	SourceBytes        []byte
-	ContentType        string
-	SnapshotRef        string
-	ParserVersion      string
-	AdministratorKey   string
-	ProgramKey         string
-	GeographyKey       string
-	AdministratorName  string
-	AdministratorKind  string // reviewed authority: utility, city, county, state, tribal, federal, manufacturer
-	Status             string
-	Title              string
-	BenefitKind        string
-	BenefitDisplay     string // exact concise source-backed text approved by the reviewer
-	BenefitTerms       json.RawMessage
-	EligibilityTerms   json.RawMessage
-	StackingTerms      json.RawMessage
-	Dates              map[string]string // purchase_from/to, installation_from/to, reservation_from/to, application_from/to
-	Evidence           map[string]string // reviewed field path -> nonempty locator in SourceBytes
-	Reviewer           string
-	ReviewNote         string
-	ReviewExpiresAt    time.Time
-	Applicability      *StructuredApplicability
+	ExistingSnapshotID uuid.UUID                `json:"-"`
+	SourceURL          string                   `json:"source_url"`
+	SourceBytes        []byte                   `json:"-"`
+	ContentType        string                   `json:"content_type"`
+	SnapshotRef        string                   `json:"snapshot_ref"`
+	ParserVersion      string                   `json:"parser_version"`
+	AdministratorKey   string                   `json:"administrator_key"`
+	ProgramKey         string                   `json:"program_key"`
+	GeographyKey       string                   `json:"geography_key"`
+	AdministratorName  string                   `json:"administrator_name"`
+	AdministratorKind  string                   `json:"administrator_kind"` // reviewed authority: utility, city, county, state, tribal, federal, manufacturer
+	Status             string                   `json:"status"`
+	Title              string                   `json:"title"`
+	BenefitKind        string                   `json:"benefit_kind"`
+	BenefitDisplay     string                   `json:"benefit_display"` // exact concise source-backed text approved by the reviewer
+	BenefitTerms       json.RawMessage          `json:"benefit_terms"`
+	EligibilityTerms   json.RawMessage          `json:"eligibility_terms"`
+	StackingTerms      json.RawMessage          `json:"stacking_terms"`
+	Dates              map[string]string        `json:"dates"`    // purchase_from/to, installation_from/to, reservation_from/to, application_from/to
+	Evidence           map[string]string        `json:"evidence"` // reviewed field path -> nonempty locator in SourceBytes
+	Reviewer           string                   `json:"reviewer"`
+	ReviewNote         string                   `json:"review_note"`
+	ReviewExpiresAt    time.Time                `json:"review_expires_at"`
+	Applicability      *StructuredApplicability `json:"applicability"`
 }
 
 var requiredEvidence = []string{"administrator_kind", "title", "status", "benefit_kind", "benefit_display", "benefit_terms", "eligibility_terms", "stacking_terms"}
