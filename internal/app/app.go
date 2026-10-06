@@ -19,9 +19,11 @@ import (
 	"energylens.local/cloud/internal/attachments"
 	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/cyclecomparison"
+	"energylens.local/cloud/internal/designfixture"
 	"energylens.local/cloud/internal/energyrate"
 	"energylens.local/cloud/internal/estimation"
 	"energylens.local/cloud/internal/faq"
+	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
 	"energylens.local/cloud/internal/identityscan"
 	"energylens.local/cloud/internal/inventory"
@@ -152,6 +154,35 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				accounts.Deletion = account.PGStore{Pool: rt.Pool}
 			}
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
+			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID}
+			if c.SampleHouseholdEnabled {
+				allowedUsers, err := designfixture.ParseUserIDs(c.SampleHouseholdUserIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("sample household user allowlist: %w", err)
+				}
+				allowedHomes, err := designfixture.ParseUserIDs(c.SampleHouseholdHomeIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("sample household home allowlist: %w", err)
+				}
+				liveEnergy.Sample = &householdenergy.SampleProvider{AllowedUsers: allowedUsers, AllowedHomes: allowedHomes}
+			}
+			modules = append(modules, Module{Name: "live-household-energy", Mount: liveEnergy.Routes})
+			if c.SampleFixturesEnabled {
+				allowed, err := designfixture.ParseUserIDs(c.SampleFixtureUserIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("sample fixture allowlist: %w", err)
+				}
+				allowedHomes, err := designfixture.ParseUserIDs(c.SampleFixtureHomeIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("sample fixture home allowlist: %w", err)
+				}
+				fixtureService := designfixture.Service{Homes: account.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID, AllowedUsers: allowed, AllowedHomes: allowedHomes}
+				modules = append(modules, Module{Name: "isolated-mobile-design-fixtures", Mount: fixtureService.Routes})
+			}
 			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
 			products := catalog.Service{Store: catalog.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}

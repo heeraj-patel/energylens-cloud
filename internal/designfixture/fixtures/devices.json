@@ -1,0 +1,1246 @@
+{
+  "fixture_revision": "mobile_design_2026_10_06_v1",
+  "approval_scope": "internal_baseline_only_pending_owner_approval_for_backend_use",
+  "page": "devices",
+  "source": {
+    "path": "energylens-mobile/assets/design_pages/devices/code.html",
+    "sha256": "989cbed801aa330a87c0d49755cd5ba6530a40f5df72772551dc81a870c6780c"
+  },
+  "ordered_text_segments": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 112,
+      "text": "bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[1]",
+      "line": 112,
+      "text": "The Miller Home",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[2]",
+      "line": 112,
+      "text": "expand_more",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 112,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[1]/div[1]/span[1]",
+      "line": 121,
+      "text": "HOME DEVICES",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[1]/a[1]/span[1]",
+      "line": 124,
+      "text": "monitoring",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[1]/a[1]/span[2]",
+      "line": 124,
+      "text": "Daily Overview",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[2]/div[1]/span[1]",
+      "line": 127,
+      "text": "Total Waste",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[2]/div[1]/span[2]",
+      "line": 127,
+      "text": "$1.14",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[2]/div[1]/span[2]/span[1]",
+      "line": 127,
+      "text": "/day",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[2]/div[2]/span[1]",
+      "line": 127,
+      "text": "Productive",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[2]/div[2]/span[2]",
+      "line": 127,
+      "text": "$6.67",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[2]/div[2]/span[2]/span[1]",
+      "line": 127,
+      "text": "/day",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]/span[1]",
+      "line": 133,
+      "text": "All",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]/span[2]",
+      "line": 133,
+      "text": "18",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]/span[2]",
+      "line": 133,
+      "text": "Active",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]/span[3]",
+      "line": 133,
+      "text": "(6)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]/span[2]",
+      "line": 133,
+      "text": "Idle",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]/span[3]",
+      "line": 133,
+      "text": "(4)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[4]/span[2]",
+      "line": 133,
+      "text": "Standby",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/span[1]/span[1]",
+      "line": 136,
+      "text": "sort",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/span[1]",
+      "line": 136,
+      "text": "SORT BY",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[1]",
+      "line": 137,
+      "text": "Name",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[2]",
+      "line": 137,
+      "text": "Usage $",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[3]/span[1]",
+      "line": 137,
+      "text": "Waste $",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[3]/span[2]",
+      "line": 137,
+      "text": "arrow_downward",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 143,
+      "text": "desktop_windows",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[2]/div[1]/span[1]",
+      "line": 143,
+      "text": "Study Desktop & Rig",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 143,
+      "text": "Plug 4 • Study",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 143,
+      "text": "Idle (3h)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/span[1]",
+      "line": 143,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/span[2]",
+      "line": 143,
+      "text": "$0.68",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/span[1]",
+      "line": 143,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/span[2]",
+      "line": 143,
+      "text": "$0.35",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 145,
+      "text": "tv",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 145,
+      "text": "Living Room 65\" TV",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/div[2]/span[2]",
+      "line": 145,
+      "text": "Living Room",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[2]/span[1]",
+      "line": 145,
+      "text": "Standby",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[2]/div[1]/span[1]",
+      "line": 145,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[2]/div[1]/span[2]",
+      "line": 145,
+      "text": "$0.20",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[2]/div[2]/span[1]",
+      "line": 145,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[2]/div[2]/span[2]",
+      "line": 145,
+      "text": "$0.22",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 147,
+      "text": "power",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 147,
+      "text": "Phone & Tablet Chargers",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/div[1]/div[2]/span[2]",
+      "line": 147,
+      "text": "Bedroom",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/div[2]/span[1]",
+      "line": 147,
+      "text": "Idle",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[1]/span[1]",
+      "line": 147,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[1]/span[2]",
+      "line": 147,
+      "text": "$0.00",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/span[1]",
+      "line": 147,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/span[2]",
+      "line": 147,
+      "text": "$0.09",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[1]/div[1]/div[1]/span[1]",
+      "line": 153,
+      "text": "kitchen",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[1]/div[1]/div[2]/span[1]",
+      "line": 156,
+      "text": "Kitchen Refrigerator",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[1]/div[1]/div[2]/span[2]",
+      "line": 157,
+      "text": "Kitchen Circuit 1",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[1]/div[2]/span[1]",
+      "line": 161,
+      "text": "Active",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/span[1]",
+      "line": 164,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/span[2]",
+      "line": 164,
+      "text": "$0.84",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[2]/span[1]",
+      "line": 164,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[2]/span[2]",
+      "line": 164,
+      "text": "$0.00",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[1]/div[1]/div[1]/span[1]",
+      "line": 171,
+      "text": "mode_fan",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[1]/div[1]/div[2]/span[1]",
+      "line": 174,
+      "text": "Hallway Central AC",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[1]/div[1]/div[2]/span[2]",
+      "line": 175,
+      "text": "Eco 74°F",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[1]/div[2]/span[1]",
+      "line": 179,
+      "text": "Active",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[2]/div[1]/span[1]",
+      "line": 182,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[2]/div[1]/span[2]",
+      "line": 182,
+      "text": "$2.45",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[2]/div[2]/span[1]",
+      "line": 182,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[5]/div[2]/div[2]/span[2]",
+      "line": 182,
+      "text": "$0.04",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[1]/div[1]/div[1]/span[1]",
+      "line": 185,
+      "text": "speaker",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[1]/div[1]/div[2]/span[1]",
+      "line": 185,
+      "text": "Living Room Soundbar",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[1]/div[1]/div[2]/span[2]",
+      "line": 185,
+      "text": "AV Strip",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[1]/div[2]/span[1]",
+      "line": 185,
+      "text": "Standby",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[2]/div[1]/span[1]",
+      "line": 185,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[2]/div[1]/span[2]",
+      "line": 185,
+      "text": "$0.15",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[2]/div[2]/span[1]",
+      "line": 185,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[6]/div[2]/div[2]/span[2]",
+      "line": 185,
+      "text": "$0.18",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[1]/div[1]/div[1]/span[1]",
+      "line": 187,
+      "text": "monitor",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[1]/div[1]/div[2]/span[1]",
+      "line": 187,
+      "text": "Home Office Monitors",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[1]/div[1]/div[2]/span[2]",
+      "line": 187,
+      "text": "Dual 27\"",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[1]/div[2]/span[1]",
+      "line": 187,
+      "text": "Idle",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[2]/div[1]/span[1]",
+      "line": 187,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[2]/div[1]/span[2]",
+      "line": 187,
+      "text": "$0.22",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[2]/div[2]/span[1]",
+      "line": 187,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[7]/div[2]/div[2]/span[2]",
+      "line": 187,
+      "text": "$0.14",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[1]/div[1]/div[1]/span[1]",
+      "line": 193,
+      "text": "router",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[1]/div[1]/div[2]/span[1]",
+      "line": 196,
+      "text": "Mesh Wi-Fi Gateway & Router",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[1]/div[1]/div[2]/span[2]",
+      "line": 197,
+      "text": "Main Hall • 24/7 Priority",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[1]/div[2]/span[1]",
+      "line": 201,
+      "text": "Active (24/7)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[2]/div[1]/span[1]",
+      "line": 204,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[2]/div[1]/span[2]",
+      "line": 204,
+      "text": "$0.18",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[2]/div[2]/span[1]",
+      "line": 204,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[8]/div[2]/div[2]/span[2]",
+      "line": 204,
+      "text": "$0.00",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[1]/div[1]/div[1]/span[1]",
+      "line": 207,
+      "text": "surround_sound",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[1]/div[1]/div[2]/span[1]",
+      "line": 207,
+      "text": "Subwoofer & Amp Rack",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[1]/div[1]/div[2]/span[2]",
+      "line": 207,
+      "text": "Media Corner",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[1]/div[2]/span[1]",
+      "line": 207,
+      "text": "Standby",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[2]/div[1]/span[1]",
+      "line": 207,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[2]/div[1]/span[2]",
+      "line": 207,
+      "text": "$0.05",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[2]/div[2]/span[1]",
+      "line": 207,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[9]/div[2]/div[2]/span[2]",
+      "line": 207,
+      "text": "$0.12",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[1]/div[1]/div[1]/span[1]",
+      "line": 213,
+      "text": "heat_pump",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[1]/div[1]/div[2]/span[1]",
+      "line": 216,
+      "text": "Central Heat Pump",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[1]/div[1]/div[2]/span[2]",
+      "line": 217,
+      "text": "240V Circuit",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[1]/div[2]/span[1]",
+      "line": 221,
+      "text": "Active",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[2]/div[1]/span[1]",
+      "line": 224,
+      "text": "Useful:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[2]/div[1]/span[2]",
+      "line": 224,
+      "text": "$1.90",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[2]/div[2]/span[1]",
+      "line": 224,
+      "text": "Waste:",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[10]/div[2]/div[2]/span[2]",
+      "line": 224,
+      "text": "$0.02",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/span[1]",
+      "line": 230,
+      "text": "Showing 1–10 of 18 devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[1]/span[1]",
+      "line": 234,
+      "text": "chevron_left",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[2]",
+      "line": 237,
+      "text": "1",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[3]",
+      "line": 241,
+      "text": "2",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[4]/span[1]",
+      "line": 246,
+      "text": "chevron_right",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/div[1]/span[1]",
+      "line": 255,
+      "text": "add_circle",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/div[2]/div[1]/span[1]",
+      "line": 259,
+      "text": "Need to pair or remove an appliance?",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/div[2]/div[1]/span[2]",
+      "line": 260,
+      "text": "Smart Plugs can be auto-calibrated or assigned to custom automation routines.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/div[2]/a[1]/span[1]",
+      "line": 263,
+      "text": "Manage Devices in Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/div[2]/a[1]/span[2]",
+      "line": 264,
+      "text": "arrow_forward",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[1]",
+      "line": 304,
+      "text": "space_dashboard",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[2]",
+      "line": 304,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[1]",
+      "line": 304,
+      "text": "devices",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[2]",
+      "line": 304,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[1]",
+      "line": 304,
+      "text": "energy_savings_leaf",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[2]",
+      "line": 304,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[1]",
+      "line": 304,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[2]",
+      "line": 304,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[1]",
+      "line": 304,
+      "text": "settings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
+      "line": 304,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    }
+  ],
+  "controls": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 112,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex items-center gap-space-xs text-left group",
+        "type": "button"
+      },
+      "text": "The Miller Home expand_more"
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 112,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-11 h-11 flex items-center justify-center",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": ""
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[3]/div[1]/a[1]",
+      "tag": "a",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-primary hover:bg-surface-container-high border border-outline-variant/50 transition-colors shadow-xs shrink-0",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "monitoring Daily Overview"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 133,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "filter-chip active-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-primary text-on-primary shadow-xs shrink-0 transition-all flex items-center gap-1",
+        "type": "button"
+      },
+      "text": "All 18"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]",
+      "tag": "button",
+      "line": 133,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1",
+        "type": "button"
+      },
+      "text": "Active (6)"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]",
+      "tag": "button",
+      "line": 133,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1",
+        "type": "button"
+      },
+      "text": "Idle (4)"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[4]",
+      "tag": "button",
+      "line": 133,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1",
+        "type": "button"
+      },
+      "text": "Standby"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 137,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "sort-pill px-2.5 py-1 rounded-xl text-label-md text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all",
+        "type": "button"
+      },
+      "text": "Name"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[2]",
+      "tag": "button",
+      "line": 137,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "sort-pill px-2.5 py-1 rounded-xl text-label-md text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all",
+        "type": "button"
+      },
+      "text": "Usage $"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/button[3]",
+      "tag": "button",
+      "line": 137,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "sort-pill active-sort px-2.5 py-1 rounded-xl text-label-md text-[11px] font-bold bg-surface-container-lowest text-primary shadow-sm transition-all flex items-center gap-0.5",
+        "type": "button"
+      },
+      "text": "Waste $ arrow_downward"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[1]",
+      "tag": "button",
+      "line": 233,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-surface-container-low text-outline flex items-center justify-center opacity-50 cursor-not-allowed border border-outline-variant/40",
+        "disabled": "",
+        "type": "button"
+      },
+      "text": "chevron_left"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[2]",
+      "tag": "button",
+      "line": 237,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-primary text-on-primary font-label-md text-[12px] font-bold flex items-center justify-center shadow-xs",
+        "type": "button"
+      },
+      "text": "1"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[3]",
+      "tag": "button",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container font-label-md text-[12px] font-medium flex items-center justify-center transition-colors border border-outline-variant/60",
+        "type": "button"
+      },
+      "text": "2"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[4]",
+      "tag": "button",
+      "line": 245,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container flex items-center justify-center transition-colors border border-outline-variant/60",
+        "type": "button"
+      },
+      "text": "chevron_right"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 262,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "inline-flex items-center justify-center gap-1.5 w-full py-2.5 px-3 rounded-lg bg-secondary-container text-on-secondary-container hover:bg-secondary-container/80 transition-all font-label-md text-[13px] font-semibold text-center shadow-xs",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "Manage Devices in Settings arrow_forward"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]",
+      "tag": "a",
+      "line": 304,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors",
+        "data-path": "dashboard",
+        "href": "#"
+      },
+      "text": "space_dashboard Dashboard"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]",
+      "tag": "a",
+      "line": 304,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-current": "page",
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-primary font-bold",
+        "data-path": "devices",
+        "href": "#"
+      },
+      "text": "devices Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]",
+      "tag": "a",
+      "line": 304,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors",
+        "data-path": "efficiency",
+        "href": "#"
+      },
+      "text": "energy_savings_leaf Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]",
+      "tag": "a",
+      "line": 304,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "savings Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]",
+      "tag": "a",
+      "line": 304,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "settings Settings"
+    }
+  ],
+  "media": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]/img[1]",
+      "tag": "img",
+      "line": 112,
+      "hidden_initially": false,
+      "attributes": {
+        "alt": "Profile",
+        "class": "w-8 h-8 rounded-full object-cover ring-2 ring-primary/40 shadow-xs",
+        "src": "https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"
+      }
+    }
+  ],
+  "svg_elements": [],
+  "source_comments": [
+    {
+      "line": 113,
+      "text": "Subtle Ambient Glow Card"
+    },
+    {
+      "line": 117,
+      "text": "Header Section"
+    },
+    {
+      "line": 126,
+      "text": "Quick Glancer Stats Mini-Bar"
+    },
+    {
+      "line": 130,
+      "text": "Filters & Controls Card"
+    },
+    {
+      "line": 132,
+      "text": "Filter Chips (Horizontal Scroll)"
+    },
+    {
+      "line": 134,
+      "text": "Sort Selector Bar"
+    },
+    {
+      "line": 140,
+      "text": "Devices Feed"
+    },
+    {
+      "line": 142,
+      "text": "1. Study Desktop & Rig"
+    },
+    {
+      "line": 144,
+      "text": "2. Living Room 65\" TV"
+    },
+    {
+      "line": 146,
+      "text": "3. Phone & Tablet Chargers"
+    },
+    {
+      "line": 148,
+      "text": "4. Kitchen Refrigerator"
+    },
+    {
+      "line": 166,
+      "text": "5. Hallway Central AC"
+    },
+    {
+      "line": 184,
+      "text": "6. Living Room Soundbar"
+    },
+    {
+      "line": 186,
+      "text": "7. Home Office Monitors"
+    },
+    {
+      "line": 188,
+      "text": "8. Mesh Wi-Fi Gateway & Router"
+    },
+    {
+      "line": 206,
+      "text": "9. Subwoofer & Amp Rack"
+    },
+    {
+      "line": 208,
+      "text": "10. Central Heat Pump"
+    },
+    {
+      "line": 227,
+      "text": "Pagination Component"
+    },
+    {
+      "line": 232,
+      "text": "Previous (Disabled)"
+    },
+    {
+      "line": 236,
+      "text": "Page 1 (Active)"
+    },
+    {
+      "line": 240,
+      "text": "Page 2"
+    },
+    {
+      "line": 244,
+      "text": "Next"
+    },
+    {
+      "line": 251,
+      "text": "Pairing / Settings Action Callout Card"
+    }
+  ],
+  "initial_states": [
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/button[1]",
+      "tag": "button",
+      "line": 233,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-surface-container-low text-outline flex items-center justify-center opacity-50 cursor-not-allowed border border-outline-variant/40",
+        "disabled": "",
+        "type": "button"
+      }
+    }
+  ]
+}

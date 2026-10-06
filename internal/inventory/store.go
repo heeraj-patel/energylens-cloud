@@ -19,6 +19,7 @@ var ErrVersion = errors.New("appliance version conflict")
 var ErrKeyReuse = errors.New("appliance idempotency key reused")
 var ErrCatalogMismatch = errors.New("catalog product does not match confirmed exact identity")
 var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
+var ErrAttachmentConflict = errors.New("active attachment cannot safely close")
 
 type Identity struct {
 	Brand            string  `json:"brand"`
@@ -58,6 +59,7 @@ type Store interface {
 	Get(context.Context, string, string, string) (Appliance, error)
 	Create(context.Context, string, string, CreateInput, string, []byte) (Appliance, error)
 	Patch(context.Context, string, string, string, PatchInput, int64, string, []byte) (Appliance, error)
+	Archive(context.Context, string, string, string, int64, string, []byte) (Appliance, error)
 }
 type PGStore struct{ Pool *pgxpool.Pool }
 
@@ -305,6 +307,97 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 		if err = enqueueScan(ctx, tx, a); err != nil {
 			return Appliance{}, err
 		}
+	}
+	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {
+		return Appliance{}, err
+	}
+	return a, tx.Commit(ctx)
+}
+
+// Archive closes active attachments at the database clock before hiding the
+// appliance from current inventory. Historical rows and snapshots are retained.
+func (s PGStore) Archive(ctx context.Context, owner, home, id string, version int64, key string, hash []byte) (Appliance, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return Appliance{}, err
+	}
+	defer tx.Rollback(ctx)
+	// All owner attachment mutations take this home lock first.
+	if err = s.ownedHome(ctx, tx, owner, home); err != nil {
+		return Appliance{}, err
+	}
+	op := "archive_appliance:" + id
+	if a, found, e := replay(ctx, tx, owner, home, op, key, hash); found || e != nil {
+		return a, e
+	}
+	a, err := scanAppliance(tx.QueryRow(ctx, selectAppliance+` WHERE a.id=$1 AND a.home_id=$2 AND a.archived_at IS NULL FOR UPDATE`, id, home))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Appliance{}, ErrNotFound
+	}
+	if err != nil {
+		return Appliance{}, err
+	}
+	if a.Version != version {
+		return Appliance{}, ErrVersion
+	}
+	var closedAt time.Time
+	if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&closedAt); err != nil {
+		return Appliance{}, err
+	}
+	rows, err := tx.Query(ctx, `SELECT id,started_at FROM attachments WHERE home_id=$1 AND appliance_id=$2 AND ended_at IS NULL ORDER BY id FOR UPDATE`, home, id)
+	if err != nil {
+		return Appliance{}, err
+	}
+	type openAttachment struct {
+		id    string
+		start time.Time
+	}
+	var open []openAttachment
+	for rows.Next() {
+		var item openAttachment
+		if err = rows.Scan(&item.id, &item.start); err != nil {
+			rows.Close()
+			return Appliance{}, err
+		}
+		open = append(open, item)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return Appliance{}, err
+	}
+	for _, item := range open {
+		if !closedAt.After(item.start) {
+			return Appliance{}, ErrAttachmentConflict
+		}
+		var futureEvidence bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM energy_observations WHERE attachment_revision_id=$1 AND end_at>$2)`, item.id, closedAt).Scan(&futureEvidence)
+		if err != nil {
+			return Appliance{}, err
+		}
+		if futureEvidence {
+			return Appliance{}, ErrAttachmentConflict
+		}
+		var sensorID string
+		err = tx.QueryRow(ctx, `UPDATE attachments SET ended_at=$2,version=version+1,updated_at=$2 WHERE id=$1 AND ended_at IS NULL RETURNING sensor_id`, item.id, closedAt).Scan(&sensorID)
+		if err != nil {
+			return Appliance{}, err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO attachment_revisions(attachment_id,version,home_id,snapshot) SELECT a.id,a.version,a.home_id,to_jsonb(a) FROM attachments a WHERE a.id=$1`, item.id)
+		if err != nil {
+			return Appliance{}, err
+		}
+		_, err = tx.Exec(ctx, `UPDATE sensor_endpoints SET version=version+1 WHERE id=$1 AND home_id=$2`, sensorID, home)
+		if err != nil {
+			return Appliance{}, err
+		}
+	}
+	a, err = scanAppliance(tx.QueryRow(ctx, `UPDATE appliances a SET archived_at=$3,version=version+1,updated_at=$3 WHERE a.id=$1 AND a.home_id=$2 AND a.archived_at IS NULL RETURNING a.id,a.home_id,a.name,a.category,a.room,a.identity,a.version,a.created_at,a.updated_at,a.archived_at`, id, home, closedAt))
+	if err != nil {
+		return Appliance{}, err
+	}
+	if err = snapshot(ctx, tx, a); err != nil {
+		return Appliance{}, err
 	}
 	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {
 		return Appliance{}, err

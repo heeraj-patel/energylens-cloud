@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"energylens.local/cloud/internal/account"
+	"energylens.local/cloud/internal/attachments"
 	"energylens.local/cloud/internal/migrate"
+	"energylens.local/cloud/internal/telemetry"
 	"energylens.local/cloud/migrations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -179,5 +181,96 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	family.MatchQuality = "documented_variant_family"
 	if ValidIdentity(family) {
 		t.Fatal("family identity accepted exact catalog link")
+	}
+	var hub, sensor string
+	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_inventory_archive_test',$1,'test',$2,1) RETURNING id`, make([]byte, 32), home.ID).Scan(&hub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO hub_certificates(serial,hub_id,ownership_epoch,expires_at,certificate_pem) VALUES('inventory-archive-cert',$1,1,now()+interval '1 hour','test')`, hub); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `INSERT INTO sensor_endpoints(home_id,hub_id,ownership_epoch,local_sensor_id,kind,capabilities) VALUES($1,$2,1,'archive-meter','plug',ARRAY['power']) RETURNING id`, home.ID, hub).Scan(&sensor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE sensor_endpoints SET created_at=now()-interval '2 hours' WHERE id=$1`, sensor); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC().Add(-time.Hour)
+	attached, err := (attachments.Store{Pool: pool}).Create(ctx, owner.ID, home.ID, attachments.CreateInput{SensorID: sensor, ApplianceID: a.ID, IdentityRevision: cleared.Version, StartedAt: start}, 1, uuid.NewString(), hash[:])
+	if err != nil {
+		t.Fatalf("attach before archive: %v", err)
+	}
+	intervalStart, intervalEnd := start.Add(20*time.Minute), start.Add(21*time.Minute)
+	energy := 2.0
+	covered := int64(60)
+	fuel, quality, source := "electricity", "metered", "verified_driver"
+	interval := telemetry.Event{Kind: "energy_interval", EventID: uuid.NewString(), Revision: 1, SensorID: sensor, Start: &intervalStart, End: &intervalEnd, EnergyWh: &energy, CoveredSeconds: &covered, AttachmentRevisionID: &attached.ID, Fuel: &fuel, Quality: &quality, Source: &source}
+	batch := telemetry.Batch{BatchID: uuid.NewString(), OwnershipEpoch: 1, SchemaVersion: 1, Events: []telemetry.Event{interval}}
+	if _, err = (telemetry.Store{Pool: pool}).Accept(ctx, hub, "inventory-archive-cert", 1, batch, hash[:]); err != nil {
+		t.Fatalf("historical observation: %v", err)
+	}
+	archiveHash := sha256.Sum256([]byte("archive version 4"))
+	archiveKey := uuid.NewString()
+	if _, err = store.Archive(ctx, other.ID, home.ID, a.ID, cleared.Version, archiveKey, archiveHash[:]); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-owner archive: %v", err)
+	}
+	if _, err = store.Archive(ctx, owner.ID, home.ID, a.ID, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrVersion) {
+		t.Fatalf("stale archive: %v", err)
+	}
+	archived, err := store.Archive(ctx, owner.ID, home.ID, a.ID, cleared.Version, archiveKey, archiveHash[:])
+	if err != nil || archived.Version != cleared.Version+1 || archived.ArchivedAt == nil {
+		t.Fatalf("archive: %+v %v", archived, err)
+	}
+	if again, err := store.Archive(ctx, owner.ID, home.ID, a.ID, cleared.Version, archiveKey, archiveHash[:]); err != nil || again.Version != archived.Version {
+		t.Fatalf("archive retry: %+v %v", again, err)
+	}
+	if _, err = store.Archive(ctx, owner.ID, home.ID, a.ID, cleared.Version, archiveKey, hash[:]); !errors.Is(err, ErrKeyReuse) {
+		t.Fatalf("archive key reuse: %v", err)
+	}
+	if _, err = store.Get(ctx, owner.ID, home.ID, a.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived get: %v", err)
+	}
+	var end time.Time
+	var attachmentVersion, sensorVersion, attachmentRevisions, applianceRevisions int64
+	if err = pool.QueryRow(ctx, `SELECT ended_at,version FROM attachments WHERE id=$1`, attached.ID).Scan(&end, &attachmentVersion); err != nil {
+		t.Fatal(err)
+	}
+	if !end.After(start) || attachmentVersion != 2 {
+		t.Fatalf("attachment not closed: %v %d", end, attachmentVersion)
+	}
+	if err = pool.QueryRow(ctx, `SELECT version FROM sensor_endpoints WHERE id=$1`, sensor).Scan(&sensorVersion); err != nil || sensorVersion != 3 {
+		t.Fatalf("sensor revision: %d %v", sensorVersion, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM attachment_revisions WHERE attachment_id=$1`, attached.ID).Scan(&attachmentRevisions); err != nil || attachmentRevisions != 2 {
+		t.Fatalf("attachment lineage: %d %v", attachmentRevisions, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM appliance_revisions WHERE appliance_id=$1`, a.ID).Scan(&applianceRevisions); err != nil || applianceRevisions != 5 {
+		t.Fatalf("appliance lineage: %d %v", applianceRevisions, err)
+	}
+	var observedCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM energy_observations WHERE attachment_revision_id=$1`, attached.ID).Scan(&observedCount); err != nil || observedCount != 1 {
+		t.Fatalf("historical observation lost: %d %v", observedCount, err)
+	}
+	var originalEnd *time.Time
+	if err = pool.QueryRow(ctx, `SELECT snapshot->>'ended_at' FROM attachment_revisions WHERE attachment_id=$1 AND version=1`, attached.ID).Scan(&originalEnd); err != nil || originalEnd != nil {
+		t.Fatalf("original attachment snapshot changed: %v %v", originalEnd, err)
+	}
+	var futureSensor string
+	if err = pool.QueryRow(ctx, `INSERT INTO sensor_endpoints(home_id,hub_id,ownership_epoch,local_sensor_id,kind,capabilities) VALUES($1,$2,1,'future-meter','plug',ARRAY['power']) RETURNING id`, home.ID, hub).Scan(&futureSensor); err != nil {
+		t.Fatal(err)
+	}
+	future, err := (attachments.Store{Pool: pool}).Create(ctx, owner.ID, home.ID, attachments.CreateInput{SensorID: futureSensor, ApplianceID: firstConfirmed.ID, IdentityRevision: 2, StartedAt: time.Now().UTC().Add(time.Hour)}, 1, uuid.NewString(), hash[:])
+	if err != nil {
+		t.Fatalf("future attachment: %v", err)
+	}
+	if _, err = store.Archive(ctx, owner.ID, home.ID, firstConfirmed.ID, 2, uuid.NewString(), hash[:]); !errors.Is(err, ErrAttachmentConflict) {
+		t.Fatalf("unsafe future closure: %v", err)
+	}
+	if current, err := store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID); err != nil || current.ArchivedAt != nil {
+		t.Fatalf("conflicted archive changed appliance: %+v %v", current, err)
+	}
+	var futureEnd *time.Time
+	if err = pool.QueryRow(ctx, `SELECT ended_at FROM attachments WHERE id=$1`, future.ID).Scan(&futureEnd); err != nil || futureEnd != nil {
+		t.Fatalf("conflicted archive closed attachment: %v %v", futureEnd, err)
 	}
 }

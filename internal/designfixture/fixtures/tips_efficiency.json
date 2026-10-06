@@ -1,0 +1,605 @@
+{
+  "fixture_revision": "mobile_design_2026_10_06_v1",
+  "approval_scope": "internal_baseline_only_pending_owner_approval_for_backend_use",
+  "page": "tips_efficiency",
+  "source": {
+    "path": "energylens-mobile/assets/design_pages/tips_efficiency/code.html",
+    "sha256": "6978b08a1aeb1dfefa752a0830243a829bbacafa5357ab5a1a9dbf36d94329dc"
+  },
+  "ordered_text_segments": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 113,
+      "text": "bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[1]",
+      "line": 113,
+      "text": "The Miller Home",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[2]",
+      "line": 113,
+      "text": "expand_more",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 113,
+      "text": "Perks And Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/header[1]/h1[1]",
+      "line": 120,
+      "text": "DISCOVER SAVINGS & PERKS",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/header[1]/p[1]",
+      "line": 121,
+      "text": "Rebates, zero-cost habits, and instant answers tailored to your home.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]/span[1]",
+      "line": 124,
+      "text": "redeem",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]/span[2]",
+      "line": 124,
+      "text": "Programs",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]/span[1]",
+      "line": 124,
+      "text": "eco",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]/span[2]",
+      "line": 124,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]/span[1]",
+      "line": 124,
+      "text": "home_repair_service",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]/span[2]",
+      "line": 124,
+      "text": "Care & Upgrades",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[4]/span[1]",
+      "line": 124,
+      "text": "help_center",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[4]/span[2]",
+      "line": 124,
+      "text": "Knowledge",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 132,
+      "text": "electric_bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/h2[1]",
+      "line": 133,
+      "text": "Efficient Usage",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 135,
+      "text": "High Impact",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 142,
+      "text": "bedtime",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 145,
+      "text": "Power-Off Scheduling",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[1]/div[1]/div[2]/span[2]",
+      "line": 146,
+      "text": "Schedule power-off during Night or Away hours",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[1]/span[1]",
+      "line": 149,
+      "text": "Save ~$12/mo",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 155,
+      "text": "power",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[2]/div[1]/div[2]/span[1]",
+      "line": 158,
+      "text": "Smart Strips & Plugs",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[2]/div[1]/div[2]/span[2]",
+      "line": 159,
+      "text": "Auto-isolate idle gear and standby loss",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[2]/div[2]/span[1]",
+      "line": 162,
+      "text": "Save ~$8/mo",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/div[1]/span[1]",
+      "line": 171,
+      "text": "schedule",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/div[1]/h2[1]",
+      "line": 172,
+      "text": "Usage Patterns Changes",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/span[1]",
+      "line": 174,
+      "text": "Rate Timing",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 181,
+      "text": "wb_twilight",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 184,
+      "text": "Off-Peak Hours",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/div[1]/div[2]/span[2]",
+      "line": 185,
+      "text": "Run heavy loads like laundry after 8 PM",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/span[1]",
+      "line": 188,
+      "text": "Save ~$18/mo",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 194,
+      "text": "thermostat",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[2]/div[1]/div[2]/span[1]",
+      "line": 197,
+      "text": "Weather-Aware Usage",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[2]/div[1]/div[2]/span[2]",
+      "line": 198,
+      "text": "Float thermostat ±2°F during peak weather",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[2]/span[1]",
+      "line": 201,
+      "text": "Save ~$14/mo",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[1]",
+      "line": 241,
+      "text": "space_dashboard",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[2]",
+      "line": 241,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[1]",
+      "line": 241,
+      "text": "devices",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[2]",
+      "line": 241,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[1]",
+      "line": 241,
+      "text": "energy_savings_leaf",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[2]",
+      "line": 241,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[1]",
+      "line": 241,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[2]",
+      "line": 241,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[1]",
+      "line": 241,
+      "text": "settings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
+      "line": 241,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    }
+  ],
+  "controls": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 113,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex items-center gap-space-xs text-left group",
+        "type": "button"
+      },
+      "text": "The Miller Home expand_more"
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 113,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-11 h-11 flex items-center justify-center",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": ""
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-programs",
+        "aria-selected": "false",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-programs",
+        "onclick": "switchTab('programs')",
+        "role": "tab",
+        "type": "button"
+      },
+      "text": "redeem Programs"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-efficiency",
+        "aria-selected": "true",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-bold transition-all duration-200 bg-white text-slate-900 shadow-sm flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-efficiency",
+        "onclick": "switchTab('efficiency')",
+        "role": "tab",
+        "type": "button"
+      },
+      "text": "eco Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-upgrades",
+        "aria-selected": "false",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-upgrades",
+        "onclick": "switchTab('upgrades')",
+        "role": "tab",
+        "type": "button"
+      },
+      "text": "home_repair_service Care & Upgrades"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[4]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-knowledge",
+        "aria-selected": "false",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-knowledge",
+        "onclick": "switchTab('knowledge')",
+        "role": "tab",
+        "type": "button"
+      },
+      "text": "help_center Knowledge"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]",
+      "tag": "a",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs",
+        "data-path": "dashboard",
+        "href": "#"
+      },
+      "text": "space_dashboard Dashboard"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]",
+      "tag": "a",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs",
+        "data-path": "devices",
+        "href": "#"
+      },
+      "text": "devices Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]",
+      "tag": "a",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs",
+        "data-path": "efficiency",
+        "href": "#"
+      },
+      "text": "energy_savings_leaf Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]",
+      "tag": "a",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-current": "page",
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-sky-600 font-bold text-xs",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "savings Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]",
+      "tag": "a",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "settings Settings"
+    }
+  ],
+  "media": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]/img[1]",
+      "tag": "img",
+      "line": 113,
+      "hidden_initially": false,
+      "attributes": {
+        "alt": "Profile",
+        "class": "w-8 h-8 rounded-full object-cover ring-2 ring-primary-container",
+        "src": "https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"
+      }
+    }
+  ],
+  "svg_elements": [],
+  "source_comments": [
+    {
+      "line": 114,
+      "text": "Subtle Ambient Glow Orbs"
+    },
+    {
+      "line": 119,
+      "text": "Page Header & Joyful Savings Counter Banner"
+    },
+    {
+      "line": 122,
+      "text": "Consistent Tab Switcher (Matching Efficiency & Settings Pill Style)"
+    },
+    {
+      "line": 126,
+      "text": "TAB PANELS CONTAINER"
+    },
+    {
+      "line": 127,
+      "text": "Efficiency Tab Content"
+    },
+    {
+      "line": 128,
+      "text": "Section 1: Efficient Usage"
+    },
+    {
+      "line": 138,
+      "text": "Item 1: Power-Off Scheduling"
+    },
+    {
+      "line": 151,
+      "text": "Item 2: Smart Strips & Plugs"
+    },
+    {
+      "line": 167,
+      "text": "Section 2: Usage Patterns Changes"
+    },
+    {
+      "line": 177,
+      "text": "Item 1: Off-Peak Hours"
+    },
+    {
+      "line": 190,
+      "text": "Item 2: Weather-Aware Usage"
+    }
+  ],
+  "initial_states": [
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-programs",
+        "aria-selected": "false",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-programs",
+        "onclick": "switchTab('programs')",
+        "role": "tab",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[2]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-efficiency",
+        "aria-selected": "true",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-bold transition-all duration-200 bg-white text-slate-900 shadow-sm flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-efficiency",
+        "onclick": "switchTab('efficiency')",
+        "role": "tab",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[3]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-upgrades",
+        "aria-selected": "false",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-upgrades",
+        "onclick": "switchTab('upgrades')",
+        "role": "tab",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/button[4]",
+      "tag": "button",
+      "line": 124,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-controls": "tab-panel-knowledge",
+        "aria-selected": "false",
+        "class": "tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0",
+        "id": "tab-btn-knowledge",
+        "onclick": "switchTab('knowledge')",
+        "role": "tab",
+        "type": "button"
+      }
+    }
+  ]
+}

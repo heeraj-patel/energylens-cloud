@@ -105,3 +105,13 @@ official page leads checked on 2026-10-03. It contains no approved source
 registrations, ZIP coverage, reviewed terms, or publishable offers. An operator
 must complete each listed access and terms review before creating an enabled
 `program_sources` row; changing this file has no runtime effect.
+
+# Isolated mobile design fixtures
+
+The 14 page-specific mobile design baselines are embedded in the API binary and are unavailable by default. For an isolated development or test account and home, set `ENERGYLENS_CLOUD_SAMPLE_FIXTURES_ENABLED=true`, `ENERGYLENS_CLOUD_SAMPLE_FIXTURE_USER_IDS` to a comma-separated list of internal user UUIDs, and `ENERGYLENS_CLOUD_SAMPLE_FIXTURE_HOME_IDS` to a comma-separated list of home UUIDs. The API rejects activation in staging or production. Both allowlists and normal bearer authentication and home ownership are required for `GET /v1/homes/{home}/design-pages/{page}`. The route does not accept client-supplied sample selectors, and its response disables actions and caching. The embedded content remains an internal baseline pending owner approval for backend use; configuring the gate is the activation step after that approval.
+
+The existing dashboard and energy-trends routes can return a coherent energy-only sample when the selected period has no persisted intervals. In dev/test only, set `ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_ENABLED=true` with explicit UUID lists in `ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_USER_IDS` and `ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_HOME_IDS`. Normal bearer authentication and database home ownership still apply. The sample uses the internal synthetic household's $0.20/kWh cost basis, emits one synthetic kWh per period bucket, labels all energy unclassified, and exposes `data_mode: sample`, `fixture_revision`, and `synthetic` evidence basis. As soon as a period has measured intervals, the same route returns household evidence with unsupported values unknown. This gate is separate from the dormant page-specific fixture route.
+
+# Initial household energy reads
+
+Authenticated `GET /v1/homes/{home}/dashboard` and `GET /v1/homes/{home}/energy-trends?granularity=hour|day|week|month` read corrected, owner-scoped energy intervals in a repeatable-read snapshot. The period uses the home's timezone and calendar boundaries; unsupported cost and useful/waste allocations stay null. Energy from a single unambiguous metering point is reported as a measured partial subtotal under `attributed_devices`, with unknown coverage. Missing intervals and overlapping distinct meters remain unavailable. Cross-bucket intervals are excluded rather than estimated. The device-energy read and stable pagination remain unimplemented.

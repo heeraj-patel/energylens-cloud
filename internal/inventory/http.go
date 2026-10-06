@@ -28,6 +28,7 @@ func (s Service) Routes(r chi.Router) {
 		r.Post("/", s.create)
 		r.Get("/{appliance}", s.get)
 		r.Patch("/{appliance}", s.patch)
+		r.Delete("/{appliance}", s.archive)
 	})
 }
 func fail(w http.ResponseWriter, status int, code, msg string) {
@@ -50,6 +51,8 @@ func storeError(w http.ResponseWriter, err error) {
 		fail(w, 409, "catalog_mismatch", "confirmed catalog identity does not match")
 	case errors.Is(err, ErrDisclosureRequired):
 		fail(w, 403, "history_disclosure_required", "accept history disclosure before changing appliances")
+	case errors.Is(err, ErrAttachmentConflict):
+		fail(w, 409, "attachment_conflict", "")
 	default:
 		slog.Error("inventory store failed", "error", err)
 		fail(w, 500, "internal_error", "inventory request failed")
@@ -226,4 +229,31 @@ func (s Service) patch(w http.ResponseWriter, r *http.Request) {
 	}
 	etag(w, a.Version)
 	write(w, 200, a)
+}
+
+func (s Service) archive(w http.ResponseWriter, r *http.Request) {
+	home, id, ok := parseIDs(w, r)
+	if !ok {
+		return
+	}
+	k, ok := key(w, r)
+	if !ok {
+		return
+	}
+	version, ok := match(w, r)
+	if !ok {
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1))
+	if err != nil || len(body) != 0 {
+		fail(w, 400, "invalid_request", "")
+		return
+	}
+	hash := sha256.Sum256([]byte(strconv.FormatInt(version, 10)))
+	_, err = s.Store.Archive(r.Context(), s.UserID(r), home, id, version, k, hash[:])
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

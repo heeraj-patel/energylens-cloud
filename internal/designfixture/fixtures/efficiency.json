@@ -1,0 +1,2054 @@
+{
+  "fixture_revision": "mobile_design_2026_10_06_v1",
+  "approval_scope": "internal_baseline_only_pending_owner_approval_for_backend_use",
+  "page": "efficiency",
+  "source": {
+    "path": "energylens-mobile/assets/design_pages/efficiency/code.html",
+    "sha256": "6700f554144188e4b14eadb8b8417f08f6091e534ee8062083a8f78ca6f63ec2"
+  },
+  "ordered_text_segments": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 132,
+      "text": "bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[1]",
+      "line": 136,
+      "text": "The Miller Home",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[2]",
+      "line": 137,
+      "text": "expand_more",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 139,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 156,
+      "text": "insights",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[1]/h1[1]",
+      "line": 156,
+      "text": "Efficiency Insights",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/span[1]",
+      "line": 157,
+      "text": "Monthly Overview",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/h3[1]/span[1]",
+      "line": 164,
+      "text": "Identified Opportunity",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/h2[1]/span[1]",
+      "line": 165,
+      "text": "$18.60",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[2]/span[1]",
+      "line": 167,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/p[1]",
+      "line": 169,
+      "text": "Identified monthly waste across 4 routine patterns. Recoverable with minor adjustments.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "line": 174,
+      "text": "home",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[1]/div[1]/span[2]",
+      "line": 174,
+      "text": "Monthly Spend",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[1]/p[1]",
+      "line": 174,
+      "text": "$142.30",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/div[1]/span[1]",
+      "line": 175,
+      "text": "eco",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/div[1]/span[2]",
+      "line": 175,
+      "text": "Optimal Base",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/p[1]",
+      "line": 175,
+      "text": "$123.70",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/span[1]",
+      "line": 180,
+      "text": "water_loss",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/h3[1]",
+      "line": 180,
+      "text": "Avoidable Leak Breakdown",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/span[1]",
+      "line": 180,
+      "text": "13% of Bill",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/span[2]",
+      "line": 192,
+      "text": "Night",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/span[3]",
+      "line": 193,
+      "text": "$3.30",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/span[2]",
+      "line": 197,
+      "text": "Away",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/span[3]",
+      "line": 198,
+      "text": "$4.20",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[3]/span[2]",
+      "line": 202,
+      "text": "Peak",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[3]/span[3]",
+      "line": 203,
+      "text": "$4.70",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[4]/span[2]",
+      "line": 207,
+      "text": "Habits",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[4]/span[3]",
+      "line": 208,
+      "text": "$6.40",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/h3[1]",
+      "line": 214,
+      "text": "Usage Cost by",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/span[1]/span[1]",
+      "line": 214,
+      "text": "touch_app",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/span[1]",
+      "line": 214,
+      "text": "Select category",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[1]/span[1]",
+      "line": 215,
+      "text": "bedtime",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[1]/span[2]",
+      "line": 215,
+      "text": "Night",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[2]/span[1]",
+      "line": 215,
+      "text": "flight_takeoff",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[2]/span[2]",
+      "line": 215,
+      "text": "Away",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[3]/span[1]",
+      "line": 215,
+      "text": "electric_meter",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[3]/span[2]",
+      "line": 215,
+      "text": "Peak Rates",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[4]/span[1]",
+      "line": 215,
+      "text": "tune",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[4]/span[2]",
+      "line": 215,
+      "text": "Habits",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 222,
+      "text": "dark_mode",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/div[1]/div[2]/h3[1]",
+      "line": 225,
+      "text": "Night Hours (11 PM – 5 AM)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/div[1]/div[2]/p[1]",
+      "line": 226,
+      "text": "Baseline draw while the house rests",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/span[1]",
+      "line": 229,
+      "text": "$3.30",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 236,
+      "text": "tv",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 239,
+      "text": "Living Room Soundbar & TV",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 240,
+      "text": "electrical_services",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 240,
+      "text": "Standby Phantom Leak",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/span[1]",
+      "line": 243,
+      "text": "+$0.50",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/span[1]",
+      "line": 246,
+      "text": "tips_and_updates",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/p[1]",
+      "line": 247,
+      "text": "Plug into a smart strip to auto-cut phantom draw while you sleep.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 257,
+      "text": "thermostat",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 260,
+      "text": "Central AC Overnight Setpoint",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 261,
+      "text": "mode_fan",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 261,
+      "text": "Continuous Cool Baseline",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/span[1]",
+      "line": 264,
+      "text": "$2.80",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[2]/span[1]",
+      "line": 267,
+      "text": "tips_and_updates",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[2]/p[1]",
+      "line": 268,
+      "text": "Shift thermostat up 2°F between midnight and dawn to",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[2]/p[1]/span[1]",
+      "line": 268,
+      "text": "trim $14",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[2]/p[1]",
+      "line": 268,
+      "text": ".",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 279,
+      "text": "cottage",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[2]/h3[1]",
+      "line": 282,
+      "text": "While You're Away",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[2]/p[1]",
+      "line": 283,
+      "text": "Idle draw detected during vacant hours",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/span[1]",
+      "line": 286,
+      "text": "$4.20/mo",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 295,
+      "text": "desktop_windows",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 298,
+      "text": "Home Office Setup & Monitors",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 300,
+      "text": "power_off",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 300,
+      "text": "Dual 4K displays sleeping draw",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/span[1]",
+      "line": 305,
+      "text": "+$1.25",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[2]/span[1]",
+      "line": 310,
+      "text": "lightbulb",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[2]/p[1]",
+      "line": 311,
+      "text": "Enable automatic standby socket shutdown when your phone leaves geofence.",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 321,
+      "text": "water_heater",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 324,
+      "text": "Water Heater Idle Keep",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 326,
+      "text": "thermostat_auto",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 326,
+      "text": "Continuous reheat cycling",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/span[1]",
+      "line": 331,
+      "text": "$2.95",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[2]/span[1]",
+      "line": 336,
+      "text": "lightbulb",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[2]/p[1]",
+      "line": 337,
+      "text": "Activate Vacation or Eco-away schedule to delay cycle until 4 PM return.",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 348,
+      "text": "bolt",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[2]/h3[1]",
+      "line": 351,
+      "text": "Peak Rates & Weather Shifts",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[2]/p[1]",
+      "line": 352,
+      "text": "Grid surge pricing windows (4 PM – 8 PM)",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/span[1]",
+      "line": 355,
+      "text": "$2.85/event",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 364,
+      "text": "air",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 367,
+      "text": "HVAC High Heat Pre-Cooling",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 369,
+      "text": "wb_sunny",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 369,
+      "text": "Mid-afternoon thermal surge",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/span[1]",
+      "line": 374,
+      "text": "+$1.80 / event",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[2]/span[1]",
+      "line": 379,
+      "text": "bolt",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[2]/p[1]",
+      "line": 380,
+      "text": "Pre-chill the house to 70°F before 3:30 PM off-peak rates expire.",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 390,
+      "text": "ev_station",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 393,
+      "text": "Dishwasher & EV Charger",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 395,
+      "text": "schedule",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 395,
+      "text": "Running during tier-3 rate spikes",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/span[1]",
+      "line": 400,
+      "text": "$1.05 / cycle",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[2]/span[1]",
+      "line": 405,
+      "text": "bolt",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[2]/p[1]",
+      "line": 406,
+      "text": "Delay timer set to 9:00 PM saves up to $18/month on heavy high-amp appliances.",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[1]/span[1]",
+      "line": 417,
+      "text": "routine",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[2]/h3[1]",
+      "line": 420,
+      "text": "Everyday Habits",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[2]/p[1]",
+      "line": 421,
+      "text": "Frequent small cycles adding up",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/span[1]",
+      "line": 424,
+      "text": "$6.40/mo",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 433,
+      "text": "local_laundry_service",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 436,
+      "text": "Washer & Dryer Half-Loads",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 438,
+      "text": "water",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "line": 438,
+      "text": "5 extra cycles logged this week",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/span[1]",
+      "line": 443,
+      "text": "+$3.60",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[2]/span[1]",
+      "line": 448,
+      "text": "thumb_up",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[2]/p[1]",
+      "line": 449,
+      "text": "Consolidate into full loads and utilize Eco Cold Wash mode.",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 459,
+      "text": "kitchen",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 462,
+      "text": "Kitchen Refrigerator Temperature",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 464,
+      "text": "ac_unit",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 464,
+      "text": "Freezer calibrated 4°F below optimal",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/span[1]",
+      "line": 469,
+      "text": "$2.80",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[2]/span[1]",
+      "line": 474,
+      "text": "thumb_up",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[2]/p[1]",
+      "line": 475,
+      "text": "Adjust fridge to 37°F and freezer to 0°F to retain freshness and reduce compressor burden.",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[1]",
+      "line": 527,
+      "text": "space_dashboard",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[2]",
+      "line": 527,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[1]",
+      "line": 527,
+      "text": "devices",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[2]",
+      "line": 527,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[1]",
+      "line": 527,
+      "text": "energy_savings_leaf",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[2]",
+      "line": 527,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[1]",
+      "line": 527,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[2]",
+      "line": 527,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[1]",
+      "line": 527,
+      "text": "settings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
+      "line": 527,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    }
+  ],
+  "controls": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 135,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex items-center gap-space-xs text-left group",
+        "type": "button"
+      },
+      "text": "The Miller Home expand_more"
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 144,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-11 h-11 flex items-center justify-center",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": ""
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[1]",
+      "tag": "button",
+      "line": 215,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface bg-surface-container-lowest shadow-sm font-semibold",
+        "data-tab-target": "night",
+        "type": "button"
+      },
+      "text": "bedtime Night"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[2]",
+      "tag": "button",
+      "line": 215,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium",
+        "data-tab-target": "away",
+        "type": "button"
+      },
+      "text": "flight_takeoff Away"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[3]",
+      "tag": "button",
+      "line": 215,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium",
+        "data-tab-target": "peak",
+        "type": "button"
+      },
+      "text": "electric_meter Peak Rates"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[4]",
+      "tag": "button",
+      "line": 215,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium",
+        "data-tab-target": "habits",
+        "type": "button"
+      },
+      "text": "tune Habits"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]",
+      "tag": "a",
+      "line": 527,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "dashboard",
+        "href": "#"
+      },
+      "text": "space_dashboard Dashboard"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]",
+      "tag": "a",
+      "line": 527,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "devices",
+        "href": "#"
+      },
+      "text": "devices Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]",
+      "tag": "a",
+      "line": 527,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-current": "page",
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-primary font-semibold",
+        "data-path": "efficiency",
+        "href": "#"
+      },
+      "text": "energy_savings_leaf Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]",
+      "tag": "a",
+      "line": 527,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "savings Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]",
+      "tag": "a",
+      "line": 527,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "settings Settings"
+    }
+  ],
+  "media": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]/img[1]",
+      "tag": "img",
+      "line": 145,
+      "hidden_initially": false,
+      "attributes": {
+        "alt": "Profile",
+        "class": "w-8 h-8 rounded-full object-cover ring-1 ring-primary/40",
+        "src": "https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"
+      }
+    }
+  ],
+  "svg_elements": [],
+  "source_comments": [
+    {
+      "line": 126,
+      "text": "Fixed Header"
+    },
+    {
+      "line": 151,
+      "text": "Main Content"
+    },
+    {
+      "line": 154,
+      "text": "Top Insight Badge & Sub-header"
+    },
+    {
+      "line": 159,
+      "text": "Hero Card: Identified Opportunity $18.60"
+    },
+    {
+      "line": 172,
+      "text": "2-Column Metrics"
+    },
+    {
+      "line": 178,
+      "text": "Avoidable Leak Breakdown Section"
+    },
+    {
+      "line": 181,
+      "text": "Segmented Multi-color Bar"
+    },
+    {
+      "line": 188,
+      "text": "Segment Legend"
+    },
+    {
+      "line": 212,
+      "text": "Segmented Tabs Navigation"
+    },
+    {
+      "line": 217,
+      "text": "Tab Panel 1: Night Hours (Active by default)"
+    },
+    {
+      "line": 231,
+      "text": "Night Device 1"
+    },
+    {
+      "line": 252,
+      "text": "Night Device 2"
+    },
+    {
+      "line": 271,
+      "text": "Visual Atmosphere Image"
+    },
+    {
+      "line": 274,
+      "text": "Tab Panel 2: Away (Hidden by default)"
+    },
+    {
+      "line": 290,
+      "text": "Away Device 1"
+    },
+    {
+      "line": 316,
+      "text": "Away Device 2"
+    },
+    {
+      "line": 343,
+      "text": "Tab Panel 3: Peak Rates (Hidden by default)"
+    },
+    {
+      "line": 359,
+      "text": "Peak Device 1"
+    },
+    {
+      "line": 385,
+      "text": "Peak Device 2"
+    },
+    {
+      "line": 412,
+      "text": "Tab Panel 4: Habits (Hidden by default)"
+    },
+    {
+      "line": 428,
+      "text": "Habits Device 1"
+    },
+    {
+      "line": 454,
+      "text": "Habits Device 2"
+    },
+    {
+      "line": 481,
+      "text": "Quick Action Footer Card"
+    },
+    {
+      "line": 484,
+      "text": "Script for Tab Switching"
+    },
+    {
+      "line": 526,
+      "text": "Bottom Navigation Bar (5 tabs)"
+    }
+  ],
+  "initial_states": [
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]",
+      "tag": "section",
+      "line": 275,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "tab-panel space-y-space-sm hidden",
+        "id": "panel-away"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]",
+      "tag": "div",
+      "line": 276,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 277,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-2"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 278,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-primary-container/40 text-primary flex items-center justify-center shadow-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 279,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 281,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[2]/h3[1]",
+      "tag": "h3",
+      "line": 282,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 283,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[1]/span[1]",
+      "tag": "span",
+      "line": 286,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-sm py-1 rounded-full bg-surface-container-high text-primary font-label-md text-label-md font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]",
+      "tag": "div",
+      "line": 291,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]",
+      "tag": "div",
+      "line": 292,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-start justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 293,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 294,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 295,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 297,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "tag": "h4",
+      "line": 298,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "tag": "span",
+      "line": 299,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "tag": "span",
+      "line": 300,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[13px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[1]/span[1]",
+      "tag": "span",
+      "line": 305,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-md text-[12px] font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[2]",
+      "tag": "div",
+      "line": 309,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[2]/span[1]",
+      "tag": "span",
+      "line": 310,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[17px] mt-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[2]/div[2]/p[1]",
+      "tag": "p",
+      "line": 311,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] leading-relaxed text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]",
+      "tag": "div",
+      "line": 317,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]",
+      "tag": "div",
+      "line": 318,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-start justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]",
+      "tag": "div",
+      "line": 319,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 320,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 321,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 323,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "tag": "h4",
+      "line": 324,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "tag": "span",
+      "line": 325,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "tag": "span",
+      "line": 326,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[13px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[1]/span[1]",
+      "tag": "span",
+      "line": 331,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-md text-[12px] font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[2]",
+      "tag": "div",
+      "line": 335,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[2]/span[1]",
+      "tag": "span",
+      "line": 336,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[17px] mt-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[2]/div[3]/div[2]/p[1]",
+      "tag": "p",
+      "line": 337,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] leading-relaxed text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]",
+      "tag": "section",
+      "line": 344,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "tab-panel space-y-space-sm hidden",
+        "id": "panel-peak"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]",
+      "tag": "div",
+      "line": 345,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]",
+      "tag": "div",
+      "line": 346,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-2"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 347,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shadow-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 348,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 350,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[2]/h3[1]",
+      "tag": "h3",
+      "line": 351,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 352,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[1]/span[1]",
+      "tag": "span",
+      "line": 355,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-sm py-1 rounded-full bg-surface-container-high text-primary font-label-md text-label-md font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]",
+      "tag": "div",
+      "line": 360,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]",
+      "tag": "div",
+      "line": 361,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-start justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 362,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 363,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 364,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 366,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "tag": "h4",
+      "line": 367,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "tag": "span",
+      "line": 368,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "tag": "span",
+      "line": 369,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[13px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[1]/span[1]",
+      "tag": "span",
+      "line": 374,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-md text-[12px] font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[2]",
+      "tag": "div",
+      "line": 378,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[2]/span[1]",
+      "tag": "span",
+      "line": 379,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[17px] mt-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[2]/div[2]/p[1]",
+      "tag": "p",
+      "line": 380,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] leading-relaxed text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]",
+      "tag": "div",
+      "line": 386,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]",
+      "tag": "div",
+      "line": 387,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-start justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]",
+      "tag": "div",
+      "line": 388,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 389,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 390,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 392,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "tag": "h4",
+      "line": 393,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "tag": "span",
+      "line": 394,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "tag": "span",
+      "line": 395,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[13px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[1]/span[1]",
+      "tag": "span",
+      "line": 400,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-md text-[12px] font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[2]",
+      "tag": "div",
+      "line": 404,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[2]/span[1]",
+      "tag": "span",
+      "line": 405,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[17px] mt-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[3]/div[3]/div[2]/p[1]",
+      "tag": "p",
+      "line": 406,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] leading-relaxed text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]",
+      "tag": "section",
+      "line": 413,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "tab-panel space-y-space-sm hidden",
+        "id": "panel-habits"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]",
+      "tag": "div",
+      "line": 414,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]",
+      "tag": "div",
+      "line": 415,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-2"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 416,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 417,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 419,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[2]/h3[1]",
+      "tag": "h3",
+      "line": 420,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 421,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[1]/span[1]",
+      "tag": "span",
+      "line": 424,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-sm py-1 rounded-full bg-surface-container-high text-primary font-label-md text-label-md font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]",
+      "tag": "div",
+      "line": 429,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]",
+      "tag": "div",
+      "line": 430,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-start justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 431,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 432,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 433,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 435,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]/h4[1]",
+      "tag": "h4",
+      "line": 436,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]/span[1]",
+      "tag": "span",
+      "line": 437,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "tag": "span",
+      "line": 438,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[13px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[1]/span[1]",
+      "tag": "span",
+      "line": 443,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-md text-[12px] font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[2]",
+      "tag": "div",
+      "line": 447,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[2]/span[1]",
+      "tag": "span",
+      "line": 448,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[17px] mt-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[2]/div[2]/p[1]",
+      "tag": "p",
+      "line": 449,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] leading-relaxed text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]",
+      "tag": "div",
+      "line": 455,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]",
+      "tag": "div",
+      "line": 456,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-start justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]",
+      "tag": "div",
+      "line": 457,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 458,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 459,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 461,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "tag": "h4",
+      "line": 462,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface leading-tight"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "tag": "span",
+      "line": 463,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "tag": "span",
+      "line": 464,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[13px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[1]/span[1]",
+      "tag": "span",
+      "line": 469,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-md text-[12px] font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[2]",
+      "tag": "div",
+      "line": 473,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[2]/span[1]",
+      "tag": "span",
+      "line": 474,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[17px] mt-0.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[4]/div[3]/div[2]/p[1]",
+      "tag": "p",
+      "line": 475,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-body-md text-[12px] leading-relaxed text-on-surface-variant"
+      }
+    }
+  ]
+}

@@ -56,6 +56,18 @@ func (s *routeStore) Patch(_ context.Context, owner, home, id string, _ PatchInp
 	a.Version = 2
 	return a, nil
 }
+func (s *routeStore) Archive(_ context.Context, owner, home, id string, version int64, _ string, _ []byte) (Appliance, error) {
+	s.writes++
+	if owner != "owner" || home != s.a.HomeID || id != s.a.ID {
+		return Appliance{}, ErrNotFound
+	}
+	if version != s.a.Version {
+		return Appliance{}, ErrVersion
+	}
+	a := s.a
+	a.Version++
+	return a, nil
+}
 func TestInventoryRoutesAuthValidationAndETag(t *testing.T) {
 	store := &routeStore{a: Appliance{ID: uuid.NewString(), HomeID: uuid.NewString(), Name: "Fridge", Category: "refrigerator", Identity: Identity{Brand: "Acme", FullModel: "A123", Fuel: "electricity", MatchQuality: "unresolved"}, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now()}}
 	service := Service{Store: store, Auth: func(next http.Handler) http.Handler {
@@ -117,6 +129,23 @@ func TestInventoryRoutesAuthValidationAndETag(t *testing.T) {
 	delete(headers, "If-Match")
 	if w := call("PATCH", base+"/"+store.a.ID, "owner", `{"name":"New"}`, headers); w.Code != 428 {
 		t.Fatalf("missing If-Match = %d", w.Code)
+	}
+	deleteURL := base + "/" + store.a.ID
+	if w := call("DELETE", deleteURL, "", "", headers); w.Code != 401 {
+		t.Fatalf("unauthenticated archive = %d", w.Code)
+	}
+	if w := call("DELETE", deleteURL, "owner", "", headers); w.Code != 428 {
+		t.Fatalf("missing archive If-Match = %d", w.Code)
+	}
+	headers["If-Match"] = `"1"`
+	if w := call("DELETE", deleteURL, "other", "", headers); w.Code != 404 {
+		t.Fatalf("cross-owner archive = %d", w.Code)
+	}
+	if w := call("DELETE", deleteURL, "owner", `{"force":true}`, headers); w.Code != 400 {
+		t.Fatalf("archive body = %d", w.Code)
+	}
+	if w := call("DELETE", deleteURL, "owner", "", headers); w.Code != 204 || w.Body.Len() != 0 {
+		t.Fatalf("archive = %d %s", w.Code, w.Body.String())
 	}
 }
 

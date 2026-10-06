@@ -1,0 +1,1013 @@
+{
+  "fixture_revision": "mobile_design_2026_10_06_v1",
+  "approval_scope": "internal_baseline_only_pending_owner_approval_for_backend_use",
+  "page": "dashboard",
+  "source": {
+    "path": "energylens-mobile/assets/design_pages/dashboard/code.html",
+    "sha256": "28096a2d08c7dee433871b9270c769667105eb0a014f352c238f85bc3dec0441"
+  },
+  "ordered_text_segments": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 113,
+      "text": "bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 113,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[2]/div[1]/span[1]",
+      "line": 119,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[2]/div[2]/div[1]/span[1]",
+      "line": 123,
+      "text": "PIGGYBANK HAPPY",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[2]/div[2]/p[1]",
+      "line": 126,
+      "text": "Happy afternoon, Alex! Piggybank is looking safe & happy today 🌻",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/div[1]/span[1]",
+      "line": 136,
+      "text": "filter_center_focus",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[1]/div[1]/span[2]",
+      "line": 137,
+      "text": "Energy Lens",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 145,
+      "text": "Useful Power",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/span[1]",
+      "line": 148,
+      "text": "$6.96",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/span[1]/span[1]",
+      "line": 148,
+      "text": "/day",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[2]/div[1]/span[1]",
+      "line": 153,
+      "text": "Wasted Power",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[2]/span[1]",
+      "line": 156,
+      "text": "$2.88",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[2]/span[1]/span[1]",
+      "line": 156,
+      "text": "/day",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/span[1]",
+      "line": 168,
+      "text": "71% Productive load",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/span[2]",
+      "line": 170,
+      "text": "29% Wasted Energy",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/span[1]",
+      "line": 178,
+      "text": "lightbulb",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/span[2]",
+      "line": 179,
+      "text": "Top Saving Move",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/span[1]",
+      "line": 181,
+      "text": "-$23.00/mo",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/span[1]",
+      "line": 186,
+      "text": "sports_esports",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[2]/span[1]",
+      "line": 189,
+      "text": "Study Gaming PC",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[2]/span[2]",
+      "line": 190,
+      "text": "Idle 3h • $0.19/hr idle waste",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/button[1]/span[1]",
+      "line": 194,
+      "text": "Quick Nap",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/button[1]/span[2]",
+      "line": 195,
+      "text": "power_settings_new",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/span[1]",
+      "line": 199,
+      "text": "Could power your LED lamps for 14 days",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/a[1]/span[1]",
+      "line": 201,
+      "text": "More tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/a[1]/span[2]",
+      "line": 202,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/span[1]",
+      "line": 210,
+      "text": "bar_chart",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/span[2]",
+      "line": 211,
+      "text": "Energy Trends",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]",
+      "line": 214,
+      "text": "Daily",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]",
+      "line": 214,
+      "text": "Weekly",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]",
+      "line": 214,
+      "text": "Monthly",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/span[1]",
+      "line": 219,
+      "text": "This Week Total",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/span[2]",
+      "line": 220,
+      "text": "$23.30",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/span[1]",
+      "line": 223,
+      "text": "$18.40 Useful",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/span[2]",
+      "line": 223,
+      "text": "$4.90 Waste",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[1]/text[1]",
+      "line": 237,
+      "text": "Mon",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[2]/text[1]",
+      "line": 243,
+      "text": "Tue",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[3]/text[1]",
+      "line": 249,
+      "text": "Wed",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[4]/text[1]",
+      "line": 255,
+      "text": "Thu",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/text[1]",
+      "line": 263,
+      "text": "Today",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/text[2]",
+      "line": 266,
+      "text": "$3.40",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[4]/div[1]/span[1]",
+      "line": 273,
+      "text": "Useful energy",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[4]/div[2]/span[1]",
+      "line": 277,
+      "text": "Wasted Energy",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/span[1]",
+      "line": 283,
+      "text": "smart_toy",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/div[1]/span[2]",
+      "line": 283,
+      "text": "Quick Energy Assistant",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/p[1]",
+      "line": 284,
+      "text": "Got questions about your electric bill? Tap below for quick friendly answers! 💡",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/button[1]/span[1]/span[1]",
+      "line": 290,
+      "text": "How can I shave $10 off this month? 💰",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/button[1]/span[2]",
+      "line": 292,
+      "text": "arrow_forward",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[1]",
+      "line": 297,
+      "text": "space_dashboard",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[2]",
+      "line": 297,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[1]",
+      "line": 297,
+      "text": "devices",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[2]",
+      "line": 297,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[1]",
+      "line": 297,
+      "text": "energy_savings_leaf",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[2]",
+      "line": 297,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[1]",
+      "line": 297,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[2]",
+      "line": 297,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[1]",
+      "line": 297,
+      "text": "settings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
+      "line": 297,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    }
+  ],
+  "controls": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 113,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-11 h-11 flex items-center justify-center",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": ""
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/button[1]",
+      "tag": "button",
+      "line": 193,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex-shrink-0 bg-primary-container text-on-primary-container font-label-md text-label-md font-semibold px-3 py-2 rounded-lg hover:opacity-95 active:scale-95 transition-all shadow-sm flex items-center gap-1",
+        "type": "button"
+      },
+      "text": "Quick Nap power_settings_new"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/a[1]",
+      "tag": "a",
+      "line": 200,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "font-label-md text-label-md text-primary font-semibold hover:underline flex items-center gap-0.5",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "More tips Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-2.5 py-1 rounded-lg text-slate-500 font-medium hover:text-slate-800 transition-colors",
+        "type": "button"
+      },
+      "text": "Daily"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-2.5 py-1 rounded-lg bg-white shadow-sm text-slate-900 font-bold transition-all",
+        "type": "button"
+      },
+      "text": "Weekly"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-2.5 py-1 rounded-lg text-slate-500 font-medium hover:text-slate-800 transition-colors",
+        "type": "button"
+      },
+      "text": "Monthly"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[5]/button[1]",
+      "tag": "button",
+      "line": 288,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-full text-left bg-surface-container-lowest hover:bg-surface-container-low text-on-surface px-space-md py-space-sm rounded-lg flex items-center justify-between transition-all group shadow-sm border border-surface-container-highest active:scale-98",
+        "type": "button"
+      },
+      "text": "How can I shave $10 off this month? 💰 arrow_forward"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]",
+      "tag": "a",
+      "line": 297,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-current": "page",
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-sky-600 font-bold",
+        "data-path": "dashboard",
+        "href": "#"
+      },
+      "text": "space_dashboard Dashboard"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]",
+      "tag": "a",
+      "line": 297,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 font-semibold text-xs hover:text-slate-900 transition-colors",
+        "data-path": "devices",
+        "href": "#"
+      },
+      "text": "devices Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]",
+      "tag": "a",
+      "line": 297,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 font-semibold text-xs hover:text-slate-900 transition-colors",
+        "data-path": "efficiency",
+        "href": "#"
+      },
+      "text": "energy_savings_leaf Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]",
+      "tag": "a",
+      "line": 297,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 font-semibold text-xs hover:text-slate-900 transition-colors",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "savings Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]",
+      "tag": "a",
+      "line": 297,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 font-semibold text-xs hover:text-slate-900 transition-colors",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "settings Settings"
+    }
+  ],
+  "media": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]/img[1]",
+      "tag": "img",
+      "line": 113,
+      "hidden_initially": false,
+      "attributes": {
+        "alt": "Profile",
+        "class": "w-8 h-8 rounded-full object-cover ring-2 ring-primary-container",
+        "src": "https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"
+      }
+    }
+  ],
+  "svg_elements": [
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]",
+      "tag": "svg",
+      "line": 228,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-full h-36",
+        "fill": "none",
+        "viewbox": "0 0 320 140",
+        "xmlns": "http://www.w3.org/2000/svg"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/line[1]",
+      "tag": "line",
+      "line": 230,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "text-surface-container-highest",
+        "opacity": "0.6",
+        "stroke": "currentColor",
+        "stroke-dasharray": "3 3",
+        "x1": "0",
+        "x2": "320",
+        "y1": "20",
+        "y2": "20"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/line[2]",
+      "tag": "line",
+      "line": 231,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "text-surface-container-highest",
+        "opacity": "0.6",
+        "stroke": "currentColor",
+        "stroke-dasharray": "3 3",
+        "x1": "0",
+        "x2": "320",
+        "y1": "65",
+        "y2": "65"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/line[3]",
+      "tag": "line",
+      "line": 232,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "text-surface-container-highest",
+        "opacity": "0.9",
+        "stroke": "currentColor",
+        "stroke-width": "1",
+        "x1": "0",
+        "x2": "320",
+        "y1": "110",
+        "y2": "110"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[1]",
+      "tag": "g",
+      "line": 234,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "transition-opacity hover:opacity-80 cursor-pointer"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[1]/rect[1]",
+      "tag": "rect",
+      "line": 235,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#7dd3fc",
+        "height": "52",
+        "rx": "4",
+        "width": "24",
+        "x": "24",
+        "y": "38"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[1]/rect[2]",
+      "tag": "rect",
+      "line": 236,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#ffdad6",
+        "height": "14",
+        "rx": "4",
+        "width": "24",
+        "x": "24",
+        "y": "22"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[1]/text[1]",
+      "tag": "text",
+      "line": 237,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#6f787e",
+        "font-family": "Rubik, sans-serif",
+        "font-size": "11",
+        "text-anchor": "middle",
+        "x": "36",
+        "y": "126"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[2]",
+      "tag": "g",
+      "line": 240,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "transition-opacity hover:opacity-80 cursor-pointer"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[2]/rect[1]",
+      "tag": "rect",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#7dd3fc",
+        "height": "50",
+        "rx": "4",
+        "width": "24",
+        "x": "88",
+        "y": "48"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[2]/rect[2]",
+      "tag": "rect",
+      "line": 242,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#ffdad6",
+        "height": "12",
+        "rx": "4",
+        "width": "24",
+        "x": "88",
+        "y": "34"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[2]/text[1]",
+      "tag": "text",
+      "line": 243,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#6f787e",
+        "font-family": "Rubik, sans-serif",
+        "font-size": "11",
+        "text-anchor": "middle",
+        "x": "100",
+        "y": "126"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[3]",
+      "tag": "g",
+      "line": 246,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "transition-opacity hover:opacity-80 cursor-pointer"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[3]/rect[1]",
+      "tag": "rect",
+      "line": 247,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#7dd3fc",
+        "height": "58",
+        "rx": "4",
+        "width": "24",
+        "x": "152",
+        "y": "32"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[3]/rect[2]",
+      "tag": "rect",
+      "line": 248,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#ffdad6",
+        "height": "18",
+        "rx": "4",
+        "width": "24",
+        "x": "152",
+        "y": "12"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[3]/text[1]",
+      "tag": "text",
+      "line": 249,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#6f787e",
+        "font-family": "Rubik, sans-serif",
+        "font-size": "11",
+        "text-anchor": "middle",
+        "x": "164",
+        "y": "126"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[4]",
+      "tag": "g",
+      "line": 252,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "transition-opacity hover:opacity-80 cursor-pointer"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[4]/rect[1]",
+      "tag": "rect",
+      "line": 253,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#7dd3fc",
+        "height": "60",
+        "rx": "4",
+        "width": "24",
+        "x": "216",
+        "y": "36"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[4]/rect[2]",
+      "tag": "rect",
+      "line": 254,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#ffdad6",
+        "height": "12",
+        "rx": "4",
+        "width": "24",
+        "x": "216",
+        "y": "22"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[4]/text[1]",
+      "tag": "text",
+      "line": 255,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#6f787e",
+        "font-family": "Rubik, sans-serif",
+        "font-size": "11",
+        "text-anchor": "middle",
+        "x": "228",
+        "y": "126"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]",
+      "tag": "g",
+      "line": 258,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "transition-opacity hover:opacity-80 cursor-pointer"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/rect[1]",
+      "tag": "rect",
+      "line": 260,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#7dd3fc",
+        "fill-opacity": "0.22",
+        "height": "130",
+        "rx": "6",
+        "width": "36",
+        "x": "274",
+        "y": "4"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/rect[2]",
+      "tag": "rect",
+      "line": 261,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#006686",
+        "height": "42",
+        "rx": "4",
+        "width": "24",
+        "x": "280",
+        "y": "56"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/rect[3]",
+      "tag": "rect",
+      "line": 262,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#ba1a1a",
+        "height": "12",
+        "rx": "4",
+        "width": "24",
+        "x": "280",
+        "y": "42"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/text[1]",
+      "tag": "text",
+      "line": 263,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#006686",
+        "font-family": "Rubik, sans-serif",
+        "font-size": "11",
+        "font-weight": "600",
+        "text-anchor": "middle",
+        "x": "292",
+        "y": "126"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/rect[4]",
+      "tag": "rect",
+      "line": 265,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#bae6ff",
+        "height": "16",
+        "rx": "4",
+        "width": "44",
+        "x": "270",
+        "y": "18"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/svg[1]/g[5]/text[2]",
+      "tag": "text",
+      "line": 266,
+      "hidden_initially": false,
+      "attributes": {
+        "fill": "#005b78",
+        "font-family": "Rubik, sans-serif",
+        "font-size": "9",
+        "font-weight": "600",
+        "text-anchor": "middle",
+        "x": "292",
+        "y": "30"
+      }
+    }
+  ],
+  "source_comments": [
+    {
+      "line": 114,
+      "text": "Friendly Greeting Banner"
+    },
+    {
+      "line": 132,
+      "text": "Energy Lens Card"
+    },
+    {
+      "line": 141,
+      "text": "Dual Metric Highlights"
+    },
+    {
+      "line": 160,
+      "text": "Dual Bar Meter"
+    },
+    {
+      "line": 174,
+      "text": "Top Saving Move Card"
+    },
+    {
+      "line": 206,
+      "text": "Energy Trends Section"
+    },
+    {
+      "line": 213,
+      "text": "Tab Switcher"
+    },
+    {
+      "line": 216,
+      "text": "Active Summary"
+    },
+    {
+      "line": 226,
+      "text": "Inline SVG Split Bar Chart"
+    },
+    {
+      "line": 229,
+      "text": "Grid lines"
+    },
+    {
+      "line": 233,
+      "text": "Mon: Total $4.20 (Waste: 1.00, Useful: 3.20)"
+    },
+    {
+      "line": 239,
+      "text": "Tue: Total $3.80 (Waste: 0.80, Useful: 3.00)"
+    },
+    {
+      "line": 245,
+      "text": "Wed: Total $5.10 (Waste: 1.30, Useful: 3.80)"
+    },
+    {
+      "line": 251,
+      "text": "Thu: Total $4.60 (Waste: 0.90, Useful: 3.70)"
+    },
+    {
+      "line": 257,
+      "text": "Today: Total $3.40 (Waste: 0.90, Useful: 2.50) Highlighted"
+    },
+    {
+      "line": 259,
+      "text": "Active day halo"
+    },
+    {
+      "line": 264,
+      "text": "Current value bubble"
+    },
+    {
+      "line": 281,
+      "text": "Quick Ask Interactive Card"
+    },
+    {
+      "line": 287,
+      "text": "Suggested Question Pill Button"
+    }
+  ],
+  "initial_states": []
+}

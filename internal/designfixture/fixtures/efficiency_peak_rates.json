@@ -1,0 +1,814 @@
+{
+  "fixture_revision": "mobile_design_2026_10_06_v1",
+  "approval_scope": "internal_baseline_only_pending_owner_approval_for_backend_use",
+  "page": "efficiency_peak_rates",
+  "source": {
+    "path": "energylens-mobile/assets/design_pages/efficiency_peak_rates/code.html",
+    "sha256": "ea34c766ce79b008b8783784eae7475d8c04f08ac542eed7e52b2f8c6a34e70e"
+  },
+  "ordered_text_segments": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 132,
+      "text": "bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[1]",
+      "line": 136,
+      "text": "The Miller Home",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[2]",
+      "line": 137,
+      "text": "expand_more",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 139,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 155,
+      "text": "insights",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[1]/h1[1]",
+      "line": 155,
+      "text": "Efficiency Insights",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/span[1]",
+      "line": 156,
+      "text": "Monthly Overview",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/h3[1]/span[1]",
+      "line": 163,
+      "text": "Identified Opportunity",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[1]/h2[1]/span[1]",
+      "line": 164,
+      "text": "$18.60",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[2]/div[2]/span[1]",
+      "line": 166,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/p[1]",
+      "line": 168,
+      "text": "Identified monthly waste across 4 routine patterns. Recoverable with minor adjustments.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "line": 173,
+      "text": "home",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[1]/div[1]/span[2]",
+      "line": 173,
+      "text": "Monthly Spend",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[1]/p[1]",
+      "line": 173,
+      "text": "$142.30",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/div[1]/span[1]",
+      "line": 174,
+      "text": "eco",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/div[1]/span[2]",
+      "line": 174,
+      "text": "Optimal Base",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/div[3]/div[2]/p[1]",
+      "line": 174,
+      "text": "$123.70",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/span[1]",
+      "line": 179,
+      "text": "water_loss",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/h3[1]",
+      "line": 179,
+      "text": "Avoidable Leak Breakdown",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/span[1]",
+      "line": 179,
+      "text": "13% of Bill",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/span[2]",
+      "line": 191,
+      "text": "Night",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[1]/span[3]",
+      "line": 192,
+      "text": "$3.30",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/span[2]",
+      "line": 196,
+      "text": "Away",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/span[3]",
+      "line": 197,
+      "text": "$4.20",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[3]/span[2]",
+      "line": 201,
+      "text": "Peak",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[3]/span[3]",
+      "line": 202,
+      "text": "$4.70",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[4]/span[2]",
+      "line": 206,
+      "text": "Habits",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[4]/span[3]",
+      "line": 207,
+      "text": "$6.40",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/h3[1]",
+      "line": 213,
+      "text": "Usage Cost by",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/span[1]/span[1]",
+      "line": 213,
+      "text": "touch_app",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/span[1]",
+      "line": 213,
+      "text": "Select category",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[1]/span[1]",
+      "line": 214,
+      "text": "bedtime",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[1]/span[2]",
+      "line": 214,
+      "text": "Night",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[2]/span[1]",
+      "line": 214,
+      "text": "flight_takeoff",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[2]/span[2]",
+      "line": 214,
+      "text": "Away",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[3]/span[1]",
+      "line": 214,
+      "text": "electric_meter",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[3]/span[2]",
+      "line": 214,
+      "text": "Peak Rates",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[4]/span[1]",
+      "line": 214,
+      "text": "tune",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[4]/span[2]",
+      "line": 214,
+      "text": "Habits",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 217,
+      "text": "electric_meter",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/div[1]/div[2]/h3[1]",
+      "line": 217,
+      "text": "Peak Pricing Windows (4 PM - 8 PM)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/div[1]/div[2]/p[1]",
+      "line": 217,
+      "text": "Grid surge pricing windows (Weekdays)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[1]/span[1]",
+      "line": 217,
+      "text": "$4.70",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/span[1]",
+      "line": 217,
+      "text": "Active Window: 4:00 PM – 8:00 PM (Weekdays)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[1]/span[2]",
+      "line": 217,
+      "text": "Tier 3 Surcharge",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 217,
+      "text": "trending_up",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[1]/div[1]/span[2]",
+      "line": 217,
+      "text": "Peak Tariff Drain",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[1]/p[1]",
+      "line": 217,
+      "text": "$4.70",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[1]/p[1]/span[1]",
+      "line": 217,
+      "text": "waste",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[2]/div[1]/span[1]",
+      "line": 217,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[2]/div[1]/span[2]",
+      "line": 217,
+      "text": "Off-Peak Shift",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[2]/p[1]",
+      "line": 217,
+      "text": "$3.90",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[2]/div[2]/div[2]/p[1]/span[1]",
+      "line": 217,
+      "text": "recoverable",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[1]/span[1]",
+      "line": 217,
+      "text": "ac_unit",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 217,
+      "text": "Central AC High-Heat Strain",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 217,
+      "text": "thermostat",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/div[1]/div[2]/span[1]",
+      "line": 217,
+      "text": "Heavy Compressor Demand",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[1]/span[1]",
+      "line": 217,
+      "text": "+$1.80 / event",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[2]/span[1]",
+      "line": 217,
+      "text": "tips_and_updates",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[3]/div[2]/p[1]",
+      "line": 217,
+      "text": "Pre-cool living spaces by 2°F 45 minutes before 4 PM peak tariff, then let temperature float.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[1]/div[1]/div[1]/span[1]",
+      "line": 217,
+      "text": "ev_station",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 217,
+      "text": "Dishwasher & EV Charger",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 217,
+      "text": "schedule",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[1]/div[1]/div[2]/span[1]",
+      "line": 217,
+      "text": "Running in Tier 3 Window",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[1]/span[1]",
+      "line": 217,
+      "text": "$1.05 / cycle",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[2]/span[1]",
+      "line": 217,
+      "text": "tips_and_updates",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[4]/div[2]/p[1]",
+      "line": 217,
+      "text": "Shift heavy wash and vehicle charging cycles past 8:30 PM to use Tier 1 low-cost rates.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[1]/div[1]/div[1]/span[1]",
+      "line": 217,
+      "text": "local_laundry_service",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[1]/div[1]/div[2]/h4[1]",
+      "line": 217,
+      "text": "Electric Clothes Dryer",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[1]/div[1]/div[2]/span[1]/span[1]",
+      "line": 217,
+      "text": "power",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[1]/div[1]/div[2]/span[1]",
+      "line": 217,
+      "text": "High Resistance Element",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[1]/span[1]",
+      "line": 217,
+      "text": "+$1.85",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[2]/span[1]",
+      "line": 217,
+      "text": "tips_and_updates",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/section[1]/div[5]/div[2]/p[1]",
+      "line": 217,
+      "text": "Running laundry in mid-morning or late evening avoids the peak surcharge.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[1]",
+      "line": 266,
+      "text": "space_dashboard",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[2]",
+      "line": 266,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[1]",
+      "line": 266,
+      "text": "devices",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[2]",
+      "line": 266,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[1]",
+      "line": 266,
+      "text": "energy_savings_leaf",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[2]",
+      "line": 266,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[1]",
+      "line": 266,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[2]",
+      "line": 266,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[1]",
+      "line": 266,
+      "text": "settings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
+      "line": 266,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    }
+  ],
+  "controls": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 135,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex items-center gap-space-xs text-left group",
+        "type": "button"
+      },
+      "text": "The Miller Home expand_more"
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 143,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-11 h-11 flex items-center justify-center",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": ""
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[1]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium",
+        "data-tab-target": "night",
+        "type": "button"
+      },
+      "text": "bedtime Night"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[2]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium",
+        "data-tab-target": "away",
+        "type": "button"
+      },
+      "text": "flight_takeoff Away"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[3]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface bg-surface-container-lowest shadow-sm font-semibold",
+        "data-tab-target": "peak",
+        "type": "button"
+      },
+      "text": "electric_meter Peak Rates"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/button[4]",
+      "tag": "button",
+      "line": 214,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium",
+        "data-tab-target": "habits",
+        "type": "button"
+      },
+      "text": "tune Habits"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]",
+      "tag": "a",
+      "line": 266,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "dashboard",
+        "href": "#"
+      },
+      "text": "space_dashboard Dashboard"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]",
+      "tag": "a",
+      "line": 266,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "devices",
+        "href": "#"
+      },
+      "text": "devices Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]",
+      "tag": "a",
+      "line": 266,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-current": "page",
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-primary font-semibold",
+        "data-path": "efficiency",
+        "href": "#"
+      },
+      "text": "energy_savings_leaf Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]",
+      "tag": "a",
+      "line": 266,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "savings Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]",
+      "tag": "a",
+      "line": 266,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "settings Settings"
+    }
+  ],
+  "media": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]/img[1]",
+      "tag": "img",
+      "line": 144,
+      "hidden_initially": false,
+      "attributes": {
+        "alt": "Profile",
+        "class": "w-8 h-8 rounded-full object-cover ring-1 ring-primary/40",
+        "src": "https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"
+      }
+    }
+  ],
+  "svg_elements": [],
+  "source_comments": [
+    {
+      "line": 126,
+      "text": "Fixed Header"
+    },
+    {
+      "line": 150,
+      "text": "Main Content"
+    },
+    {
+      "line": 153,
+      "text": "Top Insight Badge & Sub-header"
+    },
+    {
+      "line": 158,
+      "text": "Hero Card: Identified Opportunity $18.60"
+    },
+    {
+      "line": 171,
+      "text": "2-Column Metrics"
+    },
+    {
+      "line": 177,
+      "text": "Avoidable Leak Breakdown Section"
+    },
+    {
+      "line": 180,
+      "text": "Segmented Multi-color Bar"
+    },
+    {
+      "line": 187,
+      "text": "Segment Legend"
+    },
+    {
+      "line": 211,
+      "text": "Segmented Tabs Navigation"
+    },
+    {
+      "line": 216,
+      "text": "Tab Panel 1: Night Hours (Active by default)"
+    },
+    {
+      "line": 218,
+      "text": "Tab Panel 2: Away (Hidden by default)"
+    },
+    {
+      "line": 219,
+      "text": "Tab Panel 3: Peak Rates (Hidden by default)"
+    },
+    {
+      "line": 220,
+      "text": "Tab Panel 4: Habits (Hidden by default)"
+    },
+    {
+      "line": 221,
+      "text": "Quick Action Footer Card"
+    },
+    {
+      "line": 223,
+      "text": "Script for Tab Switching"
+    },
+    {
+      "line": 265,
+      "text": "Bottom Navigation Bar (5 tabs)"
+    }
+  ],
+  "initial_states": []
+}

@@ -1,0 +1,1926 @@
+{
+  "fixture_revision": "mobile_design_2026_10_06_v1",
+  "approval_scope": "internal_baseline_only_pending_owner_approval_for_backend_use",
+  "page": "settings",
+  "source": {
+    "path": "energylens-mobile/assets/design_pages/settings/code.html",
+    "sha256": "01408da998500ed02df4a40afac29eceb710e081a879a73a61697d479a2ffc8a"
+  },
+  "ordered_text_segments": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[1]/span[1]",
+      "line": 111,
+      "text": "bolt",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[1]",
+      "line": 111,
+      "text": "The Miller Home",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]/span[2]",
+      "line": 111,
+      "text": "expand_more",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 111,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[1]/h1[1]",
+      "line": 114,
+      "text": "Manage Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[1]/p[1]",
+      "line": 115,
+      "text": "Profile, device setup, and home energy intelligence",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[1]/div[2]/span[1]",
+      "line": 118,
+      "text": "tune",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/button[1]/span[1]",
+      "line": 123,
+      "text": "badge",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/button[1]/span[2]",
+      "line": 124,
+      "text": "Profile & Reports",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/button[2]/span[1]",
+      "line": 127,
+      "text": "hub",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/button[2]/span[2]",
+      "line": 128,
+      "text": "Manage Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/button[1]/span[1]",
+      "line": 138,
+      "text": "photo_camera",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[2]/h2[1]",
+      "line": 142,
+      "text": "Alex Miller",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[2]/p[1]",
+      "line": 144,
+      "text": "Primary Home Administrator",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 155,
+      "text": "cottage",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/div[1]/div[2]/p[1]",
+      "line": 158,
+      "text": "Home Name",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/div[1]/div[2]/p[2]",
+      "line": 159,
+      "text": "The Miller Home",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/button[1]/span[1]",
+      "line": 163,
+      "text": "Edit",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 169,
+      "text": "person",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/div[2]/p[1]",
+      "line": 172,
+      "text": "Account Owner",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/div[1]/div[2]/p[2]",
+      "line": 173,
+      "text": "Alex Miller",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/button[1]/span[1]",
+      "line": 177,
+      "text": "Edit",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "line": 183,
+      "text": "alternate_email",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[3]/div[1]/div[2]/p[1]",
+      "line": 186,
+      "text": "Email ID",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[3]/div[1]/div[2]/p[2]",
+      "line": 187,
+      "text": "alex.miller@gmail.com",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[3]/button[1]/span[1]",
+      "line": 191,
+      "text": "Edit",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[4]/div[1]/div[1]/span[1]",
+      "line": 197,
+      "text": "location_on",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[4]/div[1]/div[2]/p[1]",
+      "line": 200,
+      "text": "Zipcode (Tariff Zone)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[4]/div[1]/div[2]/p[2]",
+      "line": 201,
+      "text": "94107 (San Francisco CA)",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[4]/button[1]/span[1]",
+      "line": 205,
+      "text": "Edit",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[5]/div[1]/div[1]/span[1]",
+      "line": 211,
+      "text": "lock",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[5]/div[1]/div[2]/p[1]",
+      "line": 214,
+      "text": "Password",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[5]/div[1]/div[2]/p[2]",
+      "line": 215,
+      "text": "••••••••••••",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[5]/button[1]/span[1]",
+      "line": 219,
+      "text": "Change",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 228,
+      "text": "mark_email_read",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/div[1]/h3[1]",
+      "line": 229,
+      "text": "Monthly Energy Ledger",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/div[1]/div[1]/p[1]",
+      "line": 231,
+      "text": "Email report with useful cost, wastage, trends and breakdowns.",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/button[1]/span[1]",
+      "line": 236,
+      "text": "forward_to_inbox",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/button[1]/span[2]",
+      "line": 237,
+      "text": "✉ Email Report Now",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/button[1]/span[1]",
+      "line": 242,
+      "text": "logout",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/button[1]/span[2]",
+      "line": 243,
+      "text": "Sign Out",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/h2[1]",
+      "line": 251,
+      "text": "Pair & Onboard Equipment",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/span[1]",
+      "line": 253,
+      "text": "Mesh Listening",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[1]/span[1]",
+      "line": 260,
+      "text": "radar",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[2]/p[1]",
+      "line": 263,
+      "text": "Auto Scan",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[2]/p[2]",
+      "line": 264,
+      "text": "Real-time",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[1]/span[1]",
+      "line": 269,
+      "text": "keyboard",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[2]/p[1]",
+      "line": 272,
+      "text": "Type In",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[2]/p[2]",
+      "line": 273,
+      "text": "Manual",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[1]/span[1]",
+      "line": 278,
+      "text": "document_scanner",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[2]/p[1]",
+      "line": 281,
+      "text": "Snap Photo",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[2]/p[2]",
+      "line": 282,
+      "text": "Model Tag",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/div[1]/span[1]",
+      "line": 290,
+      "text": "wifi_find",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/div[1]/h2[1]",
+      "line": 291,
+      "text": "Discovered Devices on Circuit",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/span[1]",
+      "line": 293,
+      "text": "3 New",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 299,
+      "text": "kitchen",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[2]/p[1]",
+      "line": 302,
+      "text": "LG Smart Refrigerator",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[2]/p[2]",
+      "line": 303,
+      "text": "Circuit #3 • 142W signature match",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/button[1]",
+      "line": 306,
+      "text": "Save Device",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 313,
+      "text": "thermostat",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[2]/p[1]",
+      "line": 316,
+      "text": "Ecobee Smart Thermostat",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[2]/p[2]",
+      "line": 317,
+      "text": "Wi-Fi Mesh • Eco-profile synced",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/button[1]",
+      "line": 320,
+      "text": "Save Device",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "line": 327,
+      "text": "tv",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[2]/p[1]",
+      "line": 330,
+      "text": "Samsung Frame TV",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[2]/p[2]",
+      "line": 331,
+      "text": "Circuit #7 • Standby vampire load",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/button[1]",
+      "line": 334,
+      "text": "Save Device",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/h2[1]",
+      "line": 342,
+      "text": "Configured Devices (",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/h2[1]/span[1]",
+      "line": 342,
+      "text": "4",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/h2[1]",
+      "line": 342,
+      "text": ")",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/span[1]",
+      "line": 343,
+      "text": "Continuous telemetry",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "line": 349,
+      "text": "inventory_2",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[2]/p[1]",
+      "line": 352,
+      "text": "Kitchen Refrigerator",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[2]/p[2]",
+      "line": 353,
+      "text": "Main Panel • Inverter Linear Base",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/button[1]/span[1]",
+      "line": 357,
+      "text": "delete",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "line": 363,
+      "text": "desktop_windows",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[2]/p[1]",
+      "line": 366,
+      "text": "Study Gaming PC",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[2]/p[2]",
+      "line": 367,
+      "text": "Subpanel A • RTX Workstation",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/button[1]/span[1]",
+      "line": 371,
+      "text": "delete",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "line": 377,
+      "text": "speaker",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[2]/p[1]",
+      "line": 380,
+      "text": "Living Room Soundbar",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[2]/p[2]",
+      "line": 381,
+      "text": "Subpanel B • Smart Arc Bar",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/button[1]/span[1]",
+      "line": 385,
+      "text": "delete",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[1]/span[1]",
+      "line": 391,
+      "text": "hvac",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[2]/p[1]",
+      "line": 394,
+      "text": "Central Heat Pump",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[2]/p[2]",
+      "line": 395,
+      "text": "240V Heavy Circuit • Variable Speed",
+      "hidden_initially": true,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/button[1]/span[1]",
+      "line": 399,
+      "text": "delete",
+      "hidden_initially": true,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[1]",
+      "line": 476,
+      "text": "space_dashboard",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]/span[2]",
+      "line": 476,
+      "text": "Dashboard",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[1]",
+      "line": 476,
+      "text": "devices",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]/span[2]",
+      "line": 476,
+      "text": "Devices",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[1]",
+      "line": 476,
+      "text": "energy_savings_leaf",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]/span[2]",
+      "line": 476,
+      "text": "Efficiency",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[1]",
+      "line": 476,
+      "text": "savings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]/span[2]",
+      "line": 476,
+      "text": "Tips",
+      "hidden_initially": false,
+      "icon_glyph": false
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[1]",
+      "line": 476,
+      "text": "settings",
+      "hidden_initially": false,
+      "icon_glyph": true
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
+      "line": 476,
+      "text": "Settings",
+      "hidden_initially": false,
+      "icon_glyph": false
+    }
+  ],
+  "controls": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 111,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex items-center gap-space-xs text-left group",
+        "type": "button"
+      },
+      "text": "The Miller Home expand_more"
+    },
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]",
+      "tag": "a",
+      "line": 111,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-11 h-11 flex items-center justify-center",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": ""
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 122,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex-1 py-2 px-3 rounded-lg text-center font-bold text-sm transition-all duration-200 bg-white text-slate-900 shadow-sm flex items-center justify-center gap-1.5",
+        "id": "tab-profile-btn",
+        "onclick": "switchSettingsTab('profile')",
+        "type": "button"
+      },
+      "text": "badge Profile & Reports"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[2]/button[2]",
+      "tag": "button",
+      "line": 126,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex-1 py-2 px-3 rounded-lg text-center font-medium text-sm transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1.5",
+        "id": "tab-devices-btn",
+        "onclick": "switchSettingsTab('devices')",
+        "type": "button"
+      },
+      "text": "hub Manage Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/button[1]",
+      "tag": "button",
+      "line": 137,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shadow-sm",
+        "type": "button"
+      },
+      "text": "photo_camera"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 162,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40 text-primary font-label-md text-label-md font-medium hover:bg-surface-container transition-colors flex items-center gap-1 shadow-sm",
+        "type": "button"
+      },
+      "text": "Edit"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[2]/button[1]",
+      "tag": "button",
+      "line": 176,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40 text-primary font-label-md text-label-md font-medium hover:bg-surface-container transition-colors flex items-center gap-1 shadow-sm",
+        "type": "button"
+      },
+      "text": "Edit"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[3]/button[1]",
+      "tag": "button",
+      "line": 190,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40 text-primary font-label-md text-label-md font-medium hover:bg-surface-container transition-colors flex items-center gap-1 shadow-sm",
+        "type": "button"
+      },
+      "text": "Edit"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[4]/button[1]",
+      "tag": "button",
+      "line": 204,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40 text-primary font-label-md text-label-md font-medium hover:bg-surface-container transition-colors flex items-center gap-1 shadow-sm",
+        "type": "button"
+      },
+      "text": "Edit"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[2]/div[5]/button[1]",
+      "tag": "button",
+      "line": 218,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40 text-primary font-label-md text-label-md font-medium hover:bg-surface-container transition-colors flex items-center gap-1 shadow-sm",
+        "type": "button"
+      },
+      "text": "Change"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[2]/button[1]",
+      "tag": "button",
+      "line": 235,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-full py-3 px-4 rounded-xl bg-primary-container text-on-primary-container font-label-md text-label-md font-semibold shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-2 active:scale-[0.99]",
+        "id": "email-btn",
+        "onclick": "sendReport()",
+        "type": "button"
+      },
+      "text": "forward_to_inbox ✉ Email Report Now"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/button[1]",
+      "tag": "button",
+      "line": 241,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "px-4 py-2 text-error hover:bg-error-container/20 rounded-lg transition-colors font-label-md text-label-md font-medium flex items-center gap-2",
+        "type": "button"
+      },
+      "text": "logout Sign Out"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 258,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest hover:bg-surface-container-low p-3 rounded-xl flex flex-col items-center text-center gap-2 transition-all shadow-sm border border-outline-variant/30 group",
+        "type": "button"
+      },
+      "text": "radar Auto Scan Real-time"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]",
+      "tag": "button",
+      "line": 267,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest hover:bg-surface-container-low p-3 rounded-xl flex flex-col items-center text-center gap-2 transition-all shadow-sm border border-outline-variant/30 group",
+        "type": "button"
+      },
+      "text": "keyboard Type In Manual"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]",
+      "tag": "button",
+      "line": 276,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest hover:bg-surface-container-low p-3 rounded-xl flex flex-col items-center text-center gap-2 transition-all shadow-sm border border-outline-variant/30 group",
+        "type": "button"
+      },
+      "text": "document_scanner Snap Photo Model Tag"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 306,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all",
+        "onclick": "saveDevice(this, 'LG Smart Refrigerator')",
+        "type": "button"
+      },
+      "text": "Save Device"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/button[1]",
+      "tag": "button",
+      "line": 320,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all",
+        "onclick": "saveDevice(this, 'Ecobee Smart Thermostat')",
+        "type": "button"
+      },
+      "text": "Save Device"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/button[1]",
+      "tag": "button",
+      "line": 334,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all",
+        "onclick": "saveDevice(this, 'Samsung Frame TV')",
+        "type": "button"
+      },
+      "text": "Save Device"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 356,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Kitchen Refrigerator",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      },
+      "text": "delete"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/button[1]",
+      "tag": "button",
+      "line": 370,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Study Gaming PC",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      },
+      "text": "delete"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/button[1]",
+      "tag": "button",
+      "line": 384,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Living Room Soundbar",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      },
+      "text": "delete"
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/button[1]",
+      "tag": "button",
+      "line": 398,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Central Heat Pump",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      },
+      "text": "delete"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[1]",
+      "tag": "a",
+      "line": 476,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 font-semibold text-xs text-slate-500 hover:text-slate-800 transition-colors",
+        "data-path": "dashboard",
+        "href": "#"
+      },
+      "text": "space_dashboard Dashboard"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[2]",
+      "tag": "a",
+      "line": 476,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 font-semibold text-xs text-slate-500 hover:text-slate-800 transition-colors",
+        "data-path": "devices",
+        "href": "#"
+      },
+      "text": "devices Devices"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[3]",
+      "tag": "a",
+      "line": 476,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 font-semibold text-xs text-slate-500 hover:text-slate-800 transition-colors",
+        "data-path": "efficiency",
+        "href": "#"
+      },
+      "text": "energy_savings_leaf Efficiency"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[4]",
+      "tag": "a",
+      "line": 476,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 font-semibold text-xs text-slate-500 hover:text-slate-800 transition-colors",
+        "data-path": "perks-and-tips",
+        "href": "#"
+      },
+      "text": "savings Tips"
+    },
+    {
+      "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]",
+      "tag": "a",
+      "line": 476,
+      "hidden_initially": false,
+      "attributes": {
+        "aria-current": "page",
+        "class": "flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors font-bold text-xs text-sky-600",
+        "data-path": "settings",
+        "href": "#"
+      },
+      "text": "settings Settings"
+    }
+  ],
+  "media": [
+    {
+      "path": "/html[1]/body[1]/header[1]/div[1]/div[1]/div[2]/a[1]/img[1]",
+      "tag": "img",
+      "line": 111,
+      "hidden_initially": false,
+      "attributes": {
+        "alt": "Profile",
+        "class": "w-8 h-8 rounded-full object-cover ring-2 ring-primary/20",
+        "src": "https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[1]/div[1]/div[1]/div[1]/img[1]",
+      "tag": "img",
+      "line": 136,
+      "hidden_initially": false,
+      "attributes": {
+        "class": "w-14 h-14 rounded-full object-cover shadow-sm ring-2 ring-surface-container",
+        "data-alt": "Close up warm lifestyle portrait of Alex Miller smiling gently in a naturally lit smart eco home office with soft cyan ambient lights and potted plants",
+        "src": "https://lh3.googleusercontent.com/aida-public/AB6AXuAKGKdzjvhobdUPmhVxxX5Beg2CBhIp7dWEbTkVs-wiQRAlwuXrTNsxW6LJlN8Hs8X7iEzrZJsucfZQVt6k9gJon9syUStTzRn9ZTOJt56DiB2lCsaLfNXX4iAiQAqH7dR8AJKzgvkDSiq6OGUtDyjhpsQv0bWjlvD1NBwQC14wB4FQWwh-lbGSKUYUVVn-Q-7JbmmEGFFOTyvmckoANGEjU8aumD4cLiaX6sG0lLY"
+      }
+    }
+  ],
+  "svg_elements": [],
+  "source_comments": [],
+  "initial_states": [
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]",
+      "tag": "div",
+      "line": 248,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "hidden flex flex-col space-y-space-lg transition-opacity duration-200",
+        "id": "view-devices"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]",
+      "tag": "div",
+      "line": 249,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "space-y-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]",
+      "tag": "div",
+      "line": 250,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/h2[1]",
+      "tag": "h2",
+      "line": 251,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-body-md font-semibold text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 252,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-label-md text-primary font-semibold flex items-center gap-1"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[1]/span[1]/span[1]",
+      "tag": "span",
+      "line": 253,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-1.5 h-1.5 rounded-full bg-primary animate-pulse"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]",
+      "tag": "div",
+      "line": 257,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "grid grid-cols-3 gap-2.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]",
+      "tag": "button",
+      "line": 258,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest hover:bg-surface-container-low p-3 rounded-xl flex flex-col items-center text-center gap-2 transition-all shadow-sm border border-outline-variant/30 group",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[1]",
+      "tag": "div",
+      "line": 259,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-full bg-primary-container/40 text-primary flex items-center justify-center group-hover:scale-105 transition-transform"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 260,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[22px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[2]",
+      "tag": "div",
+      "line": 262,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 263,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 264,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]",
+      "tag": "button",
+      "line": 267,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest hover:bg-surface-container-low p-3 rounded-xl flex flex-col items-center text-center gap-2 transition-all shadow-sm border border-outline-variant/30 group",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[1]",
+      "tag": "div",
+      "line": 268,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-full bg-secondary-container text-secondary flex items-center justify-center group-hover:scale-105 transition-transform"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[1]/span[1]",
+      "tag": "span",
+      "line": 269,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[22px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[2]",
+      "tag": "div",
+      "line": 271,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[2]/p[1]",
+      "tag": "p",
+      "line": 272,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[2]/div[2]/p[2]",
+      "tag": "p",
+      "line": 273,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]",
+      "tag": "button",
+      "line": 276,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest hover:bg-surface-container-low p-3 rounded-xl flex flex-col items-center text-center gap-2 transition-all shadow-sm border border-outline-variant/30 group",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[1]",
+      "tag": "div",
+      "line": 277,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-10 h-10 rounded-full bg-tertiary-container text-tertiary flex items-center justify-center group-hover:scale-105 transition-transform"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[1]/span[1]",
+      "tag": "span",
+      "line": 278,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[22px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[2]",
+      "tag": "div",
+      "line": 280,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[2]/p[1]",
+      "tag": "p",
+      "line": 281,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-semibold text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[1]/div[2]/button[3]/div[2]/p[2]",
+      "tag": "p",
+      "line": 282,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]",
+      "tag": "div",
+      "line": 287,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "space-y-space-sm"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]",
+      "tag": "div",
+      "line": 288,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 289,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-1.5"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 290,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-primary text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/div[1]/h2[1]",
+      "tag": "h2",
+      "line": 291,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-body-md font-semibold text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[1]/span[1]",
+      "tag": "span",
+      "line": 293,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-label-md px-2 py-0.5 rounded-full bg-primary-container/40 text-primary font-semibold"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]",
+      "tag": "div",
+      "line": 295,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest p-space-sm rounded-xl space-y-2 shadow-sm border border-outline-variant/30"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]",
+      "tag": "div",
+      "line": 296,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/70 border border-outline-variant/20 flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 297,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 298,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 299,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 301,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 302,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 303,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 306,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all",
+        "onclick": "saveDevice(this, 'LG Smart Refrigerator')",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]",
+      "tag": "div",
+      "line": 310,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/70 border border-outline-variant/20 flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]",
+      "tag": "div",
+      "line": 311,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 312,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 313,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[2]",
+      "tag": "div",
+      "line": 315,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 316,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 317,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[2]/button[1]",
+      "tag": "button",
+      "line": 320,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all",
+        "onclick": "saveDevice(this, 'Ecobee Smart Thermostat')",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]",
+      "tag": "div",
+      "line": 324,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/70 border border-outline-variant/20 flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]",
+      "tag": "div",
+      "line": 325,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[1]",
+      "tag": "div",
+      "line": 326,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 327,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[2]",
+      "tag": "div",
+      "line": 329,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 330,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 331,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[2]/div[2]/div[3]/button[1]",
+      "tag": "button",
+      "line": 334,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all",
+        "onclick": "saveDevice(this, 'Samsung Frame TV')",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]",
+      "tag": "div",
+      "line": 340,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "space-y-space-sm pb-6"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]",
+      "tag": "div",
+      "line": 341,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center justify-between"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/h2[1]",
+      "tag": "h2",
+      "line": 342,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-body-md font-semibold text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/h2[1]/span[1]",
+      "tag": "span",
+      "line": 342,
+      "hidden_initially": true,
+      "attributes": {
+        "id": "configured-count",
+        "class": ""
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[1]/span[1]",
+      "tag": "span",
+      "line": 343,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-label-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]",
+      "tag": "div",
+      "line": 345,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "bg-surface-container-lowest p-space-sm rounded-xl space-y-2 shadow-sm border border-outline-variant/30"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]",
+      "tag": "div",
+      "line": 346,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center justify-between group"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 347,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[1]",
+      "tag": "div",
+      "line": 348,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-secondary-container/40 flex items-center justify-center text-secondary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 349,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[2]",
+      "tag": "div",
+      "line": 351,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 352,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 353,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/button[1]",
+      "tag": "button",
+      "line": 356,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Kitchen Refrigerator",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[1]/button[1]/span[1]",
+      "tag": "span",
+      "line": 357,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]",
+      "tag": "div",
+      "line": 360,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center justify-between group"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]",
+      "tag": "div",
+      "line": 361,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[1]",
+      "tag": "div",
+      "line": 362,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-secondary-container/40 flex items-center justify-center text-secondary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 363,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[2]",
+      "tag": "div",
+      "line": 365,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 366,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 367,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/button[1]",
+      "tag": "button",
+      "line": 370,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Study Gaming PC",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[2]/button[1]/span[1]",
+      "tag": "span",
+      "line": 371,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]",
+      "tag": "div",
+      "line": 374,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center justify-between group"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]",
+      "tag": "div",
+      "line": 375,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[1]",
+      "tag": "div",
+      "line": 376,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-secondary-container/40 flex items-center justify-center text-secondary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 377,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[2]",
+      "tag": "div",
+      "line": 379,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 380,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 381,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/button[1]",
+      "tag": "button",
+      "line": 384,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Living Room Soundbar",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[3]/button[1]/span[1]",
+      "tag": "span",
+      "line": 385,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]",
+      "tag": "div",
+      "line": 388,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center justify-between group"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]",
+      "tag": "div",
+      "line": 389,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "flex items-center gap-3"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[1]",
+      "tag": "div",
+      "line": 390,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "w-9 h-9 rounded-lg bg-secondary-container/40 flex items-center justify-center text-secondary"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[1]/span[1]",
+      "tag": "span",
+      "line": 391,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[20px]"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[2]",
+      "tag": "div",
+      "line": 393,
+      "hidden_initially": true,
+      "attributes": {}
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[2]/p[1]",
+      "tag": "p",
+      "line": 394,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "font-label-md text-label-md font-medium text-on-surface"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/div[1]/div[2]/p[2]",
+      "tag": "p",
+      "line": 395,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "text-[11px] font-body-md text-on-surface-variant"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/button[1]",
+      "tag": "button",
+      "line": 398,
+      "hidden_initially": true,
+      "attributes": {
+        "aria-label": "Remove Central Heat Pump",
+        "class": "w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors",
+        "onclick": "removeDevice(this)",
+        "type": "button"
+      }
+    },
+    {
+      "path": "/html[1]/body[1]/main[1]/div[1]/div[4]/div[3]/div[2]/div[4]/button[1]/span[1]",
+      "tag": "span",
+      "line": 399,
+      "hidden_initially": true,
+      "attributes": {
+        "class": "material-symbols-outlined text-[18px]"
+      }
+    }
+  ]
+}

@@ -92,7 +92,9 @@ func (s Store) acceptEvent(ctx context.Context, tx pgx.Tx, hub, home string, epo
 	}
 	if e.Kind == "energy_interval" {
 		var id string
-		err = tx.QueryRow(ctx, `SELECT a.id FROM attachments a JOIN sensor_endpoints s ON s.id=a.sensor_id AND s.home_id=a.home_id WHERE a.id=$1 AND a.home_id=$2 AND a.sensor_id=$3 AND s.hub_id=$4 AND s.ownership_epoch=$5 AND a.started_at<=$6 AND (a.ended_at IS NULL OR a.ended_at>=$7)`, *e.AttachmentRevisionID, home, e.SensorID, hub, epoch, *e.Start, *e.End).Scan(&id)
+		// Hold the interval against concurrent archival or reassignment until
+		// the observation is committed. Both writers recheck its end boundary.
+		err = tx.QueryRow(ctx, `SELECT a.id FROM attachments a JOIN sensor_endpoints s ON s.id=a.sensor_id AND s.home_id=a.home_id WHERE a.id=$1 AND a.home_id=$2 AND a.sensor_id=$3 AND s.hub_id=$4 AND s.ownership_epoch=$5 AND a.started_at<=$6 AND (a.ended_at IS NULL OR a.ended_at>=$7) FOR SHARE OF a`, *e.AttachmentRevisionID, home, e.SensorID, hub, epoch, *e.Start, *e.End).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrReference
 		}
