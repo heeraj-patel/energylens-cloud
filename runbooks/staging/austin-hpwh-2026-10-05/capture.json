@@ -1,0 +1,15 @@
+{
+  "source_url": "https://austinenergy.com/energy-efficiency/rebates-incentives/residential/appliances-equipment/hp-water-heater",
+  "source_sha256": "e29da246600ce7d77c2e8750431c144e56de4f42997398a4d4b759c1f0d2a801",
+  "content_bytes": 157436,
+  "content_type": "text/html; charset=utf-8",
+  "http_status": 200,
+  "redirects": 0,
+  "captured_on": "2026-10-05",
+  "private_capture_path": "/Users/nik/.local/share/energylens/program-captures/austin-hpwh-2026-10-05/source.html",
+  "access_review": {
+    "robots_url": "https://austinenergy.com/robots.txt",
+    "policy_url": "https://austinenergy.com/about/company-profile/privacy-policy",
+    "finding": "Robots does not disallow the offer path. Austin Energy asserts copyright and limits unauthorized reuse; this one-time capture is private for internal staging review and is not in Git or published. Obtain an operator access determination before any recurring fetch or live import."
+  }
+}
