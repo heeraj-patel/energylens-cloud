@@ -30,9 +30,21 @@ func TestLocalPeriodDST(t *testing.T) {
 	if got := p.End.Sub(p.Start); got != 23*time.Hour {
 		t.Fatalf("spring day length = %v", got)
 	}
+	if got := len(makeBuckets(p, "hour", nil)); got != 23 {
+		t.Fatalf("spring hourly buckets = %d", got)
+	}
 	p = periodFor(time.Date(2026, 11, 1, 18, 0, 0, 0, time.UTC), loc, "hour")
 	if got := p.End.Sub(p.Start); got != 25*time.Hour {
 		t.Fatalf("fall day length = %v", got)
+	}
+	buckets := makeBuckets(p, "hour", nil)
+	if len(buckets) != 25 {
+		t.Fatalf("fall hourly buckets = %d", len(buckets))
+	}
+	for i := 1; i < len(buckets); i++ {
+		if !buckets[i-1].End.Equal(buckets[i].Start) || buckets[i].End.Sub(buckets[i].Start) != time.Hour {
+			t.Fatalf("DST buckets are discontinuous at %d", i)
+		}
 	}
 }
 
@@ -423,6 +435,40 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if err != nil || latestID == "" || latestRevision != 1 || selected != nil {
 		t.Fatalf("expired tariff was selected at exact 60-day boundary: id=%q revision=%d tariff=%+v err=%v", latestID, latestRevision, selected, err)
 	}
+	// A tariff that ended before the read can still conflict with a current
+	// tariff over the measured interval. Adjacent half-open intervals do not.
+	for _, test := range []struct {
+		name string
+		end  time.Time
+		want bool
+	}{
+		{"overlapping historical revision", end.Add(time.Minute), false},
+		{"adjacent historical revision", start, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tariffHome, createErr := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: test.name, Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
+			if createErr != nil {
+				t.Fatal(createErr)
+			}
+			for revision, dates := range []struct{ from, to time.Time }{
+				{now.Add(-24 * time.Hour), now.Add(time.Hour)},
+				{start.Add(-time.Hour), test.end},
+			} {
+				if _, createErr = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from,effective_to) VALUES($1,$2,'electricity',0.20,'kWh','USD','user_tariff','reviewed bill',$3,false,$4,$5)`, tariffHome.ID, revision+1, now.Add(-24*time.Hour), dates.from, dates.to); createErr != nil {
+					t.Fatal(createErr)
+				}
+			}
+			readTx, readErr := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			_, _, rate, readErr := readMarginalTariff(ctx, readTx, tariffHome.ID, now, items)
+			_ = readTx.Rollback(ctx)
+			if readErr != nil || (rate != nil) != test.want {
+				t.Fatalf("selected rate = %+v, want selection %v: %v", rate, test.want, readErr)
+			}
+		})
+	}
 	if code, _ := get("/v1/homes/"+home.ID+"/energy-trends?granularity=invalid", "owner"); code != 400 {
 		t.Fatalf("invalid granularity: %d", code)
 	}
@@ -430,5 +476,8 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	code, stale := get(dash, "owner")
 	if code != 200 || stale["totals"].(map[string]any)["energy"] != nil || stale["as_of"] != nil {
 		t.Fatalf("prior-day evidence leaked into new period: %d %+v", code, stale)
+	}
+	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "household" || replaced["totals"].(map[string]any)["energy"] != nil {
+		t.Fatalf("historical evidence restored sample mode: %d %+v", code, replaced)
 	}
 }

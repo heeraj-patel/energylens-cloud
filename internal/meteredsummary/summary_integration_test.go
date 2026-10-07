@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,10 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	if wSample.Code != 200 || wSample.Header().Get("X-EnergyLens-Data-Mode") != "sample" || wSample.Header().Get("X-EnergyLens-Fixture-Revision") != "synthetic_household_v1" || wSample.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("sample response: %d %s", wSample.Code, wSample.Body.String())
 	}
+	sampleRevision := wSample.Header().Get("X-EnergyLens-Evidence-Revision")
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(sampleRevision) || sampleRevision == "v1-0" || sampleRevision != sampleRequest(owner, samplePath).Header().Get("X-EnergyLens-Evidence-Revision") {
+		t.Fatalf("unstable or unsafe sample evidence revision: %q", sampleRevision)
+	}
 	// The two existing routes use the same allowlist and fixture revision, while
 	// real appliance history suppresses fallback for both route families.
 	listSample := sampleRequest(owner, "/homes/"+emptyHome+"/appliances/")
@@ -160,16 +165,42 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	if e = json.Unmarshal(wSample.Body.Bytes(), &sampleBody); e != nil || sampleBody.Granularity != "day" || len(sampleBody.Rows) != 1 || sampleBody.NextCursor != nil || sampleBody.Rows[0]["status"] != "no_intervals" || sampleBody.Rows[0]["energy_wh"] != nil {
 		t.Fatalf("sample body: %+v, %v", sampleBody, e)
 	}
-	if w := sampleRequest("", samplePath); w.Code != 401 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+	if sampleBody.Rows[0]["covered_seconds"] != nil || sampleBody.Rows[0]["interval_count"] != float64(0) || sampleBody.Rows[0]["allocation_method"] != "none" {
+		t.Fatalf("sample claimed meter coverage: %+v", sampleBody.Rows[0])
+	}
+	for _, appliance := range applianceSampleBody.Appliances {
+		if appliance["home_id"] != emptyHome {
+			t.Fatalf("sample appliance crossed home: %+v", appliance)
+		}
+		id, ok := appliance["id"].(string)
+		if !ok {
+			t.Fatalf("sample appliance missing ID: %+v", appliance)
+		}
+		w := sampleRequest(owner, "/homes/"+emptyHome+"/appliances/"+id)
+		if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" {
+			t.Fatalf("sample detail did not resolve inventory ID: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if w := sampleRequest("", samplePath); w.Code != 401 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get("X-EnergyLens-Evidence-Revision") != "" {
 		t.Fatalf("sample masked authentication: %d", w.Code)
 	}
-	if w := sampleRequest(other, samplePath); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+	if w := sampleRequest(other, samplePath); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get("X-EnergyLens-Evidence-Revision") != "" {
 		t.Fatalf("sample crossed owner: %d", w.Code)
 	}
 	if w := sampleRequest(other, "/homes/"+emptyHome+"/appliances/"); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
 		t.Fatalf("appliance sample crossed owner: %d", w.Code)
 	}
-	if w := sampleRequest(owner, samplePath+"&sensor_id=30000000-0000-4000-8000-000000000001"); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+	delete(sample.AllowedHomes, emptyHome)
+	delete(inventorySample.AllowedHomes, emptyHome)
+	if w := sampleRequest(owner, samplePath); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"summaries":[]`) {
+		t.Fatalf("metered sample crossed home allowlist: %d %s", w.Code, w.Body.String())
+	}
+	if w := sampleRequest(owner, "/homes/"+emptyHome+"/appliances/"); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
+		t.Fatalf("appliance sample crossed home allowlist: %d %s", w.Code, w.Body.String())
+	}
+	sample.AllowedHomes[emptyHome] = true
+	inventorySample.AllowedHomes[emptyHome] = true
+	if w := sampleRequest(owner, samplePath+"&sensor_id=30000000-0000-4000-8000-000000000001"); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get("X-EnergyLens-Evidence-Revision") != "" {
 		t.Fatalf("sample bypassed sensor scope: %d", w.Code)
 	}
 	if w := sampleRequest(owner, strings.Replace(samplePath, "granularity=day", "granularity=hour", 1)); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || !strings.Contains(w.Body.String(), `"summaries":[]`) {
@@ -194,6 +225,11 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 		return w.Code, body
 	}
 	firstPath := "/homes/" + home + "/metered-summaries?granularity=hour&from=" + url.QueryEscape(bucket.Add(-time.Hour).Format(time.RFC3339)) + "&to=" + url.QueryEscape(bucket.Add(time.Hour).Format(time.RFC3339)) + "&limit=1"
+	realFirst := sampleRequest(owner, firstPath)
+	realRevision := realFirst.Header().Get("X-EnergyLens-Evidence-Revision")
+	if realFirst.Code != 200 || !regexp.MustCompile(`^v1-[0-9]+$`).MatchString(realRevision) || realRevision == sampleRevision || sampleRequest(owner, firstPath).Header().Get("X-EnergyLens-Evidence-Revision") != realRevision {
+		t.Fatalf("unstable real evidence revision: %d %q", realFirst.Code, realRevision)
+	}
 	status, first := request(owner, firstPath)
 	if status != 200 {
 		t.Fatalf("first page: %d %v", status, first)
@@ -206,6 +242,9 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	status, second := request(owner, continuation)
 	if status != 200 || len(second["summaries"].([]any)) != 1 {
 		t.Fatalf("unchanged continuation: %d %v", status, second)
+	}
+	if got := sampleRequest(owner, continuation).Header().Get("X-EnergyLens-Evidence-Revision"); got != realRevision {
+		t.Fatalf("continuation changed revision: %q != %q", got, realRevision)
 	}
 	if status, body := request(other, continuation); status != 400 || body["code"] != "invalid_request" {
 		t.Fatalf("other owner cursor: %d %v", status, body)
@@ -222,6 +261,10 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	if _, e = pool.Exec(ctx, `UPDATE energy_hourly SET energy_wh=3.3 WHERE home_id=$1`, home); e != nil {
 		t.Fatal(e)
 	}
+	correctedRevision := sampleRequest(owner, firstPath).Header().Get("X-EnergyLens-Evidence-Revision")
+	if correctedRevision == "" || correctedRevision == realRevision {
+		t.Fatalf("correction did not change revision: %q", correctedRevision)
+	}
 	if status, body := request(owner, continuation); status != 409 || body["code"] != "evidence_changed" {
 		t.Fatalf("correction cursor: %d %v", status, body)
 	}
@@ -233,6 +276,10 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	continuation = "/homes/" + home + "/metered-summaries?cursor=" + url.QueryEscape(cursorRaw)
 	if _, e = pool.Exec(ctx, `INSERT INTO coverage_hourly(home_id,hub_id,ownership_epoch,sensor_id,bucket_start,gap_overlap_count,dropped_count_started,source_refs) VALUES($1,$2,2,$3,$4,1,1,'[]')`, home, hub, sensor, bucket.Add(-time.Hour)); e != nil {
 		t.Fatal(e)
+	}
+	lateRevision := sampleRequest(owner, firstPath).Header().Get("X-EnergyLens-Evidence-Revision")
+	if lateRevision == "" || lateRevision == correctedRevision {
+		t.Fatalf("late insert did not change revision: %q", lateRevision)
 	}
 	if status, body := request(owner, continuation); status != 409 || body["code"] != "evidence_changed" {
 		t.Fatalf("late insert cursor: %d %v", status, body)
@@ -305,7 +352,7 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 		t.Fatalf("new owner inherited old epoch %v %v", rows, e)
 	}
 	pool.Close()
-	if w := sampleRequest(owner, samplePath); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+	if w := sampleRequest(owner, samplePath); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get("X-EnergyLens-Evidence-Revision") != "" {
 		t.Fatalf("sample masked database failure: %d %s", w.Code, w.Body.String())
 	}
 }

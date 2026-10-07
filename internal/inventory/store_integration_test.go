@@ -71,9 +71,40 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := PGStore{Pool: pool}
+	revision := func() string {
+		t.Helper()
+		_, token, err := store.ListWithRevision(ctx, owner.ID, home.ID)
+		if err != nil || token == "" {
+			t.Fatalf("inventory revision: %q %v", token, err)
+		}
+		return token
+	}
+	emptyRevision := revision()
+	if _, token, err := store.ListWithRevision(ctx, other.ID, home.ID); !errors.Is(err, ErrNotFound) || token != "" {
+		t.Fatalf("cross-owner revision = %q %v", token, err)
+	}
+	transientHome, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "Temporary", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, neverUsedRevision, err := store.ListWithRevision(ctx, owner.ID, transientHome.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	room := "Kitchen"
 	input := CreateInput{Name: "Fridge", Category: "refrigerator", Room: &room, Identity: Identity{Brand: "Acme", FullModel: "A123", Fuel: "electricity", MatchQuality: "unresolved"}}
 	hash := sha256.Sum256([]byte("create"))
+	transient, err := store.Create(ctx, owner.ID, transientHome.ID, input, uuid.NewString(), hash[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Archive(ctx, owner.ID, transientHome.ID, transient.ID, transient.Version, uuid.NewString(), hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	active, archivedOnlyRevision, err := store.ListWithRevision(ctx, owner.ID, transientHome.ID)
+	if err != nil || len(active) != 0 || archivedOnlyRevision == neverUsedRevision {
+		t.Fatalf("last-row archive revision: %d %q %q %v", len(active), archivedOnlyRevision, neverUsedRevision, err)
+	}
 	key := uuid.NewString()
 	if _, err = store.Create(ctx, other.ID, home.ID, input, key, hash[:]); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner create = %v", err)
@@ -81,6 +112,10 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	a, err := store.Create(ctx, owner.ID, home.ID, input, key, hash[:])
 	if err != nil || a.Version != 1 {
 		t.Fatalf("create %+v %v", a, err)
+	}
+	createdRevision := revision()
+	if createdRevision == emptyRevision || revision() != createdRevision {
+		t.Fatal("create did not change to a stable revision")
 	}
 	var scanCount int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM identity_scan_requests WHERE home_id=$1`, home.ID).Scan(&scanCount); err != nil || scanCount != 0 {
@@ -111,6 +146,7 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil || again.ID != a.ID {
 		t.Fatalf("create replay %+v %v", again, err)
 	}
+	beforePatchRevision := revision()
 	otherHash := sha256.Sum256([]byte("different"))
 	if _, err = store.Create(ctx, owner.ID, home.ID, input, key, otherHash[:]); !errors.Is(err, ErrKeyReuse) {
 		t.Fatalf("key reuse = %v", err)
@@ -130,6 +166,10 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	updated, err := store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Name: &name}, 1, patchKey, patchHash[:])
 	if err != nil || updated.Version != 2 || updated.Name != name {
 		t.Fatalf("patch %+v %v", updated, err)
+	}
+	patchedRevision := revision()
+	if patchedRevision == beforePatchRevision || revision() != patchedRevision {
+		t.Fatal("patch did not change to a stable revision")
 	}
 	replay, err := store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Name: &name}, 1, patchKey, patchHash[:])
 	if err != nil || replay.Version != 2 {
@@ -217,9 +257,14 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if _, err = store.Archive(ctx, owner.ID, home.ID, a.ID, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrVersion) {
 		t.Fatalf("stale archive: %v", err)
 	}
+	beforeArchiveRevision := revision()
 	archived, err := store.Archive(ctx, owner.ID, home.ID, a.ID, cleared.Version, archiveKey, archiveHash[:])
 	if err != nil || archived.Version != cleared.Version+1 || archived.ArchivedAt == nil {
 		t.Fatalf("archive: %+v %v", archived, err)
+	}
+	archivedRevision := revision()
+	if archivedRevision == beforeArchiveRevision || revision() != archivedRevision {
+		t.Fatal("archive did not change to a stable revision")
 	}
 	if again, err := store.Archive(ctx, owner.ID, home.ID, a.ID, cleared.Version, archiveKey, archiveHash[:]); err != nil || again.Version != archived.Version {
 		t.Fatalf("archive retry: %+v %v", again, err)

@@ -1,6 +1,7 @@
 package meteredsummary
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,9 @@ type SampleProvider struct {
 }
 
 func NewSampleProvider(users, homes map[string]bool) (*SampleProvider, error) {
+	if err := samplehousehold.ValidateRelationships(); err != nil {
+		return nil, fmt.Errorf("validate metered sample relationships: %w", err)
+	}
 	var fixture struct {
 		FixtureID string `json:"fixture_id"`
 		Responses struct {
@@ -67,6 +71,13 @@ func (s *SampleProvider) page(q Query) []json.RawMessage {
 		rows = append(rows, s.row)
 	}
 	return rows
+}
+
+func (s *SampleProvider) evidenceRevision() string {
+	// A content digest changes with the fixture and cannot collide with the
+	// real evidence revision's v1-<decimal> namespace.
+	digest := sha256.Sum256(samplehousehold.Fixture)
+	return fmt.Sprintf("sample-%x", digest[:16])
 }
 
 func sampleHeaders(w http.ResponseWriter) {

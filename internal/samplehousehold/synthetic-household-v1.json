@@ -58,6 +58,12 @@
       "next_cursor": null
     }
   },
+  "domain_api_relationships": {
+    "home_id": "00000000-0000-4000-8000-000000000001",
+    "attachments": [
+      {"id": "40000000-0000-4000-8000-000000000001", "appliance_id": "10000000-0000-4000-8000-000000000001", "home_id": "00000000-0000-4000-8000-000000000001", "hub_id": "20000000-0000-4000-8000-000000000001", "sensor_id": "30000000-0000-4000-8000-000000000001", "ownership_epoch": 1}
+    ]
+  },
   "page_projections": {
     "dashboard": {"snapshot_id": "synthetic-2026-09-v1", "period": "2026-09", "scope": "whole_home_including_unattributed_load", "cost_usd": "120.00", "useful_cost_usd": "100.00", "waste_cost_usd": "12.00", "unclassified_cost_usd": "8.00"},
     "devices": {"snapshot_id": "synthetic-2026-09-v1", "period": "2026-09", "scope": "whole_home_including_unattributed_load", "row_count": 5, "cost_usd": "120.00", "useful_cost_usd": "100.00", "waste_cost_usd": "12.00", "unclassified_cost_usd": "8.00"},

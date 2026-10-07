@@ -59,6 +59,14 @@ func (s *routeStore) List(_ context.Context, owner, home string) ([]Appliance, e
 	return []Appliance{s.a}, nil
 }
 
+func (s *routeStore) ListWithRevision(ctx context.Context, owner, home string) ([]Appliance, string, error) {
+	a, err := s.List(ctx, owner, home)
+	if err != nil {
+		return nil, "", err
+	}
+	return a, inventoryRevision("persisted", home, a), nil
+}
+
 func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
 	home := uuid.NewString()
 	users := map[string]bool{"owner": true}
@@ -89,15 +97,19 @@ func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
 		return w
 	}
 	path := "/v1/homes/" + home + "/appliances"
-	if w := call("", path); w.Code != 401 {
+	if w := call("", path); w.Code != 401 || w.Header().Get(InventoryRevisionHeader) != "" {
 		t.Fatalf("unauthenticated = %d", w.Code)
 	}
-	if w := call("other", path); w.Code != 404 {
+	if w := call("other", path); w.Code != 404 || w.Header().Get(InventoryRevisionHeader) != "" {
 		t.Fatalf("cross-owner = %d", w.Code)
 	}
 	w := call("owner", path)
 	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || w.Header().Get("X-EnergyLens-Fixture-Revision") != SampleRevision || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("sample response = %d %s", w.Code, w.Body.String())
+	}
+	sampleRevision := w.Header().Get(InventoryRevisionHeader)
+	if !strings.HasPrefix(sampleRevision, "v1-") || len(sampleRevision) != 67 || call("owner", path).Header().Get(InventoryRevisionHeader) != sampleRevision {
+		t.Fatalf("sample revision is missing or unstable: %q", sampleRevision)
 	}
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -123,6 +135,10 @@ func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
 		t.Fatalf("user allowlist = %d %s", w.Code, w.Body.String())
 	}
+	emptyRevision := w.Header().Get(InventoryRevisionHeader)
+	if emptyRevision == "" || emptyRevision == sampleRevision || call("owner", path).Header().Get(InventoryRevisionHeader) != emptyRevision {
+		t.Fatalf("empty persisted revision = %q", emptyRevision)
+	}
 	sample.AllowedUsers["owner"] = true
 	delete(sample.AllowedHomes, home)
 	w = call("owner", path)
@@ -135,6 +151,9 @@ func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), "Actual") {
 		t.Fatalf("real inventory = %d %s", w.Code, w.Body.String())
 	}
+	if realRevision := w.Header().Get(InventoryRevisionHeader); realRevision == "" || realRevision == sampleRevision || realRevision == emptyRevision {
+		t.Fatalf("real inventory revision = %q", realRevision)
+	}
 	store.empty, store.history = true, true
 	w = call("owner", path)
 	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
@@ -142,11 +161,11 @@ func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
 	}
 	store.history = false
 	store.listErr = errors.New("db down")
-	if w = call("owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+	if w = call("owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get(InventoryRevisionHeader) != "" {
 		t.Fatalf("list error = %d", w.Code)
 	}
 	store.listErr, store.historyErr = nil, errors.New("db down")
-	if w = call("owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+	if w = call("owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get(InventoryRevisionHeader) != "" {
 		t.Fatalf("history error = %d", w.Code)
 	}
 	store.historyErr = nil

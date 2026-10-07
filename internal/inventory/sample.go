@@ -19,6 +19,9 @@ type SampleProvider struct {
 }
 
 func NewSampleProvider(users, homes map[string]bool) (*SampleProvider, error) {
+	if err := samplehousehold.ValidateRelationships(); err != nil {
+		return nil, fmt.Errorf("validate appliance sample relationships: %w", err)
+	}
 	var fixture struct {
 		FixtureID          string `json:"fixture_id"`
 		DomainAPIResponses struct {

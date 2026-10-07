@@ -128,7 +128,12 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	// Keep the entire expiry check in one home month. Using the wall clock
+	// directly can put a 60-day expiry in the following month and create a
+	// different estimate solely because its period changed.
+	wallClock := time.Now().UTC()
+	now := time.Date(wallClock.Year(), wallClock.Month()+1, 2, 12, 0, 0, 0, time.UTC)
+	expiresAt := now.Add(24 * time.Hour)
 	runs, err := store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now)
 	if err != nil || len(runs) != 1 {
 		t.Fatalf("without rate: %v %v", runs, err)
@@ -150,8 +155,9 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	}
 	fallback := false
 	// The monthly estimate requires a tariff covering the entire home month.
-	// A one-day-old rate stops covering it after the first day of the month.
-	rateDate := now.Add(-35 * 24 * time.Hour).Format(time.RFC3339)
+	// Its source expires the next day, while the effective interval still
+	// covers both reads in this month.
+	rateDate := expiresAt.Add(-60 * 24 * time.Hour).Format(time.RFC3339)
 	rate, err := (tariff.PGStore{Pool: pool}).Create(ctx, owner.ID, home.ID, tariff.Create{Fuel: "electricity", Rate: "0.20", RateUnit: "kWh", Currency: "USD", RateKind: "user_tariff", SourceRef: "bill", SourceAsOf: rateDate, IsFallback: &fallback, EffectiveFrom: rateDate}, uuid.NewString(), make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -180,8 +186,12 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expiresAt := sourceAsOf.Add(60 * 24 * time.Hour)
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, expiresAt.Add(-time.Nanosecond))
+	if !sourceAsOf.Add(60 * 24 * time.Hour).Equal(expiresAt) {
+		t.Fatalf("unexpected tariff expiry: source_as_of=%s expires_at=%s", rate.SourceAsOf, expiresAt)
+	}
+	// PostgreSQL timestamps have microsecond precision; one nanosecond
+	// before the boundary rounds onto the expired instant when sent to SQL.
+	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, expiresAt.Add(-time.Microsecond))
 	if err != nil {
 		t.Fatal(err)
 	}

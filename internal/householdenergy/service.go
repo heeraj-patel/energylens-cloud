@@ -157,6 +157,17 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	}
 	sample := len(items) == 0 && s.Sample != nil && s.Sample.AllowedUsers[s.UserID(r)] && s.Sample.AllowedHomes[home]
 	if sample {
+		// Evidence outside this view's period still replaces the synthetic
+		// household. Keep this check in the ownership-verified read snapshot.
+		var hasHistory bool
+		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM ingest_events WHERE home_id=$1 AND event_kind='energy_interval')`, home).Scan(&hasHistory)
+		if err != nil {
+			internal(w, err)
+			return
+		}
+		sample = !hasHistory
+	}
+	if sample {
 		buckets = sampleBuckets(p, granularity)
 	}
 	var total *big.Rat
@@ -340,6 +351,21 @@ AND source_as_of <= $2 AND source_as_of > $2 - interval '1440 hours'`, home, now
 		return latestID, latestRevision, nil, err
 	}
 	if count != 1 || selected.From.After(first) || selected.To != nil && selected.To.Before(last) {
+		return latestID, latestRevision, nil, nil
+	}
+	// A recently ended revision may still overlap measured intervals even
+	// though it is no longer current. In that case the rate for those
+	// intervals is ambiguous; leave cost unknown.
+	var historicalOverlap bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tariff_revisions
+WHERE home_id=$1 AND id<>$2 AND fuel='electricity' AND rate_unit='kWh'
+AND rate_kind IN ('user_tariff','official_tariff') AND NOT is_fallback
+AND effective_from < $3 AND (effective_to IS NULL OR effective_to > $4)
+AND source_as_of <= $5 AND source_as_of > $5 - interval '1440 hours')`, home, selected.ID, last, first, now).Scan(&historicalOverlap)
+	if err != nil {
+		return latestID, latestRevision, nil, err
+	}
+	if historicalOverlap {
 		return latestID, latestRevision, nil, nil
 	}
 	return latestID, latestRevision, selected, nil

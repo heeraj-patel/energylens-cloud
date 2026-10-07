@@ -1,6 +1,7 @@
 package meteredsummary
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,7 +15,10 @@ import (
 )
 
 type Service struct {
-	Store  Store
+	Store interface {
+		Scope(context.Context, Query) error
+		PageAtRevisionWithHistory(context.Context, Query, *int64, bool) ([]Row, int64, bool, error)
+	}
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
 	Sample *SampleProvider
@@ -154,6 +158,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(rows) == 0 && sampleEligible && !hasHistory {
 		sampleHeaders(w)
+		w.Header().Set("X-EnergyLens-Evidence-Revision", s.Sample.evidenceRevision())
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"granularity": q.Granularity, "summaries": s.Sample.page(q), "next_cursor": nil})
 		return
@@ -171,5 +176,6 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		next = encodeCursor(cursor{Home: home, Owner: q.OwnerID, Version: 1, Revision: revision, Granularity: q.Granularity, Sensor: q.SensorID, Attachment: q.AttachmentID, From: q.From, To: q.To, After: rows[len(rows)-1].Key})
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-EnergyLens-Evidence-Revision", "v1-"+strconv.FormatInt(revision, 10))
 	_ = json.NewEncoder(w).Encode(map[string]any{"granularity": q.Granularity, "summaries": items, "next_cursor": next})
 }

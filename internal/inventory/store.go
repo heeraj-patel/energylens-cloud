@@ -56,6 +56,7 @@ type PatchInput struct {
 }
 type Store interface {
 	List(context.Context, string, string) ([]Appliance, error)
+	ListWithRevision(context.Context, string, string) ([]Appliance, string, error)
 	HasInventoryHistory(context.Context, string, string) (bool, error)
 	HasApplianceID(context.Context, string) (bool, error)
 	Get(context.Context, string, string, string) (Appliance, error)
@@ -102,28 +103,43 @@ func (s PGStore) ownedHome(ctx context.Context, tx pgx.Tx, owner, home string) e
 	return nil
 }
 func (s PGStore) List(ctx context.Context, owner, home string) ([]Appliance, error) {
+	out, _, err := s.ListWithRevision(ctx, owner, home)
+	return out, err
+}
+
+// ListWithRevision hashes the complete persisted inventory, including archived
+// rows, from one database snapshot. Archiving the last active row therefore
+// cannot return the revision of a never-used empty home.
+func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Appliance, string, error) {
 	var id string
 	err := s.Pool.QueryRow(ctx, `SELECT id FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL`, home, owner).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, "", ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	rows, err := s.Pool.Query(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL AND a.archived_at IS NULL ORDER BY a.created_at,a.id`, home, owner)
+	rows, err := s.Pool.Query(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL ORDER BY a.created_at,a.id`, home, owner)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 	out := []Appliance{}
+	all := []Appliance{}
 	for rows.Next() {
 		a, e := scanAppliance(rows)
 		if e != nil {
-			return nil, e
+			return nil, "", e
 		}
-		out = append(out, a)
+		all = append(all, a)
+		if a.ArchivedAt == nil {
+			out = append(out, a)
+		}
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, "", err
+	}
+	return out, inventoryRevision("persisted", home, all), nil
 }
 func (s PGStore) HasInventoryHistory(ctx context.Context, owner, home string) (bool, error) {
 	var exists bool

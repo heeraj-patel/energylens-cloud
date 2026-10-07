@@ -154,7 +154,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := s.UserID(r)
-	a, err := s.Store.List(r.Context(), user, home)
+	a, revision, err := s.Store.ListWithRevision(r.Context(), user, home)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -169,9 +169,11 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 		if !hasHistory {
 			a = s.Sample.Appliances(home)
+			revision = inventoryRevision("sample:"+SampleRevision, home, a)
 			sampleHeaders(w)
 		}
 	}
+	w.Header().Set(InventoryRevisionHeader, revision)
 	write(w, 200, map[string]any{"appliances": a})
 }
 func (s Service) sampleAllowed(user, home string) bool {
