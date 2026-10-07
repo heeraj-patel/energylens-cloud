@@ -142,7 +142,8 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil || read.KbWasteResult != nil {
 		t.Fatalf("annual-only scan exposed waste result: %+v %v", read.KbWasteResult, err)
 	}
-	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='review_pending',candidate_report='{"waste_evidence":{"status":"not_found"}}'::jsonb WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
+	const finalWasteMiss = `{"schema_version":1,"model_count":1,"models":[{"status":"no_evidence","waste_evidence":{"status":"not_found","checked_sources":["epa","configured_site_search"],"search":{"status":"no_search_leads"}}}]}`
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='review_pending',candidate_report=$2::jsonb WHERE appliance_id=$1`, firstConfirmed.ID, finalWasteMiss); err != nil {
 		t.Fatal(err)
 	}
 	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)

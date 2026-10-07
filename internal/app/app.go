@@ -371,7 +371,7 @@ func Serve(ctx context.Context, c Config) error {
 		}
 	}
 	if c.KBScanPython != "" {
-		if err := (identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA}).Validate(); err != nil {
+		if err := (identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA, GoogleSearch: c.KBScanGoogleSearch, GoogleSite: c.KBScanGoogleSite, GoogleExistingCustomer: c.KBScanGoogleExistingCustomer}).Validate(); err != nil {
 			return err
 		}
 	}
@@ -459,7 +459,7 @@ func Serve(ctx context.Context, c Config) error {
 				jobs = append(jobs, finished)
 				go func() {
 					defer close(finished)
-					runIdentityScans(workerCtx, identityscan.Store{Pool: rt.Pool}, identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA}, 10*time.Second, c.KBHelpOutputPath)
+					runIdentityScans(workerCtx, identityscan.Store{Pool: rt.Pool}, identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA, GoogleSearch: c.KBScanGoogleSearch, GoogleSite: c.KBScanGoogleSite, GoogleExistingCustomer: c.KBScanGoogleExistingCustomer}, 10*time.Second, c.KBHelpOutputPath)
 				}()
 			}
 			for _, finished := range jobs {

@@ -192,7 +192,10 @@ func (s PGStore) attachKbWasteResults(ctx context.Context, owner, home string, a
 JOIN homes h ON h.id=q.home_id
 WHERE q.home_id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL
 AND q.status IN ('missing_source','reviewed_present') AND q.next_attempt_at IS NULL
-AND q.candidate_report->'waste_evidence'->>'status'='not_found'`, home, owner)
+AND (q.status='reviewed_present' OR q.attempt_count=5)
+AND q.candidate_report->'models'->0->'waste_evidence'->>'status'='not_found'
+AND q.candidate_report->'models'->0->'waste_evidence'->'checked_sources'='["epa","configured_site_search"]'::jsonb
+AND q.candidate_report->'models'->0->'waste_evidence'->'search'->>'status'='no_search_leads'`, home, owner)
 	if err != nil {
 		return err
 	}

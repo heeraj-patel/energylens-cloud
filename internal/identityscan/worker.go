@@ -68,6 +68,13 @@ func status(report json.RawMessage, r Request) (string, error) {
 			SearchDiscovery struct {
 				Status string `json:"status"`
 			} `json:"search_discovery"`
+			WasteEvidence struct {
+				Status         string   `json:"status"`
+				CheckedSources []string `json:"checked_sources"`
+				Search         struct {
+					Status string `json:"status"`
+				} `json:"search"`
+			} `json:"waste_evidence"`
 		} `json:"models"`
 	}
 	if len(report) > 262144 || json.Unmarshal(report, &result) != nil || result.SchemaVersion != 1 || result.ModelCount != 1 || len(result.Models) != 1 {
@@ -79,6 +86,23 @@ func status(report json.RawMessage, r Request) (string, error) {
 	}
 	if model.EPACheck.Status == "lookup_error" || model.IdentityDiscovery.Status == "lookup_error" || model.SearchDiscovery.Status == "lookup_error" {
 		return "", errors.New("candidate source lookup failed")
+	}
+	switch model.WasteEvidence.Status {
+	case "", "not_checked", "review_candidate", "review_required":
+	case "lookup_error":
+		return "", errors.New("waste source lookup failed")
+	case "not_found":
+		if model.WasteEvidence.Search.Status != "no_search_leads" ||
+			len(model.WasteEvidence.CheckedSources) != 2 ||
+			model.WasteEvidence.CheckedSources[0] != "epa" ||
+			model.WasteEvidence.CheckedSources[1] != "configured_site_search" {
+			return "", errors.New("incomplete waste source check")
+		}
+	default:
+		return "", errors.New("invalid waste source status")
+	}
+	if model.WasteEvidence.Status == "review_candidate" || model.WasteEvidence.Status == "review_required" {
+		return "review_pending", nil
 	}
 	switch model.Status {
 	case "annual_manifest_present":
