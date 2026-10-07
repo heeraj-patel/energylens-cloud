@@ -65,6 +65,15 @@ type ReportRecommendation struct {
 	EvidenceRefs []SourceRef `json:"evidence_refs"`
 }
 
+// DeliveryStatus is the recipient-free latest request state for an immutable
+// preview. It is read from the outbox and is not part of the preview digest.
+type DeliveryStatus struct {
+	ID        string     `json:"id"`
+	State     string     `json:"state"`
+	CreatedAt time.Time  `json:"created_at"`
+	SentAt    *time.Time `json:"sent_at"`
+}
+
 type Item struct {
 	ApplianceID string           `json:"appliance_id"`
 	Category    string           `json:"category"`
@@ -88,6 +97,7 @@ type Preview struct {
 	Items                 []Item                 `json:"items"`
 	Recommendations       []ReportRecommendation `json:"recommendations,omitempty"`
 	Stale                 bool                   `json:"stale"`
+	LatestDelivery        *DeliveryStatus        `json:"latest_delivery"`
 }
 
 type Store struct{ DB *pgxpool.Pool }
@@ -408,5 +418,18 @@ func (s Store) Get(ctx context.Context, owner, home, previewID string, now time.
 		return Preview{}, err
 	}
 	out.Stale = stale || !now.Before(expires)
+	var delivery DeliveryStatus
+	var sentAt *time.Time
+	err = s.DB.QueryRow(ctx, `SELECT id,state,created_at,sent_at FROM report_delivery_requests
+		WHERE owner_user_id=$1 AND home_id=$2 AND preview_id=$3
+		ORDER BY created_at DESC,id DESC LIMIT 1`, owner, home, previewID).
+		Scan(&delivery.ID, &delivery.State, &delivery.CreatedAt, &sentAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Preview{}, err
+	}
+	if err == nil {
+		delivery.SentAt = sentAt
+		out.LatestDelivery = &delivery
+	}
 	return out, nil
 }

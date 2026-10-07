@@ -17,6 +17,7 @@ type Service struct {
 	Store  Store
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
+	Sample *SampleProvider
 }
 
 func (s Service) Routes(r chi.Router) { r.With(s.Auth).Get("/homes/{home}/metered-summaries", s.list) }
@@ -136,7 +137,8 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	rows, revision, e := s.Store.PageAtRevision(r.Context(), q, expected)
+	sampleEligible := expected == nil && q.SensorID == "" && q.AttachmentID == "" && s.Sample.allowed(q)
+	rows, revision, hasHistory, e := s.Store.PageAtRevisionWithHistory(r.Context(), q, expected, sampleEligible)
 	if e != nil {
 		if errors.Is(e, ErrRevisionChanged) {
 			bad(w, 409, "evidence_changed")
@@ -148,6 +150,12 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Error("metered summary page failed", "error", e)
 		bad(w, 500, "internal_error")
+		return
+	}
+	if len(rows) == 0 && sampleEligible && !hasHistory {
+		sampleHeaders(w)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"granularity": q.Granularity, "summaries": s.Sample.page(q), "next_cursor": nil})
 		return
 	}
 	more := len(rows) > limit

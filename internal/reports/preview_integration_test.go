@@ -153,6 +153,10 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 		p.RecommendationsStatus != "available" || len(p.Recommendations) != 1 || p.Recommendations[0].RuleID != "general.gather_information" || p.Recommendations[0].ApplianceID != appliance.String() {
 		t.Fatalf("preview: %+v", p)
 	}
+	withoutDelivery, err := s.Get(ctx, owner.String(), home.String(), p.ID, now)
+	if err != nil || withoutDelivery.LatestDelivery != nil {
+		t.Fatalf("preview without delivery should report null status: %+v %v", withoutDelivery.LatestDelivery, err)
+	}
 	replayed, err := s.Create(ctx, owner.String(), home.String(), []uuid.UUID{appliance}, key, now.Add(time.Minute))
 	if err != nil || replayed.ID != p.ID {
 		t.Fatalf("idempotent replay: %+v %v", replayed, err)
@@ -177,6 +181,14 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	queued, err := s.QueueDelivery(ctx, owner.String(), home.String(), delivery, now)
 	if err != nil || queued.State != "pending" || len(queued.Recipients) != 1 || queued.Recipients[0] != "recipient@example.com" {
 		t.Fatalf("delivery request: %+v %v", queued, err)
+	}
+	withDelivery, err := s.Get(ctx, owner.String(), home.String(), p.ID, now)
+	if err != nil || withDelivery.LatestDelivery == nil || withDelivery.LatestDelivery.ID != queued.ID || withDelivery.LatestDelivery.State != "pending" || withDelivery.LatestDelivery.SentAt != nil || withDelivery.SnapshotSHA256 != p.SnapshotSHA256 {
+		t.Fatalf("latest delivery status: %+v %v", withDelivery.LatestDelivery, err)
+	}
+	encodedStatus, err := json.Marshal(withDelivery.LatestDelivery)
+	if err != nil || strings.Contains(string(encodedStatus), "recipient") {
+		t.Fatalf("delivery summary exposes recipient data: %s %v", encodedStatus, err)
 	}
 	again, err := s.QueueDelivery(ctx, owner.String(), home.String(), delivery, now.Add(time.Minute))
 	if err != nil || again.ID != queued.ID {

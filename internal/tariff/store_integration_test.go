@@ -186,3 +186,108 @@ func TestTariffOwnerReplayAndImmutableRevisions(t *testing.T) {
 		t.Fatalf("changed official rate not selected: %+v %v", selected, err)
 	}
 }
+
+func TestTariffListElectricitySourceExpiry(t *testing.T) {
+	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	schema := "tariff_expiry_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	accounts := account.PGStore{Pool: pool}
+	owner, err := accounts.Resolve(ctx, account.Identity{Issuer: "https://id.test", Subject: "tariff-expiry-owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := time.Now().UTC().Format(time.RFC3339)
+	if _, err = (account.PGPreferenceStore{Pool: pool}).PatchAccountPreferences(ctx, owner.ID, account.AccountPreferencesPatch{HistoryDisclosureAcceptedAt: &accepted}, 1, uuid.NewString(), make([]byte, 32)); err != nil {
+		t.Fatal(err)
+	}
+	newHome := func(name string) string {
+		home, createErr := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: name, Timezone: "UTC", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		return home.ID
+	}
+	store := PGStore{Pool: pool}
+	freshHome := newHome("Fresh electricity")
+	boundaryHome := newHome("Boundary electricity and gas")
+	futureHome := newHome("Future electricity")
+	insert := func(home, fuel string, revision int, sourceExpr string) string {
+		var id string
+		err = pool.QueryRow(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from)
+			VALUES($1,$2,$3,0.15,CASE WHEN $3='electricity' THEN 'kWh' ELSE 'therm' END,'USD','user_tariff','owner source',`+sourceExpr+`,false,now()-interval '1 day') RETURNING id`, home, revision, fuel).Scan(&id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	// A source checked just before the 60-day limit remains visible.
+	freshID := insert(freshHome, "electricity", 1, "now()-interval '1440 hours'+interval '1 minute'")
+	listed, err := store.List(ctx, owner.ID, freshHome)
+	if err != nil || len(listed) != 1 || listed[0].ID != freshID {
+		t.Fatalf("electricity just before expiry: %+v, %v", listed, err)
+	}
+
+	// At the exact boundary the electricity source expires; natural gas keeps
+	// its existing 18-month source window.
+	exactID := insert(boundaryHome, "electricity", 1, "now()-interval '1440 hours'")
+	gasID := insert(boundaryHome, "natural_gas", 1, "now()-interval '61 days'")
+	listed, err = store.List(ctx, owner.ID, boundaryHome)
+	if err != nil || len(listed) != 1 || listed[0].Fuel != "natural_gas" || listed[0].ID != gasID {
+		t.Fatalf("exact-boundary electricity / unchanged gas: %+v, %v", listed, err)
+	}
+	var retained int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM tariff_revisions WHERE id=$1`, exactID).Scan(&retained); err != nil || retained != 1 {
+		t.Fatalf("expired historical electricity revision not retained: count=%d err=%v", retained, err)
+	}
+
+	// A future-dated source is never listed, even though it is within the
+	// nominal 60-day interval.
+	futureID := insert(futureHome, "electricity", 1, "now()+interval '1 minute'")
+	listed, err = store.List(ctx, owner.ID, futureHome)
+	if err != nil || len(listed) != 0 {
+		t.Fatalf("future-dated electricity source listed (%s): %+v, %v", futureID, listed, err)
+	}
+
+	// Expiry affects the current list only; creating another revision preserves
+	// the immutable historical revision and selects the newer current revision.
+	oldID := insert(freshHome, "electricity", 2, "now()-interval '2 days'")
+	newID := insert(freshHome, "electricity", 3, "now()-interval '1 day'")
+	listed, err = store.List(ctx, owner.ID, freshHome)
+	if err != nil || len(listed) != 1 || listed[0].ID != newID {
+		t.Fatalf("new current electricity revision: %+v, %v", listed, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity'`, freshHome).Scan(&retained); err != nil || retained != 3 {
+		t.Fatalf("historical electricity revisions not retained (old=%s): count=%d err=%v", oldID, retained, err)
+	}
+}

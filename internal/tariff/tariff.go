@@ -80,5 +80,11 @@ func (c Create) Valid(now time.Time) bool {
 	if asOf.Before(now.AddDate(-1, -6, 0)) && (c.EffectiveTo == nil || to.After(now)) {
 		return false
 	}
+	// A currently effective electricity rate expires 60 days after its
+	// source discovery/check date. Historical revisions remain valid records.
+	if c.Fuel == "electricity" && (c.EffectiveTo == nil || to.After(now)) &&
+		(asOf.After(now) || !asOf.After(now.Add(-60*24*time.Hour))) {
+		return false
+	}
 	return true
 }

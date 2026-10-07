@@ -42,6 +42,10 @@ type allocation struct {
 	Availability       string    `json:"availability"`
 	EvidenceBasis      string    `json:"evidence_basis"`
 }
+type money struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
 type period struct {
 	Start time.Time `json:"start_local"`
 	End   time.Time `json:"end_exclusive_local"`
@@ -70,6 +74,15 @@ type bucket struct {
 type interval struct {
 	Start, End time.Time
 	Wh         *big.Rat
+	Fuel       *string
+}
+type marginalTariff struct {
+	ID, Currency string
+	Revision     int64
+	Rate         *big.Rat
+	From         time.Time
+	To           *time.Time
+	SourceAsOf   time.Time
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -137,6 +150,11 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 		return
 	}
 	buckets := makeBuckets(p, granularity, items)
+	latestTariffID, latestTariffRevision, tariff, err := readMarginalTariff(r.Context(), tx, home, now, items)
+	if err != nil {
+		internal(w, err)
+		return
+	}
 	sample := len(items) == 0 && s.Sample != nil && s.Sample.AllowedUsers[s.UserID(r)] && s.Sample.AllowedHomes[home]
 	if sample {
 		buckets = sampleBuckets(p, granularity)
@@ -155,13 +173,25 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	if sample {
 		a = sampleTotal(len(buckets))
 	}
+	if !sample && tariff != nil {
+		if cost := priceBuckets(buckets, *tariff); cost != nil {
+			a.Cost = *cost
+			a.UnclassifiedCost = *cost
+			a.EvidenceBasis = "mixed"
+		}
+	}
 	b := base{SchemaRevision: "household_energy_v1", ContentRevision: "household_energy_backend_v1", HomeID: home, DataMode: "household", GeneratedAt: now, AsOf: asOf, Timezone: tz, Period: p, Scope: "attributed_devices", Availability: a.Availability, EvidenceBasis: a.EvidenceBasis}
 	if sample {
 		b.DataMode = "sample"
 		b.ContentRevision = SampleRevision
 		b.FixtureRevision = SampleRevision
 	}
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%s|%s", home, tz, p.Start.UTC().Format(time.RFC3339Nano), p.End.UTC().Format(time.RFC3339Nano), homeVersion, watermark, granularity, b.DataMode)))
+	// Tariff eligibility can change as time passes, without a new tariff
+	// revision (for example, at source_as_of + 1440 hours). Include the
+	// customer-visible allocation in the identity so a newly priced or newly
+	// unpriced response cannot reuse the prior snapshot ID.
+	allocationState := allocationSnapshotState(a)
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s", home, tz, p.Start.UTC().Format(time.RFC3339Nano), p.End.UTC().Format(time.RFC3339Nano), homeVersion, watermark, granularity, b.DataMode, latestTariffID, latestTariffRevision, allocationState)))
 	b.SnapshotID = hex.EncodeToString(digest[:])
 	if err = tx.Commit(r.Context()); err != nil {
 		internal(w, err)
@@ -190,6 +220,11 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+func allocationSnapshotState(a allocation) string {
+	state, _ := json.Marshal(a)
+	return string(state)
+}
+
 func periodFor(now time.Time, loc *time.Location, g string) period {
 	local := now.In(loc)
 	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
@@ -212,7 +247,7 @@ func readIntervals(ctx context.Context, tx pgx.Tx, home string, p period, now ti
 	rows, err := tx.Query(ctx, `WITH latest AS (
  SELECT DISTINCT ON (e.hub_id,e.ownership_epoch,e.event_id) e.hub_id,e.ownership_epoch,e.event_id,e.revision,e.event_kind
  FROM ingest_events e WHERE e.home_id=$1 AND e.event_kind='energy_interval' ORDER BY e.hub_id,e.ownership_epoch,e.event_id,e.revision DESC)
-	 SELECT o.start_at,o.end_at,o.energy_wh::numeric::text FROM latest l
+		SELECT o.start_at,o.end_at,o.energy_wh::numeric::text,o.fuel FROM latest l
  JOIN energy_observations o ON o.hub_id=l.hub_id AND o.ownership_epoch=l.ownership_epoch AND o.event_id=l.event_id AND o.revision=l.revision
  JOIN attachments a ON a.id=o.attachment_revision_id AND a.home_id=$1
 	 WHERE l.event_kind='energy_interval' AND o.start_at >= $2 AND o.end_at <= $3 AND o.end_at <= $4 AND o.end_at > o.start_at ORDER BY o.start_at,o.event_id`, home, p.Start, p.End, now)
@@ -225,9 +260,11 @@ func readIntervals(ctx context.Context, tx pgx.Tx, home string, p period, now ti
 	for rows.Next() {
 		var v interval
 		var raw string
-		if err = rows.Scan(&v.Start, &v.End, &raw); err != nil {
+		var fuel *string
+		if err = rows.Scan(&v.Start, &v.End, &raw, &fuel); err != nil {
 			return nil, nil, err
 		}
+		v.Fuel = fuel
 		var ok bool
 		v.Wh, ok = new(big.Rat).SetString(raw)
 		if !ok {
@@ -240,6 +277,98 @@ func readIntervals(ctx context.Context, tx pgx.Tx, home string, p period, now ti
 		}
 	}
 	return items, asOf, rows.Err()
+}
+
+// readMarginalTariff returns the latest revision identity for snapshot
+// invalidation, plus a usable rate only when exactly one fresh, current
+// electricity tariff covers every measured observation in the response.
+func readMarginalTariff(ctx context.Context, tx pgx.Tx, home string, now time.Time, items []interval) (string, int64, *marginalTariff, error) {
+	var latestID string
+	var latestRevision int64
+	err := tx.QueryRow(ctx, `SELECT id::text,revision FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity' ORDER BY revision DESC LIMIT 1`, home).Scan(&latestID, &latestRevision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		latestID = ""
+	} else if err != nil {
+		return "", 0, nil, err
+	}
+	if len(items) == 0 {
+		return latestID, latestRevision, nil, nil
+	}
+	var first, last time.Time
+	for i, item := range items {
+		if item.Fuel == nil || *item.Fuel != "electricity" {
+			return latestID, latestRevision, nil, nil
+		}
+		if i == 0 || item.Start.Before(first) {
+			first = item.Start
+		}
+		if i == 0 || item.End.After(last) {
+			last = item.End
+		}
+	}
+	// Reuse the same ambiguity rule as the energy aggregate. No cost is emitted
+	// if any observations overlap, even when their reported values agree.
+	for i := range items {
+		for j := i + 1; j < len(items); j++ {
+			if items[i].Start.Before(items[j].End) && items[j].Start.Before(items[i].End) {
+				return latestID, latestRevision, nil, nil
+			}
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text,revision,rate::text,currency,effective_from,effective_to,source_as_of
+FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity' AND rate_unit='kWh'
+AND rate_kind IN ('user_tariff','official_tariff') AND NOT is_fallback
+AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2)
+AND source_as_of <= $2 AND source_as_of > $2 - interval '1440 hours'`, home, now)
+	if err != nil {
+		return latestID, latestRevision, nil, err
+	}
+	defer rows.Close()
+	var selected *marginalTariff
+	count := 0
+	for rows.Next() {
+		var t marginalTariff
+		var rate string
+		if err = rows.Scan(&t.ID, &t.Revision, &rate, &t.Currency, &t.From, &t.To, &t.SourceAsOf); err != nil {
+			return latestID, latestRevision, nil, err
+		}
+		t.Rate, _ = new(big.Rat).SetString(rate)
+		count++
+		selected = &t
+	}
+	if err = rows.Err(); err != nil {
+		return latestID, latestRevision, nil, err
+	}
+	if count != 1 || selected.From.After(first) || selected.To != nil && selected.To.Before(last) {
+		return latestID, latestRevision, nil, nil
+	}
+	return latestID, latestRevision, selected, nil
+}
+
+func priceBuckets(buckets []bucket, t marginalTariff) *money {
+	total := new(big.Rat)
+	priced := false
+	for i := range buckets {
+		energy := buckets[i].Allocation.Energy
+		if energy == nil {
+			continue
+		}
+		kwh, ok := new(big.Rat).SetString(energy.Value)
+		if !ok {
+			continue
+		}
+		amount := new(big.Rat).Mul(kwh, t.Rate)
+		rounded, _ := new(big.Rat).SetString(amount.FloatString(2))
+		buckets[i].Allocation.Cost = money{Amount: amount.FloatString(2), Currency: t.Currency}
+		buckets[i].Allocation.UnclassifiedCost = money{Amount: amount.FloatString(2), Currency: t.Currency}
+		buckets[i].Allocation.EvidenceBasis = "mixed"
+		total.Add(total, rounded)
+		priced = true
+	}
+	if !priced {
+		return nil
+	}
+	return &money{Amount: total.FloatString(2), Currency: t.Currency}
 }
 
 func makeBuckets(p period, g string, items []interval) []bucket {

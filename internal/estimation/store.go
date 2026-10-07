@@ -140,7 +140,9 @@ func buildRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, 
 		err = tx.QueryRow(ctx, `SELECT id,revision,rate::text,currency,rate_kind FROM tariff_revisions
       WHERE home_id=$1 AND fuel=$5 AND rate_unit=$6 AND effective_from <= $2
         AND (effective_to IS NULL OR effective_to >= $3)
-        AND source_as_of >= $4::timestamptz - interval '18 months'
+        AND source_as_of <= $4
+        AND (fuel <> 'electricity' OR source_as_of > $4::timestamptz - interval '1440 hours')
+        AND (fuel = 'electricity' OR source_as_of >= $4::timestamptz - interval '18 months')
       ORDER BY CASE rate_kind WHEN 'user_tariff' THEN 0 WHEN 'official_tariff' THEN 1 ELSE 2 END,
                effective_from DESC,revision DESC,id DESC LIMIT 1`, home, startTime, endTime, now, a.Fuel, rateUnit).Scan(&rate.ID, &rate.Revision, &rate.Rate, &rate.Currency, &rate.Kind)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {

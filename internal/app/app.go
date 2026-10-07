@@ -246,6 +246,23 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			historyModule := meteredhistory.Service{Store: meteredhistory.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "metered-history", Mount: historyModule.Routes})
 			summaryModule := meteredsummary.Service{Store: meteredsummary.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			if c.SampleHouseholdEnabled {
+				allowedUsers, err := designfixture.ParseUserIDs(c.SampleHouseholdUserIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("metered sample user allowlist: %w", err)
+				}
+				allowedHomes, err := designfixture.ParseUserIDs(c.SampleHouseholdHomeIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("metered sample home allowlist: %w", err)
+				}
+				summaryModule.Sample, err = meteredsummary.NewSampleProvider(allowedUsers, allowedHomes)
+				if err != nil {
+					rt.Close()
+					return nil, err
+				}
+			}
 			modules = append(modules, Module{Name: "metered-summaries", Mount: summaryModule.Routes})
 			outcomeModule := outcomes.Service{Store: outcomes.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "measured-outcomes", Mount: outcomeModule.Routes})

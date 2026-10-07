@@ -97,8 +97,61 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 		t.Fatal(e)
 	}
 	store := Store{Pool: pool}
+	emptyHome := uuid.NewString()
+	if _, e = pool.Exec(ctx, `INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'Sample','UTC')`, emptyHome, owner); e != nil {
+		t.Fatal(e)
+	}
+	sample, e := NewSampleProvider(map[string]bool{owner: true, other: true}, map[string]bool{home: true, emptyHome: true})
+	if e != nil {
+		t.Fatal(e)
+	}
 	router := chi.NewRouter()
-	Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(r *http.Request) string { return r.Header.Get("X-User") }}.Routes(router)
+	Service{Store: store, Sample: sample, Auth: func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-User") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}, UserID: func(r *http.Request) string { return r.Header.Get("X-User") }}.Routes(router)
+	samplePath := "/homes/" + emptyHome + "/metered-summaries?granularity=day&from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z"
+	sampleRequest := func(user, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if user != "" {
+			req.Header.Set("X-User", user)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+	wSample := sampleRequest(owner, samplePath)
+	if wSample.Code != 200 || wSample.Header().Get("X-EnergyLens-Data-Mode") != "sample" || wSample.Header().Get("X-EnergyLens-Fixture-Revision") != "synthetic_household_v1" || wSample.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("sample response: %d %s", wSample.Code, wSample.Body.String())
+	}
+	var sampleBody struct {
+		Granularity string           `json:"granularity"`
+		Rows        []map[string]any `json:"summaries"`
+		NextCursor  any              `json:"next_cursor"`
+	}
+	if e = json.Unmarshal(wSample.Body.Bytes(), &sampleBody); e != nil || sampleBody.Granularity != "day" || len(sampleBody.Rows) != 1 || sampleBody.NextCursor != nil || sampleBody.Rows[0]["status"] != "no_intervals" || sampleBody.Rows[0]["energy_wh"] != nil {
+		t.Fatalf("sample body: %+v, %v", sampleBody, e)
+	}
+	if w := sampleRequest("", samplePath); w.Code != 401 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+		t.Fatalf("sample masked authentication: %d", w.Code)
+	}
+	if w := sampleRequest(other, samplePath); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+		t.Fatalf("sample crossed owner: %d", w.Code)
+	}
+	if w := sampleRequest(owner, samplePath+"&sensor_id=30000000-0000-4000-8000-000000000001"); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+		t.Fatalf("sample bypassed sensor scope: %d", w.Code)
+	}
+	if w := sampleRequest(owner, strings.Replace(samplePath, "granularity=day", "granularity=hour", 1)); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || !strings.Contains(w.Body.String(), `"summaries":[]`) {
+		t.Fatalf("hour sample leaked day row: %d %s", w.Code, w.Body.String())
+	}
+	if w := sampleRequest(owner, strings.Replace(samplePath, emptyHome, home, 1)); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"summaries":[]`) {
+		t.Fatalf("real history lost precedence outside query window: %d %s", w.Code, w.Body.String())
+	}
 	request := func(ownerID, path string) (int, map[string]any) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -221,5 +274,9 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	rows, e = store.Page(ctx, otherQ)
 	if e != nil || len(rows) != 0 {
 		t.Fatalf("new owner inherited old epoch %v %v", rows, e)
+	}
+	pool.Close()
+	if w := sampleRequest(owner, samplePath); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+		t.Fatalf("sample masked database failure: %d %s", w.Code, w.Body.String())
 	}
 }

@@ -1,16 +1,14 @@
 package inventory
 
 import (
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"energylens.local/cloud/internal/samplehousehold"
 )
 
-const SampleRevision = "synthetic_household_v1"
-
-//go:embed fixtures/synthetic-household-v1.json
-var sampleFixture []byte
+const SampleRevision = samplehousehold.Revision
 
 // SampleProvider is installed only under the dev/test household sample gate.
 // Authentication, ownership and persisted inventory are checked by the route.
@@ -29,7 +27,7 @@ func NewSampleProvider(users, homes map[string]bool) (*SampleProvider, error) {
 			} `json:"appliances"`
 		} `json:"domain_api_responses"`
 	}
-	if err := json.Unmarshal(sampleFixture, &fixture); err != nil {
+	if err := json.Unmarshal(samplehousehold.Fixture, &fixture); err != nil {
 		return nil, fmt.Errorf("decode appliance sample: %w", err)
 	}
 	items := fixture.DomainAPIResponses.Appliances.Appliances

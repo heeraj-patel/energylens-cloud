@@ -40,3 +40,29 @@ func TestOfficialImportValidation(t *testing.T) {
 		t.Fatal("decimal replay comparison incorrect")
 	}
 }
+
+func TestOfficialElectricitySourceExpiryBoundary(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	snapshot := []byte("reviewed official electricity source")
+	digest := sha256.Sum256(snapshot)
+	fallback := false
+	makeImport := func(asOf time.Time) OfficialImport {
+		return OfficialImport{OwnerUserID: uuid.NewString(), HomeID: uuid.NewString(), SourceURL: "https://utility.example.test/rates", SourceSHA256: hex.EncodeToString(digest[:]), Tariff: Create{Fuel: "electricity", Rate: "0.16", RateUnit: "kWh", Currency: "USD", RateKind: "official_tariff", SourceAsOf: asOf.Format(time.RFC3339), IsFallback: &fallback, EffectiveFrom: now.Add(-time.Hour).Format(time.RFC3339)}}
+	}
+	for _, tt := range []struct {
+		name string
+		age  time.Duration
+		ok   bool
+	}{
+		{name: "before expiry", age: 60*24*time.Hour - time.Second, ok: true},
+		{name: "exact expiry", age: 60 * 24 * time.Hour, ok: false},
+		{name: "after expiry", age: 60*24*time.Hour + time.Second, ok: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := makeImport(now.Add(-tt.age)).validate(snapshot, "operator", now)
+			if (err == nil) != tt.ok {
+				t.Fatalf("validate() error = %v, want success %v", err, tt.ok)
+			}
+		})
+	}
+}

@@ -171,6 +171,42 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	if err != nil || decodeEstimate(t, runs[0]).ID != second.ID {
 		t.Fatalf("repeat created new run: %v %v", runs, err)
 	}
+	// A persisted estimate must stop being available when its electricity
+	// tariff reaches the 60-day source_as_of boundary, even if no write
+	// invalidated the estimate in the meantime. The old run remains in the
+	// immutable history, while the normal read route produces an unavailable
+	// current run.
+	sourceAsOf, err := time.Parse(time.RFC3339, rate.SourceAsOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := sourceAsOf.Add(60 * 24 * time.Hour)
+	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, expiresAt.Add(-time.Nanosecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	justBeforeExpiry := decodeEstimate(t, runs[0])
+	if justBeforeExpiry.ID != second.ID || justBeforeExpiry.Kind != "estimated_operating_cost" || justBeforeExpiry.Cost == nil {
+		t.Fatalf("estimate unavailable before tariff expiry: %+v", justBeforeExpiry)
+	}
+	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, expiresAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expired := decodeEstimate(t, runs[0])
+	if expired.ID == second.ID || expired.Kind != "unavailable" || expired.UnavailableReason != "rate_unavailable" || expired.Cost != nil {
+		t.Fatalf("expired tariff remained available: %+v", expired)
+	}
+	var historicalCount, invalidationCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_runs WHERE id=$1`, second.ID).Scan(&historicalCount); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_run_invalidations WHERE run_id=$1`, second.ID).Scan(&invalidationCount); err != nil {
+		t.Fatal(err)
+	}
+	if historicalCount != 1 || invalidationCount != 1 {
+		t.Fatalf("expired estimate audit history: runs=%d invalidations=%d", historicalCount, invalidationCount)
+	}
 	name := "New computer"
 	patchHash := sha256.Sum256([]byte("patch"))
 	if _, err = inv.Patch(ctx, owner.ID, home.ID, a.ID, inventory.PatchInput{Name: &name}, 1, uuid.NewString(), patchHash[:]); err != nil {

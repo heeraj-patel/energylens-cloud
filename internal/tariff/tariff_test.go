@@ -42,3 +42,28 @@ func TestTariffValidation(t *testing.T) {
 		t.Fatal("gas therm rejected")
 	}
 }
+
+func TestElectricityTariffSourceExpiryBoundary(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	fallback := false
+	makeTariff := func(asOf time.Time) Create {
+		return Create{Fuel: "electricity", Rate: "0.1588", RateUnit: "kWh", Currency: "USD", RateKind: "user_tariff", SourceRef: "bill", SourceAsOf: asOf.Format(time.RFC3339), IsFallback: &fallback, EffectiveFrom: now.Add(-24 * time.Hour).Format(time.RFC3339)}
+	}
+	tests := []struct {
+		name string
+		asOf time.Time
+		want bool
+	}{
+		{name: "before expiry", asOf: now.Add(-60*24*time.Hour + time.Second), want: true},
+		{name: "exactly 60 days old", asOf: now.Add(-60 * 24 * time.Hour), want: false},
+		{name: "older than 60 days", asOf: now.Add(-60*24*time.Hour - time.Second), want: false},
+		{name: "future source", asOf: now.Add(time.Second), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := makeTariff(tt.asOf).Valid(now); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

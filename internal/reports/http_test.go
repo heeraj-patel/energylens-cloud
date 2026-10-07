@@ -35,7 +35,7 @@ func (s *routeStore) Get(_ context.Context, owner, home, id string, _ time.Time)
 	if s.err != nil {
 		return Preview{}, s.err
 	}
-	return Preview{ID: id, HomeID: home, SchemaVersion: "manual-preview/v1", Items: []Item{}}, nil
+	return Preview{ID: id, HomeID: home, SchemaVersion: "manual-preview/v1", Items: []Item{}, LatestDelivery: &DeliveryStatus{ID: uuid.NewString(), State: "pending", CreatedAt: time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)}}, nil
 }
 func (s *routeStore) QueueDelivery(_ context.Context, owner, home string, in DeliveryInput, _ time.Time) (DeliveryRequest, error) {
 	s.queued, s.owner, s.delivery = true, owner, in
@@ -188,8 +188,8 @@ func TestPreviewRoutesRequireOwnerAuthAndStrictSelection(t *testing.T) {
 	if w := call(http.MethodGet, get, "", ""); w.Code != 401 || store.read {
 		t.Fatalf("unauthenticated read: %d", w.Code)
 	}
-	if w := call(http.MethodGet, get, "", "Bearer valid"); w.Code != 200 || !store.read || store.owner != "verified-owner" {
-		t.Fatalf("read: %d %s", w.Code, w.Body.String())
+	if w := call(http.MethodGet, get, "", "Bearer valid"); w.Code != 200 || !store.read || store.owner != "verified-owner" || !strings.Contains(w.Body.String(), `"latest_delivery":{"id":"`) || !strings.Contains(w.Body.String(), `"state":"pending"`) || strings.Contains(w.Body.String(), "recipients") {
+		t.Fatalf("read with recipient-free latest status: %d %s", w.Code, w.Body.String())
 	}
 	store.err = ErrNotFound
 	if w := call(http.MethodGet, get, "", "Bearer valid"); w.Code != 404 {

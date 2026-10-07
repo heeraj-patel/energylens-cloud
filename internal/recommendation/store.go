@@ -48,6 +48,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	var tariffRevision int64
 	err = tx.QueryRow(ctx, `SELECT id,revision FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity'
 	 AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2)
+	 AND source_as_of <= $2 AND source_as_of > $2::timestamptz - interval '1440 hours'
 	 ORDER BY is_fallback ASC,revision DESC LIMIT 1`, home, now).Scan(&tariffID, &tariffRevision)
 	if err == nil {
 		tariff = &Evidence{ID: tariffID, Kind: "tariff", Revision: tariffRevision}

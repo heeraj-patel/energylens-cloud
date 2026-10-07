@@ -51,7 +51,8 @@ func TestCurrentRecommendationEvidenceOwnerAndRevisions(t *testing.T) {
 	}
 	owner, other, home, device, product, fact, answer, tariff := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 	hash := strings.Repeat("a", 64)
-	now := time.Now().UTC()
+	// Match PostgreSQL's timestamp precision at the exact expiry boundary.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	stmts := []struct {
 		q    string
 		args []any
@@ -95,6 +96,44 @@ func TestCurrentRecommendationEvidenceOwnerAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("active", "", 3)
+	// A lifecycle event records user intent, not lasting evidence. The same
+	// recommendation stays supported just before the tariff age limit, then
+	// expires at the exact boundary without a tariff mutation.
+	event := LifecycleEvent{ApplianceID: device, RuleID: "computer.sleep_settings", RuleVersion: 1, State: "accepted"}
+	if _, err = store.Record(ctx, owner, home, uuid.NewString(), event); err != nil {
+		t.Fatal(err)
+	}
+	readLifecycle := func(at time.Time, wantState string, wantTariff bool) {
+		t.Helper()
+		items, readErr := store.Current(ctx, owner, home, at)
+		if readErr != nil || len(items) != 1 {
+			t.Fatalf("current recommendation at %s: %+v %v", at, items, readErr)
+		}
+		gotTariff := items[0].Tariff != nil
+		if gotTariff != wantTariff {
+			t.Fatalf("tariff presence at %s = %t, want %t", at, gotTariff, wantTariff)
+		}
+		actions := Evaluate(items[0])
+		latest, latestErr := store.Latest(ctx, owner, home)
+		if latestErr != nil {
+			t.Fatal(latestErr)
+		}
+		visible := ApplyLifecycle(actions, latest, at)
+		if len(visible) != 1 || visible[0].State != wantState {
+			t.Fatalf("lifecycle state at %s = %+v, want %q", at, visible, wantState)
+		}
+		for _, ref := range visible[0].EvidenceRefs {
+			if ref.Kind == "tariff" && !wantTariff {
+				t.Fatalf("expired tariff still cited at %s: %+v", at, visible[0])
+			}
+		}
+	}
+	readLifecycle(now.Add(60*24*time.Hour-time.Nanosecond), "accepted", true)
+	readLifecycle(now.Add(60*24*time.Hour), "expired", false)
+	var retained int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM recommendation_events WHERE home_id=$1`, home).Scan(&retained); err != nil || retained != 1 {
+		t.Fatalf("historical recommendation event count = %d, %v", retained, err)
+	}
 	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status) VALUES($1,$2,1,'computer.hours_per_week',1,2,'unknown')`, home, device); err != nil {
 		t.Fatal(err)
 	}
