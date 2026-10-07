@@ -109,7 +109,7 @@ func (s Service) get(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "internal_error")
 		return
 	}
-	if len(facts) > 2 {
+	if len(facts) > 3 {
 		slog.Error("ambiguous reviewed usage scope", "scope", scope)
 		fail(w, 500, "internal_error")
 		return

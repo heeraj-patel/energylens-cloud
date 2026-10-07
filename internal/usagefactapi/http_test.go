@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"net/http"
@@ -97,5 +98,34 @@ func TestHubRequiresCurrentClaimedCertificate(t *testing.T) {
 				t.Fatalf("lookup calls = %d", store.calls)
 			}
 		})
+	}
+}
+
+type returnedFacts []Fact
+
+func (f returnedFacts) Find(context.Context, Scope) ([]Fact, error) { return f, nil }
+func TestThreeKindsIncludingStandbyAreServed(t *testing.T) {
+	mode := "network standby"
+	facts := returnedFacts{{MeasurementKind: "cycle_energy"}, {MeasurementKind: "hourly_energy"}, {MeasurementKind: "standby_power", Value: "0.5", Unit: "W", OperationMode: &mode, IncludedEnergy: json.RawMessage(`{"status":"documented","components":["standby_electricity"]}`)}}
+	for _, size := range []int{3, 4} {
+		rows := append(returnedFacts(nil), facts...)
+		if size == 4 {
+			rows = append(rows, Fact{})
+		}
+		svc := Service{Store: rows}
+		w := httptest.NewRecorder()
+		svc.get(w, httptest.NewRequest("GET", "/usage-facts"+query, nil))
+		if size == 4 {
+			if w.Code != 500 {
+				t.Fatal("overfull fact scope accepted")
+			}
+			continue
+		}
+		var response struct {
+			Facts []Fact `json:"facts"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || len(response.Facts) != 3 || response.Facts[2].Unit != "W" || *response.Facts[2].OperationMode != mode {
+			t.Fatalf("standby API response: %s", w.Body.String())
+		}
 	}
 }

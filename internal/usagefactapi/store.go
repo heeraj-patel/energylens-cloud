@@ -11,7 +11,7 @@ import (
 
 type PGStore struct{ Pool *pgxpool.Pool }
 
-// Find is bounded to the two supported measurement kinds. The exact identity
+// Find is bounded to the three supported measurement kinds. The exact identity
 // and both documented model fields must agree before a fact can leave Cloud.
 func (s PGStore) Find(ctx context.Context, scope Scope) ([]Fact, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT id::text,measurement_kind,value::text,unit,test_basis,cycle_definition,operation_mode,included_energy,
@@ -20,13 +20,13 @@ func (s PGStore) Find(ctx context.Context, scope Scope) ([]Fact, error) {
  FROM active_reviewed_usage_facts
  WHERE category=$1 AND lower(manufacturer)=lower($2) AND lower(model)=lower($3) AND fuel=$4 AND lower(variant)=lower($5)
  AND match_quality='confirmed_exact' AND lower(documented_scope)=lower($3) AND lower(matched_model)=lower($3)
- AND measurement_kind IN ('cycle_energy','hourly_energy')
- ORDER BY measurement_kind,id LIMIT 3`, scope.Category, scope.Manufacturer, scope.Model, scope.Fuel, scope.Variant)
+ AND measurement_kind IN ('cycle_energy','hourly_energy','standby_power')
+ ORDER BY measurement_kind,id LIMIT 4`, scope.Category, scope.Manufacturer, scope.Model, scope.Fuel, scope.Variant)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	facts := make([]Fact, 0, 2)
+	facts := make([]Fact, 0, 3)
 	seen := map[string]bool{}
 	for rows.Next() {
 		var f Fact
@@ -35,7 +35,7 @@ func (s PGStore) Find(ctx context.Context, scope Scope) ([]Fact, error) {
 		if err = rows.Scan(&f.ID, &f.MeasurementKind, &f.Value, &f.Unit, &f.TestBasis, &f.CycleDefinition, &f.OperationMode, &included, &f.SourceKind, &f.SourceURL, &f.SourceSHA256, &f.SourcePageIndex, &f.DatasetID, &f.RowIdentifier, &f.FieldName, &f.MetadataSHA256, &f.ReviewSHA256, &reviewedAt, &f.PublicationSHA256); err != nil {
 			return nil, err
 		}
-		if seen[f.MeasurementKind] || len(facts) == 2 {
+		if seen[f.MeasurementKind] || len(facts) == 3 {
 			return nil, errors.New("ambiguous reviewed usage facts")
 		}
 		seen[f.MeasurementKind] = true

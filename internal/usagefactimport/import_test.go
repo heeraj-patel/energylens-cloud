@@ -227,3 +227,82 @@ func TestSignedGasUsageRequiresExactDryerThermBasis(t *testing.T) {
 		})
 	}
 }
+
+func standbyFact(f Fact) Fact {
+	mode := "network standby"
+	f.MatchQuality = "confirmed_exact"
+	f.DocumentedScope, f.MatchedModel = f.Model, f.Model
+	f.MeasurementKind, f.Unit, f.Value = "standby_power", "W", "0.5"
+	f.CycleDefinition, f.OperationMode = nil, &mode
+	f.IncludedEnergy = IncludedEnergy{Status: "documented", Components: []string{"standby_electricity"}, EvidenceText: "network standby power"}
+	return f
+}
+
+func TestSignedStandbyPower(t *testing.T) {
+	p, der, priv, key := fixture(t)
+	p.Facts[0] = standbyFact(p.Facts[0])
+	raw := signFixture(t, p, der, priv)
+	if _, err := ParseAndVerify(raw, key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseAndVerify(bytes.Replace(raw, []byte(`"0.5"`), []byte(`"0.6"`), 1), key); err == nil {
+		t.Fatal("tampered standby power accepted")
+	}
+	cases := []struct {
+		name   string
+		change func(*Fact)
+	}{
+		{"family", func(f *Fact) {
+			f.MatchQuality = "documented_variant_family"
+			f.DocumentedScope = "WM3070H*A"
+			f.MatchedModel = f.DocumentedScope
+		}},
+		{"unit", func(f *Fact) { f.Unit = "kWh/hour" }},
+		{"mode missing", func(f *Fact) { f.OperationMode = nil }},
+		{"mode blank", func(f *Fact) { v := " "; f.OperationMode = &v }},
+		{"cycle mixed", func(f *Fact) { v := "cycle"; f.CycleDefinition = &v }},
+		{"active energy", func(f *Fact) { f.IncludedEnergy.Components = []string{"appliance_electricity"} }},
+		{"mixed energy", func(f *Fact) { f.IncludedEnergy.Components = []string{"standby_electricity", "appliance_electricity"} }},
+		{"gas", func(f *Fact) { f.Fuel = "natural_gas" }},
+		{"zero", func(f *Fact) { f.Value = "0" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := p
+			candidate.Facts = append([]Fact(nil), p.Facts...)
+			tc.change(&candidate.Facts[0])
+			if _, err := ParseAndVerify(signFixture(t, candidate, der, priv), key); err == nil {
+				t.Fatal("invalid standby evidence accepted")
+			}
+		})
+	}
+	active := p.Facts[0]
+	active.ID = "33333333-3333-5333-8333-333333333333"
+	active.MeasurementKind, active.Unit = "hourly_energy", "kWh/hour"
+	mode := "active use"
+	active.OperationMode = &mode
+	active.IncludedEnergy.Components = []string{"appliance_electricity"}
+	p.Facts = append(p.Facts, active)
+	if _, err := ParseAndVerify(signFixture(t, p, der, priv), key); err != nil {
+		t.Fatalf("active and standby coexistence: %v", err)
+	}
+}
+
+func TestPythonSignedStandbyFixture(t *testing.T) {
+	artifact, err := os.ReadFile("testdata/signed_standby_fixture.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := os.ReadFile("testdata/signed_standby_fixture.pub.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := ParseAndVerify(artifact, key)
+	if err != nil {
+		t.Fatalf("KB standby publication incompatible: %v", err)
+	}
+	facts := verified.Envelope.Payload.Facts
+	if len(facts) != 1 || facts[0].MeasurementKind != "standby_power" || facts[0].Unit != "W" || facts[0].OperationMode == nil || *facts[0].OperationMode != "Eco Standby Mode" {
+		t.Fatal("unexpected standby fixture")
+	}
+}

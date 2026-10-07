@@ -372,13 +372,13 @@ func validate(p Payload) error {
 		if !validScope(f) {
 			return errors.New("documented model scope differs")
 		}
-		if f.MeasurementKind != "cycle_energy" && f.MeasurementKind != "hourly_energy" || !nonblank(f.TestBasis) {
+		if f.MeasurementKind != "cycle_energy" && f.MeasurementKind != "hourly_energy" && f.MeasurementKind != "standby_power" || !nonblank(f.TestBasis) {
 			return errors.New("invalid measurement basis")
 		}
-		if f.MeasurementKind == "cycle_energy" && (f.CycleDefinition == nil || !nonblank(*f.CycleDefinition) || f.OperationMode != nil) || f.MeasurementKind == "hourly_energy" && (f.OperationMode == nil || !nonblank(*f.OperationMode) || f.CycleDefinition != nil) {
+		if f.MeasurementKind == "cycle_energy" && (f.CycleDefinition == nil || !nonblank(*f.CycleDefinition) || f.OperationMode != nil) || (f.MeasurementKind == "hourly_energy" || f.MeasurementKind == "standby_power") && (f.OperationMode == nil || !nonblank(*f.OperationMode) || f.CycleDefinition != nil) {
 			return errors.New("measurement unit or mode differs")
 		}
-		if f.Fuel == "electricity" && (f.MeasurementKind == "cycle_energy" && f.Unit != "kWh/cycle" || f.MeasurementKind == "hourly_energy" && f.Unit != "kWh/hour") ||
+		if f.Fuel == "electricity" && (f.MeasurementKind == "cycle_energy" && f.Unit != "kWh/cycle" || f.MeasurementKind == "hourly_energy" && f.Unit != "kWh/hour" || f.MeasurementKind == "standby_power" && f.Unit != "W") ||
 			f.Fuel == "natural_gas" && (f.Category != "dryer" || f.MatchQuality != "confirmed_exact" || f.MeasurementKind != "cycle_energy" || f.Unit != "therm/cycle") {
 			return errors.New("measurement unit or mode differs")
 		}
@@ -389,7 +389,11 @@ func validate(p Payload) error {
 		if f.IncludedEnergy.Status != "documented" || !nonblank(f.IncludedEnergy.EvidenceText) || len(f.IncludedEnergy.Components) == 0 {
 			return errors.New("included energy is undocumented")
 		}
-		if f.Fuel == "natural_gas" {
+		if f.MeasurementKind == "standby_power" {
+			if f.Fuel != "electricity" || f.MatchQuality != "confirmed_exact" || len(f.IncludedEnergy.Components) != 1 || f.IncludedEnergy.Components[0] != "standby_electricity" {
+				return errors.New("standby power requires exact electric standby-only evidence")
+			}
+		} else if f.Fuel == "natural_gas" {
 			if len(f.IncludedEnergy.Components) != 1 || f.IncludedEnergy.Components[0] != "appliance_gas" {
 				return errors.New("gas basis must contain only appliance gas")
 			}

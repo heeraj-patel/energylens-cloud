@@ -9,6 +9,7 @@ import (
 
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/internal/recommendation"
+	"energylens.local/cloud/internal/usagefactapi"
 	"energylens.local/cloud/migrations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -398,4 +399,120 @@ func fixtureFactForRecommendation(base Fact, category, model, variant string) Fa
 	f.MatchQuality = "confirmed_exact"
 	f.DocumentedScope, f.MatchedModel = model, model
 	return f
+}
+
+func TestPostgresStandbyPublicationLifecycle(t *testing.T) {
+	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	schema := "usage_revision_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+
+	p, der, priv, key := fixture(t)
+	p.Facts[0] = standbyFact(p.Facts[0])
+	standby := p.Facts[0]
+	active := standby
+	active.ID = uuid.NewString()
+	active.MeasurementKind = "hourly_energy"
+	active.Unit = "kWh/hour"
+	mode := "active use"
+	active.OperationMode = &mode
+	active.IncludedEnergy.Components = []string{"appliance_electricity"}
+	cycle := active
+	cycle.ID = uuid.NewString()
+	cycle.MeasurementKind = "cycle_energy"
+	cycle.Unit = "kWh/cycle"
+	cycle.OperationMode = nil
+	cycle.CycleDefinition = &mode
+	p.Facts = append(p.Facts, active, cycle)
+	importSigned := func(p Payload) (Result, error) {
+		v, e := ParseAndVerify(signFixture(t, p, der, priv), key)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return Import(ctx, pool, v, "operator")
+	}
+	if got, e := importSigned(p); e != nil || got.Facts != 3 || got.Replayed {
+		t.Fatalf("initial: %+v %v", got, e)
+	}
+	if got, e := importSigned(p); e != nil || !got.Replayed {
+		t.Fatalf("idempotent replay: %+v %v", got, e)
+	}
+	scope := usagefactapi.Scope{Category: standby.Category, Manufacturer: standby.Manufacturer, Model: standby.Model, Fuel: standby.Fuel, Variant: standby.Variant}
+	assertFacts := func(count int, id string) {
+		t.Helper()
+		facts, e := (usagefactapi.PGStore{Pool: pool}).Find(ctx, scope)
+		if e != nil || len(facts) != count {
+			t.Fatalf("API facts: %+v %v", facts, e)
+		}
+		found := ""
+		for _, f := range facts {
+			if f.MeasurementKind == "standby_power" {
+				found = f.ID
+				if f.Unit != "W" {
+					t.Fatal("wrong standby unit")
+				}
+			}
+		}
+		if found != id {
+			t.Fatalf("standby ID %s want %s", found, id)
+		}
+	}
+	assertFacts(3, standby.ID)
+	conflicting := p
+	conflicting.Facts = append([]Fact(nil), p.Facts...)
+	conflicting.Facts[0].Value = "0.6"
+	if _, e := importSigned(conflicting); e == nil {
+		t.Fatal("conflicting replay accepted")
+	}
+	replacement := standby
+	replacement.ID = uuid.NewString()
+	replacement.Value = "0.6"
+	correction := Payload{Schema: p.Schema, SchemaVersion: 2, Facts: []Fact{replacement}, Revision: &Revision{ID: uuid.NewString(), Action: "supersede", PriorFactID: standby.ID, ReplacementFactID: &replacement.ID, Reason: "Corrected standby reference", Reviewer: "reviewer", ReviewedAt: "2026-10-03T00:00:00Z", ReviewSHA256: strings.Repeat("c", 64)}}
+	if _, e := importSigned(correction); e != nil {
+		t.Fatal(e)
+	}
+	assertFacts(3, replacement.ID)
+	retraction := Payload{Schema: p.Schema, SchemaVersion: 2, Facts: []Fact{}, Revision: &Revision{ID: uuid.NewString(), Action: "retract", PriorFactID: replacement.ID, Reason: "Source withdrawn", Reviewer: "reviewer", ReviewedAt: "2026-10-03T00:00:00Z", ReviewSHA256: strings.Repeat("d", 64)}}
+	if _, e := importSigned(retraction); e != nil {
+		t.Fatal(e)
+	}
+	assertFacts(2, "")
+	if got, e := importSigned(retraction); e != nil || !got.Replayed {
+		t.Fatalf("retraction replay: %+v %v", got, e)
+	}
+	resurrection := p
+	resurrection.Facts = []Fact{standby}
+	resurrection.Facts[0].ID = uuid.NewString()
+	if _, e := importSigned(resurrection); e == nil {
+		t.Fatal("withdrawn standby resurrected")
+	}
 }
