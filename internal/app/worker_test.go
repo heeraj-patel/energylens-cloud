@@ -21,6 +21,42 @@ type waitingIdentityScan struct {
 	t       *testing.T
 }
 
+type exportingIdentityScan struct{ exported chan string }
+
+func (j exportingIdentityScan) Run(context.Context, identityscan.Scanner, bool, int, time.Time) (int, error) {
+	return 1, nil
+}
+
+func (j exportingIdentityScan) ExportHelp(_ context.Context, path string) (int, error) {
+	j.exported <- path
+	return 1, nil
+}
+
+func TestIdentityScanAutomaticallyExportsHelp(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	job := exportingIdentityScan{exported: make(chan string, 1)}
+	done := make(chan struct{})
+	go func() {
+		runIdentityScans(ctx, job, nil, time.Minute, "/private/unresolved_device_help.jsonl")
+		close(done)
+	}()
+	select {
+	case path := <-job.exported:
+		if path != "/private/unresolved_device_help.jsonl" {
+			t.Fatalf("export path: %q", path)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("post-KB export did not run")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("identity scheduler did not stop")
+	}
+}
+
 func (j waitingIdentityScan) Run(ctx context.Context, _ identityscan.Scanner, _ bool, limit int, _ time.Time) (int, error) {
 	if limit != 10 {
 		j.t.Errorf("unexpected identity batch limit %d", limit)
@@ -34,11 +70,13 @@ func (j waitingIdentityScan) Run(ctx context.Context, _ identityscan.Scanner, _ 
 	return 0, ctx.Err()
 }
 
+func (j waitingIdentityScan) ExportHelp(context.Context, string) (int, error) { return 0, nil }
+
 func TestIdentityScanSchedulerStartsAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	job := waitingIdentityScan{started: make(chan struct{}), stopped: make(chan struct{}), t: t}
 	done := make(chan struct{})
-	go func() { runIdentityScans(ctx, job, nil, time.Minute); close(done) }()
+	go func() { runIdentityScans(ctx, job, nil, time.Minute, ""); close(done) }()
 	select {
 	case <-job.started:
 	case <-time.After(time.Second):

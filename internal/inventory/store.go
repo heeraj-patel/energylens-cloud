@@ -31,16 +31,23 @@ type Identity struct {
 	CatalogProductID *string `json:"catalog_product_id,omitempty"`
 }
 type Appliance struct {
-	ID         string     `json:"id"`
-	HomeID     string     `json:"home_id"`
-	Name       string     `json:"name"`
-	Category   string     `json:"category"`
-	Room       *string    `json:"room,omitempty"`
-	Identity   Identity   `json:"identity"`
-	Version    int64      `json:"version"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	ArchivedAt *time.Time `json:"archived_at"`
+	ID            string         `json:"id"`
+	HomeID        string         `json:"home_id"`
+	Name          string         `json:"name"`
+	Category      string         `json:"category"`
+	Room          *string        `json:"room,omitempty"`
+	Identity      Identity       `json:"identity"`
+	Version       int64          `json:"version"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	ArchivedAt    *time.Time     `json:"archived_at"`
+	KbWasteResult *KbWasteResult `json:"kb_waste_result,omitempty"`
+}
+
+// KbWasteResult is emitted only for an explicit terminal waste-specific KB finding.
+type KbWasteResult struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 type CreateInput struct {
 	Name     string   `json:"name"`
@@ -139,7 +146,11 @@ func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Ap
 	if err = rows.Err(); err != nil {
 		return nil, "", err
 	}
-	return out, inventoryRevision("persisted", home, all), nil
+	revision := inventoryRevision("persisted", home, all)
+	if err := s.attachKbWasteResults(ctx, owner, home, out); err != nil {
+		return nil, "", err
+	}
+	return out, revision, nil
 }
 func (s PGStore) HasInventoryHistory(ctx context.Context, owner, home string) (bool, error) {
 	var exists bool
@@ -156,7 +167,48 @@ func (s PGStore) Get(ctx context.Context, owner, home, id string) (Appliance, er
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Appliance{}, ErrNotFound
 	}
-	return a, err
+	if err != nil {
+		return a, err
+	}
+	items := []Appliance{a}
+	if err = s.attachKbWasteResults(ctx, owner, home, items); err != nil {
+		return Appliance{}, err
+	}
+	return items[0], nil
+}
+
+// Candidate reports currently describe annual energy, so their status alone
+// never establishes a waste finding. This optional field requires an explicit
+// waste-specific result in the report, a completed scan, and the current identity.
+func (s PGStore) attachKbWasteResults(ctx context.Context, owner, home string, appliances []Appliance) error {
+	if len(appliances) == 0 {
+		return nil
+	}
+	byID := make(map[string]*Appliance, len(appliances))
+	for i := range appliances {
+		byID[appliances[i].ID] = &appliances[i]
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT q.id,q.appliance_id,q.identity_key FROM identity_scan_requests q
+JOIN homes h ON h.id=q.home_id
+WHERE q.home_id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL
+AND q.status IN ('missing_source','reviewed_present') AND q.next_attempt_at IS NULL
+AND q.candidate_report->'waste_evidence'->>'status'='not_found'`, home, owner)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, applianceID string
+		var key []byte
+		if err := rows.Scan(&id, &applianceID, &key); err != nil {
+			return err
+		}
+		if a := byID[applianceID]; a != nil && a.Identity.MatchQuality == "confirmed_exact" &&
+			a.Identity.CatalogProductID == nil && bytes.Equal(key, scanKey(*a)) {
+			a.KbWasteResult = &KbWasteResult{ID: id, Status: "waste_evidence_unavailable_after_kb"}
+		}
+	}
+	return rows.Err()
 }
 func replay(ctx context.Context, tx pgx.Tx, owner, home, op, key string, hash []byte) (Appliance, bool, error) {
 	var previous, body []byte

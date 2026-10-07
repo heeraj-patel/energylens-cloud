@@ -30,6 +30,9 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "export-unresolved-device-help" {
+		return identityHelpExport(ctx, args[1:])
+	}
 	if len(args) > 0 && args[0] == "check-local-auth-keys" {
 		fs := flag.NewFlagSet("check-local-auth-keys", flag.ContinueOnError)
 		previousID := fs.String("retain-key-id", "", "previous key ID that must remain trusted")

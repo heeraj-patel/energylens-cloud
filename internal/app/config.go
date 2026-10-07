@@ -80,6 +80,7 @@ type Config struct {
 	KBScanSources                string
 	KBScanCandidateIndex         string
 	KBScanAllowEPA               bool
+	KBHelpOutputPath             string
 	ProgramRefreshEnabled        bool
 	ProgramSourceProbeEnabled    bool
 	OEDIIOUPath                  string
@@ -108,7 +109,7 @@ func LoadConfig(role string) (Config, error) {
 		SampleHouseholdUserIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_USER_IDS"),
 		SampleHouseholdHomeIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_HOME_IDS"),
 		OEDIIOUPath:            os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
-		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"),
+		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"), KBHelpOutputPath: os.Getenv("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -406,9 +407,12 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
-	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA {
+	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA || c.KBHelpOutputPath != "" {
 		if c.KBScanPython == "" || c.KBScanSources == "" || c.DatabaseURL == "" || c.Role == RoleAPI {
 			return errors.New("KB scan requires worker role, database, Python and sources")
+		}
+		if c.KBHelpOutputPath != "" && (!filepath.IsAbs(c.KBHelpOutputPath) || filepath.Base(c.KBHelpOutputPath) != "unresolved_device_help.jsonl") {
+			return errors.New("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH must be an absolute unresolved_device_help.jsonl path")
 		}
 	}
 	if c.Environment == "production" && c.Role == RoleAll {

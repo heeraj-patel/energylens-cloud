@@ -134,10 +134,56 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM identity_scan_requests WHERE home_id=$1`, home.ID).Scan(&scanCount); err != nil || scanCount != 1 {
 		t.Fatalf("confirmed identity dedup: %d %v", scanCount, err)
 	}
+	// Annual-source completion alone cannot imply missing waste evidence.
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=5,candidate_report='{"status":"no_evidence"}'::jsonb WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
+		t.Fatal(err)
+	}
+	read, err := store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
+	if err != nil || read.KbWasteResult != nil {
+		t.Fatalf("annual-only scan exposed waste result: %+v %v", read.KbWasteResult, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='review_pending',candidate_report='{"waste_evidence":{"status":"not_found"}}'::jsonb WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
+		t.Fatal(err)
+	}
+	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
+	if err != nil || read.KbWasteResult != nil {
+		t.Fatalf("review-pending scan exposed waste result: %+v %v", read.KbWasteResult, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',next_attempt_at=now()+interval '1 day' WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
+		t.Fatal(err)
+	}
+	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
+	if err != nil || read.KbWasteResult != nil {
+		t.Fatalf("retrying scan exposed waste result: %+v %v", read.KbWasteResult, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET next_attempt_at=NULL WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
+		t.Fatal(err)
+	}
+	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
+	if err != nil || read.KbWasteResult == nil || read.KbWasteResult.Status != "waste_evidence_unavailable_after_kb" {
+		t.Fatalf("terminal waste result missing: %+v %v", read.KbWasteResult, err)
+	}
+	listed, err := store.List(ctx, owner.ID, home.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range listed {
+		if item.ID == firstConfirmed.ID {
+			found = item.KbWasteResult != nil
+		}
+	}
+	if !found {
+		t.Fatal("terminal waste result missing from list")
+	}
 	newModel := confirmed.Identity
 	newModel.FullModel = "A125"
 	if _, err = store.Patch(ctx, owner.ID, home.ID, firstConfirmed.ID, PatchInput{Identity: &newModel}, 1, uuid.NewString(), hash[:]); err != nil {
 		t.Fatal(err)
+	}
+	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
+	if err != nil || read.KbWasteResult != nil {
+		t.Fatalf("stale identity scan exposed waste result: %+v %v", read.KbWasteResult, err)
 	}
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM identity_scan_requests WHERE home_id=$1`, home.ID).Scan(&scanCount); err != nil || scanCount != 2 {
 		t.Fatalf("changed identity trigger: %d %v", scanCount, err)

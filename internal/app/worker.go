@@ -31,6 +31,7 @@ type rollupJob interface {
 
 type identityScanJob interface {
 	Run(context.Context, identityscan.Scanner, bool, int, time.Time) (int, error)
+	ExportHelp(context.Context, string) (int, error)
 }
 
 type reportRetentionJob interface {
@@ -121,10 +122,11 @@ func nightlyScanDue(now time.Time, last string) bool {
 
 // runIdentityScans responds to new identity outbox rows within one short poll
 // interval. Only the 03:00 UTC pass includes due missing-source retries.
-func runIdentityScans(ctx context.Context, job identityScanJob, scanner identityscan.Scanner, interval time.Duration) {
+func runIdentityScans(ctx context.Context, job identityScanJob, scanner identityscan.Scanner, interval time.Duration, helpOutputPath string) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	lastNightly := ""
+	firstPass := true
 	for {
 		if ctx.Err() != nil {
 			return
@@ -136,9 +138,13 @@ func runIdentityScans(ctx context.Context, job identityScanJob, scanner identity
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		count, err := job.Run(runCtx, scanner, nightly, 10, now)
+		if err == nil && helpOutputPath != "" && (firstPass || nightly || count > 0) {
+			_, err = job.ExportHelp(runCtx, helpOutputPath)
+		}
 		cancel()
+		firstPass = false
 		if err != nil && ctx.Err() == nil {
-			slog.Error("identity scan pass failed", "error", err)
+			slog.Error("identity scan or help export pass failed", "error", err)
 		} else if count > 0 {
 			slog.Info("identity scan candidates queued for review", "count", count)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +130,22 @@ func TestPGImmediateAndNightlyClaimBoundary(t *testing.T) {
 	}
 	if claim, err := store.Claim(ctx, false, failureNow.Add(16*time.Minute)); err != nil || claim == nil || claim.Model != "A2" {
 		t.Fatalf("due transient retry: %+v %v", claim, err)
+	}
+	// Only a completed KB no-evidence cycle enters the human research file.
+	finalReport := `{"schema_version":1,"model_count":1,"models":[{"category":"dryer","manufacturer":"Acme","model":"A1","status":"no_evidence"}]}`
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=5,next_attempt_at=NULL,candidate_report=$2,updated_at=$3 WHERE home_id=$1 AND model='A1'`, home, finalReport, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=4,next_attempt_at=$2,candidate_report=$3 WHERE home_id<>$1 AND model='A1'`, home, now.Add(24*time.Hour), finalReport); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "unresolved_device_help.jsonl")
+	exported, err := ExportHelp(ctx, pool, path)
+	if err != nil || exported != 1 {
+		t.Fatalf("final KB export: %d %v", exported, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(content), `"appliance_id":"`+appliance+`"`) || strings.Contains(string(content), `"home_id"`) || strings.Contains(string(content), `"model":"A2"`) {
+		t.Fatalf("export content: %q %v", content, err)
 	}
 }
