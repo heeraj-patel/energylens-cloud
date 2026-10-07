@@ -213,6 +213,7 @@ func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, e
 	}
 	if s.static.USDPerKWh > 0 {
 		resolved := national(s.static.USDPerKWh, s.static.AsOf)
+		resolved.SourceURL = s.static.SourceURL
 		resolved.IsStatic = true
 		return resolved, nil
 	}
