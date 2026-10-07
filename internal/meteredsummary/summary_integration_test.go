@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +14,7 @@ import (
 
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -93,6 +97,67 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 		t.Fatal(e)
 	}
 	store := Store{Pool: pool}
+	router := chi.NewRouter()
+	Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(r *http.Request) string { return r.Header.Get("X-User") }}.Routes(router)
+	request := func(ownerID, path string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-User", ownerID)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return w.Code, body
+	}
+	firstPath := "/homes/" + home + "/metered-summaries?granularity=hour&from=" + url.QueryEscape(bucket.Add(-time.Hour).Format(time.RFC3339)) + "&to=" + url.QueryEscape(bucket.Add(time.Hour).Format(time.RFC3339)) + "&limit=1"
+	status, first := request(owner, firstPath)
+	if status != 200 {
+		t.Fatalf("first page: %d %v", status, first)
+	}
+	cursorRaw, ok := first["next_cursor"].(string)
+	if !ok {
+		t.Fatalf("missing cursor: %v", first)
+	}
+	continuation := "/homes/" + home + "/metered-summaries?cursor=" + url.QueryEscape(cursorRaw) + "&limit=1"
+	status, second := request(owner, continuation)
+	if status != 200 || len(second["summaries"].([]any)) != 1 {
+		t.Fatalf("unchanged continuation: %d %v", status, second)
+	}
+	if status, body := request(other, continuation); status != 400 || body["code"] != "invalid_request" {
+		t.Fatalf("other owner cursor: %d %v", status, body)
+	}
+	if status, body := request(owner, "/homes/"+uuid.NewString()+"/metered-summaries?cursor="+url.QueryEscape(cursorRaw)); status != 400 || body["code"] != "invalid_request" {
+		t.Fatalf("wrong home cursor: %d %v", status, body)
+	}
+	if status, body := request(owner, continuation+"&sensor_id="+sensor); status != 400 || body["code"] != "invalid_request" {
+		t.Fatalf("wrong query cursor: %d %v", status, body)
+	}
+	if status, body := request(owner, "/homes/"+home+"/metered-summaries?cursor=bad!"); status != 400 || body["code"] != "invalid_request" {
+		t.Fatalf("malformed cursor: %d %v", status, body)
+	}
+	if _, e = pool.Exec(ctx, `UPDATE energy_hourly SET energy_wh=3.3 WHERE home_id=$1`, home); e != nil {
+		t.Fatal(e)
+	}
+	if status, body := request(owner, continuation); status != 409 || body["code"] != "evidence_changed" {
+		t.Fatalf("correction cursor: %d %v", status, body)
+	}
+	status, first = request(owner, firstPath)
+	if status != 200 {
+		t.Fatalf("new first page: %d %v", status, first)
+	}
+	cursorRaw = first["next_cursor"].(string)
+	continuation = "/homes/" + home + "/metered-summaries?cursor=" + url.QueryEscape(cursorRaw)
+	if _, e = pool.Exec(ctx, `INSERT INTO coverage_hourly(home_id,hub_id,ownership_epoch,sensor_id,bucket_start,gap_overlap_count,dropped_count_started,source_refs) VALUES($1,$2,2,$3,$4,1,1,'[]')`, home, hub, sensor, bucket.Add(-time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	if status, body := request(owner, continuation); status != 409 || body["code"] != "evidence_changed" {
+		t.Fatalf("late insert cursor: %d %v", status, body)
+	}
+	if _, e = pool.Exec(ctx, `DELETE FROM coverage_hourly WHERE home_id=$1 AND bucket_start=$2`, home, bucket.Add(-time.Hour)); e != nil {
+		t.Fatal(e)
+	}
 	q := Query{HomeID: home, OwnerID: owner, Granularity: "hour", From: bucket.Add(-time.Hour), To: bucket.Add(time.Hour), Limit: 1}
 	if e = store.Scope(ctx, q); e != nil {
 		t.Fatal(e)

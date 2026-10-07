@@ -23,6 +23,9 @@ func (s Service) Routes(r chi.Router) { r.With(s.Auth).Get("/homes/{home}/metere
 
 type cursor struct {
 	Home, Granularity, Sensor, Attachment string
+	Owner                                 string
+	Version                               int
+	Revision                              int64
 	From, To                              time.Time
 	After                                 Key
 }
@@ -48,7 +51,7 @@ func decodeCursor(raw string) (cursor, error) {
 	if e = json.Unmarshal(b, &c); e != nil {
 		return c, e
 	}
-	if !uuidOK(c.Home) || !uuidOK(c.After.Hub) || !uuidOK(c.After.Sensor) || c.After.Epoch < 1 || c.After.Bucket.IsZero() || c.After.Kind != "energy" && c.After.Kind != "power_sample_stats" && c.After.Kind != "coverage_gap" || c.After.Attachment != "" && !uuidOK(c.After.Attachment) {
+	if c.Version != 1 || c.Revision < 0 || !uuidOK(c.Owner) || !uuidOK(c.Home) || !uuidOK(c.After.Hub) || !uuidOK(c.After.Sensor) || c.After.Epoch < 1 || c.After.Bucket.IsZero() || c.After.Kind != "energy" && c.After.Kind != "power_sample_stats" && c.After.Kind != "coverage_gap" || c.After.Attachment != "" && !uuidOK(c.After.Attachment) {
 		return c, errors.New("invalid cursor")
 	}
 	return c, nil
@@ -75,17 +78,19 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	q := Query{HomeID: home, OwnerID: s.UserID(r), Limit: limit}
+	var expected *int64
 	if raw := p.Get("cursor"); raw != "" {
 		if p.Has("from") || p.Has("to") || p.Has("granularity") || p.Has("sensor_id") || p.Has("attachment_id") {
 			bad(w, 400, "invalid_request")
 			return
 		}
 		c, e := decodeCursor(raw)
-		if e != nil || c.Home != home || !validRange(c.From, c.To, now) || c.Granularity != "hour" && c.Granularity != "day" || c.Sensor != "" && !uuidOK(c.Sensor) || c.Attachment != "" && !uuidOK(c.Attachment) || c.After.Bucket.Before(c.From) || !c.After.Bucket.Before(c.To) {
+		if e != nil || c.Home != home || c.Owner != q.OwnerID || !validRange(c.From, c.To, now) || c.Granularity != "hour" && c.Granularity != "day" || c.Sensor != "" && !uuidOK(c.Sensor) || c.Attachment != "" && !uuidOK(c.Attachment) || c.After.Bucket.Before(c.From) || !c.After.Bucket.Before(c.To) {
 			bad(w, 400, "invalid_request")
 			return
 		}
 		q.From, q.To, q.Granularity, q.SensorID, q.AttachmentID, q.After = c.From, c.To, c.Granularity, c.Sensor, c.Attachment, &c.After
+		expected = &c.Revision
 	} else {
 		q.Granularity = p.Get("granularity")
 		if q.Granularity != "hour" && q.Granularity != "day" {
@@ -131,8 +136,16 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	rows, e := s.Store.Page(r.Context(), q)
+	rows, revision, e := s.Store.PageAtRevision(r.Context(), q, expected)
 	if e != nil {
+		if errors.Is(e, ErrRevisionChanged) {
+			bad(w, 409, "evidence_changed")
+			return
+		}
+		if errors.Is(e, ErrNotFound) {
+			bad(w, 404, "not_found")
+			return
+		}
 		slog.Error("metered summary page failed", "error", e)
 		bad(w, 500, "internal_error")
 		return
@@ -147,7 +160,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	}
 	var next any
 	if more {
-		next = encodeCursor(cursor{Home: home, Granularity: q.Granularity, Sensor: q.SensorID, Attachment: q.AttachmentID, From: q.From, To: q.To, After: rows[len(rows)-1].Key})
+		next = encodeCursor(cursor{Home: home, Owner: q.OwnerID, Version: 1, Revision: revision, Granularity: q.Granularity, Sensor: q.SensorID, Attachment: q.AttachmentID, From: q.From, To: q.To, After: rows[len(rows)-1].Key})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"granularity": q.Granularity, "summaries": items, "next_cursor": next})

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrNotFound = errors.New("home, sensor, or attachment not found")
+var ErrRevisionChanged = errors.New("metered summary evidence changed")
 
 type Store struct{ Pool *pgxpool.Pool }
 type Query struct {
@@ -85,6 +87,44 @@ WHERE ($7::timestamptz IS NULL OR (bucket_start,kind,hub_id::text,ownership_epoc
 ORDER BY bucket_start DESC,kind DESC,hub_id DESC,ownership_epoch DESC,sensor_id DESC,attachment_id DESC NULLS LAST LIMIT $13`
 
 func (s Store) Page(ctx context.Context, q Query) ([]Row, error) {
+	return page(ctx, s.Pool, q)
+}
+
+// PageAtRevision reads the revision and page from one database snapshot. A
+// correction committed between requests causes a conflict before any later
+// page is returned, including when an earlier row was corrected or removed.
+func (s Store) PageAtRevision(ctx context.Context, q Query, expected *int64) ([]Row, int64, error) {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx)
+	var revision int64
+	err = tx.QueryRow(ctx, `SELECT COALESCE(r.revision,0) FROM homes h LEFT JOIN metered_summary_revision r ON r.home_id=h.id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, q.HomeID, q.OwnerID).Scan(&revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, 0, ErrNotFound
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	if expected != nil && *expected != revision {
+		return nil, 0, ErrRevisionChanged
+	}
+	rows, err := page(ctx, tx, q)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, 0, err
+	}
+	return rows, revision, nil
+}
+
+type queryer interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+func page(ctx context.Context, db queryer, q Query) ([]Row, error) {
 	tables := map[string][3]string{"hour": {"energy_hourly", "power_hourly", "coverage_hourly"}, "day": {"energy_daily", "power_daily", "coverage_daily"}}
 	names, ok := tables[q.Granularity]
 	if !ok {
@@ -97,7 +137,7 @@ func (s Store) Page(ctx context.Context, q Query) ([]Row, error) {
 		key = *q.After
 	}
 	sql := fmt.Sprintf(pageSQL, names[0], names[1], names[2])
-	rows, err := s.Pool.Query(ctx, sql, q.HomeID, q.OwnerID, q.From, q.To, q.SensorID, q.AttachmentID, after, key.Kind, key.Hub, key.Epoch, key.Sensor, key.Attachment, q.Limit+1)
+	rows, err := db.Query(ctx, sql, q.HomeID, q.OwnerID, q.From, q.To, q.SensorID, q.AttachmentID, after, key.Kind, key.Hub, key.Epoch, key.Sensor, key.Attachment, q.Limit+1)
 	if err != nil {
 		return nil, err
 	}

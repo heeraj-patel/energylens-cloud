@@ -19,6 +19,7 @@ type Service struct {
 	Store  Store
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
+	Sample *SampleProvider
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -152,19 +153,71 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a, err := s.Store.List(r.Context(), s.UserID(r), home)
+	user := s.UserID(r)
+	a, err := s.Store.List(r.Context(), user, home)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
+	if len(a) == 0 && s.sampleAllowed(user, home) {
+		// A historical appliance, including an archived one, permanently gives
+		// this home precedence over the internal sample inventory.
+		hasHistory, err := s.Store.HasInventoryHistory(r.Context(), user, home)
+		if err != nil {
+			storeError(w, err)
+			return
+		}
+		if !hasHistory {
+			a = s.Sample.Appliances(home)
+			sampleHeaders(w)
+		}
+	}
 	write(w, 200, map[string]any{"appliances": a})
+}
+func (s Service) sampleAllowed(user, home string) bool {
+	return s.Sample != nil && s.Sample.AllowedUsers[user] && s.Sample.AllowedHomes[home]
+}
+func sampleHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-EnergyLens-Data-Mode", "sample")
+	w.Header().Set("X-EnergyLens-Fixture-Revision", SampleRevision)
 }
 func (s Service) get(w http.ResponseWriter, r *http.Request) {
 	home, id, ok := parseIDs(w, r)
 	if !ok {
 		return
 	}
-	a, err := s.Store.Get(r.Context(), s.UserID(r), home, id)
+	user := s.UserID(r)
+	a, err := s.Store.Get(r.Context(), user, home, id)
+	if errors.Is(err, ErrNotFound) && s.sampleAllowed(user, home) {
+		if fixture, found := s.Sample.Appliance(home, id); found {
+			// List verifies ownership. Any active or archived inventory in this
+			// home, or a real row using this fixture ID elsewhere, wins.
+			active, listErr := s.Store.List(r.Context(), user, home)
+			if listErr != nil {
+				storeError(w, listErr)
+				return
+			}
+			if len(active) == 0 {
+				history, historyErr := s.Store.HasInventoryHistory(r.Context(), user, home)
+				if historyErr != nil {
+					storeError(w, historyErr)
+					return
+				}
+				if !history {
+					collision, collisionErr := s.Store.HasApplianceID(r.Context(), id)
+					if collisionErr != nil {
+						storeError(w, collisionErr)
+						return
+					}
+					if !collision {
+						a, err = fixture, nil
+						sampleHeaders(w)
+					}
+				}
+			}
+		}
+	}
 	if err != nil {
 		storeError(w, err)
 		return

@@ -56,6 +56,8 @@ type PatchInput struct {
 }
 type Store interface {
 	List(context.Context, string, string) ([]Appliance, error)
+	HasInventoryHistory(context.Context, string, string) (bool, error)
+	HasApplianceID(context.Context, string) (bool, error)
 	Get(context.Context, string, string, string) (Appliance, error)
 	Create(context.Context, string, string, CreateInput, string, []byte) (Appliance, error)
 	Patch(context.Context, string, string, string, PatchInput, int64, string, []byte) (Appliance, error)
@@ -122,6 +124,16 @@ func (s PGStore) List(ctx context.Context, owner, home string) ([]Appliance, err
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+func (s PGStore) HasInventoryHistory(ctx context.Context, owner, home string) (bool, error) {
+	var exists bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM appliances a JOIN homes h ON h.id=a.home_id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL)`, home, owner).Scan(&exists)
+	return exists, err
+}
+func (s PGStore) HasApplianceID(ctx context.Context, id string) (bool, error) {
+	var exists bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM appliances WHERE id=$1)`, id).Scan(&exists)
+	return exists, err
 }
 func (s PGStore) Get(ctx context.Context, owner, home, id string) (Appliance, error) {
 	a, err := scanAppliance(s.Pool.QueryRow(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE a.id=$1 AND a.home_id=$2 AND h.owner_user_id=$3 AND h.deleted_at IS NULL AND a.archived_at IS NULL`, id, home, owner))

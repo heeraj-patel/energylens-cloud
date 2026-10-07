@@ -184,6 +184,23 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				modules = append(modules, Module{Name: "isolated-mobile-design-fixtures", Mount: fixtureService.Routes})
 			}
 			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			if c.SampleHouseholdEnabled {
+				allowedUsers, err := designfixture.ParseUserIDs(c.SampleHouseholdUserIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("appliance sample user allowlist: %w", err)
+				}
+				allowedHomes, err := designfixture.ParseUserIDs(c.SampleHouseholdHomeIDs)
+				if err != nil {
+					rt.Close()
+					return nil, fmt.Errorf("appliance sample home allowlist: %w", err)
+				}
+				appliances.Sample, err = inventory.NewSampleProvider(allowedUsers, allowedHomes)
+				if err != nil {
+					rt.Close()
+					return nil, err
+				}
+			}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
 			products := catalog.Service{Store: catalog.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
 			modules = append(modules, Module{Name: "reviewed-catalog", Mount: products.Routes})
