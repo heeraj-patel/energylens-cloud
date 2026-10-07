@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
 	"github.com/go-chi/chi/v5"
@@ -105,7 +106,20 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	inventorySample, e := inventory.NewSampleProvider(map[string]bool{owner: true, other: true}, map[string]bool{home: true, emptyHome: true})
+	if e != nil {
+		t.Fatal(e)
+	}
 	router := chi.NewRouter()
+	inventory.Service{Store: inventory.PGStore{Pool: pool}, Sample: inventorySample, Auth: func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-User") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}, UserID: func(r *http.Request) string { return r.Header.Get("X-User") }}.Routes(router)
 	Service{Store: store, Sample: sample, Auth: func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-User") == "" {
@@ -129,6 +143,15 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	if wSample.Code != 200 || wSample.Header().Get("X-EnergyLens-Data-Mode") != "sample" || wSample.Header().Get("X-EnergyLens-Fixture-Revision") != "synthetic_household_v1" || wSample.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("sample response: %d %s", wSample.Code, wSample.Body.String())
 	}
+	// The two existing routes use the same allowlist and fixture revision, while
+	// real appliance history suppresses fallback for both route families.
+	listSample := sampleRequest(owner, "/homes/"+emptyHome+"/appliances/")
+	var applianceSampleBody struct {
+		Appliances []map[string]any `json:"appliances"`
+	}
+	if err := json.Unmarshal(listSample.Body.Bytes(), &applianceSampleBody); err != nil || listSample.Code != 200 || len(applianceSampleBody.Appliances) == 0 || listSample.Header().Get("X-EnergyLens-Data-Mode") != wSample.Header().Get("X-EnergyLens-Data-Mode") || listSample.Header().Get("X-EnergyLens-Fixture-Revision") != wSample.Header().Get("X-EnergyLens-Fixture-Revision") {
+		t.Fatalf("appliance sample: %d %s (%v)", listSample.Code, listSample.Body.String(), err)
+	}
 	var sampleBody struct {
 		Granularity string           `json:"granularity"`
 		Rows        []map[string]any `json:"summaries"`
@@ -143,6 +166,9 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	if w := sampleRequest(other, samplePath); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
 		t.Fatalf("sample crossed owner: %d", w.Code)
 	}
+	if w := sampleRequest(other, "/homes/"+emptyHome+"/appliances/"); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+		t.Fatalf("appliance sample crossed owner: %d", w.Code)
+	}
 	if w := sampleRequest(owner, samplePath+"&sensor_id=30000000-0000-4000-8000-000000000001"); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
 		t.Fatalf("sample bypassed sensor scope: %d", w.Code)
 	}
@@ -151,6 +177,9 @@ func TestOwnerEpochKindsAndKeyset(t *testing.T) {
 	}
 	if w := sampleRequest(owner, strings.Replace(samplePath, emptyHome, home, 1)); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"summaries":[]`) {
 		t.Fatalf("real history lost precedence outside query window: %d %s", w.Code, w.Body.String())
+	}
+	if w := sampleRequest(owner, "/homes/"+home+"/appliances/"); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[`) {
+		t.Fatalf("real appliance history lost precedence: %d %s", w.Code, w.Body.String())
 	}
 	request := func(ownerID, path string) (int, map[string]any) {
 		t.Helper()
