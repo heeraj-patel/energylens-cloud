@@ -17,11 +17,10 @@ import (
 type Service struct {
 	Store interface {
 		Scope(context.Context, Query) error
-		PageAtRevisionWithHistory(context.Context, Query, *int64, bool) ([]Row, int64, bool, error)
+		PageAtRevision(context.Context, Query, *int64) ([]Row, int64, string, error)
 	}
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
-	Sample *SampleProvider
 }
 
 func (s Service) Routes(r chi.Router) { r.With(s.Auth).Get("/homes/{home}/metered-summaries", s.list) }
@@ -141,8 +140,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	sampleEligible := expected == nil && q.SensorID == "" && q.AttachmentID == "" && s.Sample.allowed(q)
-	rows, revision, hasHistory, e := s.Store.PageAtRevisionWithHistory(r.Context(), q, expected, sampleEligible)
+	rows, revision, fixtureRevision, e := s.Store.PageAtRevision(r.Context(), q, expected)
 	if e != nil {
 		if errors.Is(e, ErrRevisionChanged) {
 			bad(w, 409, "evidence_changed")
@@ -154,13 +152,6 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Error("metered summary page failed", "error", e)
 		bad(w, 500, "internal_error")
-		return
-	}
-	if len(rows) == 0 && sampleEligible && !hasHistory {
-		sampleHeaders(w)
-		w.Header().Set("X-EnergyLens-Evidence-Revision", s.Sample.evidenceRevision())
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"granularity": q.Granularity, "summaries": s.Sample.page(q), "next_cursor": nil})
 		return
 	}
 	more := len(rows) > limit
@@ -177,5 +168,10 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-EnergyLens-Evidence-Revision", "v1-"+strconv.FormatInt(revision, 10))
+	if fixtureRevision != "" {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-EnergyLens-Data-Mode", "sample")
+		w.Header().Set("X-EnergyLens-Fixture-Revision", fixtureRevision)
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"granularity": q.Granularity, "summaries": items, "next_cursor": next})
 }

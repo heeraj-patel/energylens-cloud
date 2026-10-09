@@ -3,39 +3,48 @@ package inventory
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"io"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"energylens.local/cloud/internal/householdenergy"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-type routeStore struct {
-	a            Appliance
-	writes       int
-	empty        bool
-	history      bool
-	listErr      error
-	historyErr   error
-	getErr       error
-	collision    bool
-	collisionErr error
-}
-
-func (s *routeStore) HasApplianceID(_ context.Context, _ string) (bool, error) {
-	return s.collision, s.collisionErr
-}
-
-func (s *routeStore) HasInventoryHistory(_ context.Context, owner, home string) (bool, error) {
-	if s.historyErr != nil {
-		return false, s.historyErr
+// The shared-contract test consumes this marker from the actual HTTP encoder.
+func TestDemoApplianceSerializedContract(t *testing.T) {
+	home := uuid.NewString()
+	demo := Appliance{ID: uuid.NewString(), HomeID: home, Name: "Named demo", DemoDeviceID: "demo-device-01", DemoFixtureRevision: "demo-revision", Identity: Identity{MatchQuality: "unresolved"}, Version: 1}
+	store := &routeStore{a: Appliance{ID: uuid.NewString(), HomeID: home}, empty: true, extra: []Appliance{demo}}
+	service := Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return "owner" }}
+	router := chi.NewRouter()
+	service.Routes(router)
+	for _, path := range []string{"/homes/" + home + "/appliances/", "/homes/" + home + "/appliances/" + demo.ID} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusOK || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" {
+			t.Fatalf("demo GET %s = %d", path, w.Code)
+		}
+		var payload any
+		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		encoded, _ := json.Marshal(payload)
+		fmt.Println("DEMO_APPLIANCE_JSON:" + string(encoded))
 	}
-	return owner == "owner" && home == s.a.HomeID && (s.history || s.a.ID != "" && !s.empty), nil
+}
+
+type routeStore struct {
+	a       Appliance
+	writes  int
+	empty   bool
+	listErr error
+	getErr  error
+	extra   []Appliance
 }
 
 func TestDisclosureRequiredErrorCode(t *testing.T) {
@@ -54,9 +63,9 @@ func (s *routeStore) List(_ context.Context, owner, home string) ([]Appliance, e
 		return nil, ErrNotFound
 	}
 	if s.empty {
-		return []Appliance{}, nil
+		return append([]Appliance{}, s.extra...), nil
 	}
-	return []Appliance{s.a}, nil
+	return append([]Appliance{s.a}, s.extra...), nil
 }
 
 func (s *routeStore) ListWithRevision(ctx context.Context, owner, home string) ([]Appliance, string, error) {
@@ -67,28 +76,23 @@ func (s *routeStore) ListWithRevision(ctx context.Context, owner, home string) (
 	return a, inventoryRevision("persisted", home, a), nil
 }
 
-func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
+func TestEmptyInventoryDoesNotUseSampleFixture(t *testing.T) {
 	home := uuid.NewString()
-	users := map[string]bool{"owner": true}
-	homes := map[string]bool{home: true}
-	sample, err := NewSampleProvider(users, homes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := &routeStore{a: Appliance{ID: uuid.NewString(), HomeID: home, Name: "Actual", Version: 1}, empty: true}
-	service := Service{Store: store, Sample: sample, Auth: func(next http.Handler) http.Handler {
+	store := &routeStore{a: Appliance{ID: uuid.NewString(), HomeID: home}, empty: true}
+	service := Service{Store: store, Auth: func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("Authorization") == "" {
-				w.WriteHeader(401)
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}, UserID: func(r *http.Request) string { return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") }}
 	router := chi.NewRouter()
-	router.Route("/v1", service.Routes)
-	call := func(actor, path string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+	service.Routes(router)
+	path := "/homes/" + home + "/appliances/"
+	call := func(method, actor, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, nil)
 		if actor != "" {
 			req.Header.Set("Authorization", "Bearer "+actor)
 		}
@@ -96,84 +100,60 @@ func TestApplianceSampleSameRouteAndRealDataPrecedence(t *testing.T) {
 		router.ServeHTTP(w, req)
 		return w
 	}
-	path := "/v1/homes/" + home + "/appliances"
-	if w := call("", path); w.Code != 401 || w.Header().Get(InventoryRevisionHeader) != "" {
-		t.Fatalf("unauthenticated = %d", w.Code)
+	if w := call(http.MethodGet, "owner", path); w.Code != http.StatusOK || w.Header().Get(InventoryRevisionHeader) == "" || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
+		t.Fatalf("empty inventory = %d %s", w.Code, w.Body.String())
 	}
-	if w := call("other", path); w.Code != 404 || w.Header().Get(InventoryRevisionHeader) != "" {
-		t.Fatalf("cross-owner = %d", w.Code)
+	if w := call(http.MethodGet, "owner", path+uuid.NewString()); w.Code != http.StatusNotFound || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
+		t.Fatalf("missing appliance = %d %s", w.Code, w.Body.String())
 	}
-	w := call("owner", path)
-	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || w.Header().Get("X-EnergyLens-Fixture-Revision") != SampleRevision || w.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("sample response = %d %s", w.Code, w.Body.String())
+	demo := Appliance{ID: uuid.NewString(), HomeID: home, Name: "Named demo", DemoDeviceID: "demo-device-01", DemoFixtureRevision: "demo-revision", Identity: Identity{MatchQuality: "unresolved"}, Version: 1}
+	store.extra = []Appliance{demo}
+	w := call(http.MethodGet, "owner", path)
+	if w.Code != http.StatusOK || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || w.Header().Get("X-EnergyLens-Fixture-Revision") != "demo-revision" || !strings.Contains(w.Body.String(), `"demo_device_id":"demo-device-01"`) {
+		t.Fatalf("snapshot inventory envelope = %d %s", w.Code, w.Body.String())
 	}
-	sampleRevision := w.Header().Get(InventoryRevisionHeader)
-	if !strings.HasPrefix(sampleRevision, "v1-") || len(sampleRevision) != 67 || call("owner", path).Header().Get(InventoryRevisionHeader) != sampleRevision {
-		t.Fatalf("sample revision is missing or unstable: %q", sampleRevision)
+	w = call(http.MethodGet, "owner", path+demo.ID)
+	if w.Code != http.StatusOK || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || !strings.Contains(w.Body.String(), `"demo_device_id":"demo-device-01"`) {
+		t.Fatalf("snapshot readback = %d %s", w.Code, w.Body.String())
 	}
-	var body map[string]json.RawMessage
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body) != 1 || body["appliances"] == nil {
-		t.Fatalf("response shape = %s", w.Body.String())
-	}
-	var items []Appliance
-	if err := json.Unmarshal(body["appliances"], &items); err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 4 {
-		t.Fatalf("sample items = %d", len(items))
-	}
-	for _, a := range items {
-		if a.HomeID != home || a.Version != 1 || a.Identity.MatchQuality != "unresolved" {
-			t.Fatalf("bad sample row %+v", a)
+}
+
+func TestDemoAppliancesExposeOnlyNamedSnapshotLeaves(t *testing.T) {
+	snapshot := householdenergy.DemoCostSnapshot{Version: 1, FixtureRevision: "cost_snapshot_v1", Timezone: "America/Chicago", ReferenceLocalDate: "2026-09-28", Currency: "USD", Provenance: "synthetic", Devices: make([]householdenergy.DemoSnapshotDevice, 18)}
+	names := []string{"Study Desktop & Rig", `Living Room 65" TV`, "Phone & Tablet Chargers", "Kitchen Refrigerator", "Hallway Central AC", "Living Room Soundbar", "Home Office Monitors", "Mesh Wi-Fi Gateway & Router", "Subwoofer & Amp Rack", "Central Heat Pump"}
+	for i := range snapshot.Devices {
+		id := fmt.Sprintf("demo-device-%02d", i+1)
+		var deviceName *string
+		if i >= 10 {
+			deviceName = nil
+		} else {
+			deviceName = &names[i]
 		}
+		snapshot.Devices[i] = householdenergy.DemoSnapshotDevice{ID: id, Name: deviceName}
 	}
-	delete(sample.AllowedUsers, "owner")
-	w = call("owner", path)
-	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
-		t.Fatalf("user allowlist = %d %s", w.Code, w.Body.String())
+	if err := snapshot.Validate(); err != nil {
+		t.Fatal(err)
 	}
-	emptyRevision := w.Header().Get(InventoryRevisionHeader)
-	if emptyRevision == "" || emptyRevision == sampleRevision || call("owner", path).Header().Get(InventoryRevisionHeader) != emptyRevision {
-		t.Fatalf("empty persisted revision = %q", emptyRevision)
+	home := uuid.NewString()
+	rows, err := demoAppliances(snapshot, home)
+	if err != nil {
+		t.Fatal(err)
 	}
-	sample.AllowedUsers["owner"] = true
-	delete(sample.AllowedHomes, home)
-	w = call("owner", path)
-	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
-		t.Fatalf("home allowlist = %d %s", w.Code, w.Body.String())
+	if len(rows) != 10 {
+		t.Fatalf("named rows = %d", len(rows))
 	}
-	sample.AllowedHomes[home] = true
-	store.empty = false
-	w = call("owner", path)
-	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), "Actual") {
-		t.Fatalf("real inventory = %d %s", w.Code, w.Body.String())
+	again, err := demoAppliances(snapshot, home)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if realRevision := w.Header().Get(InventoryRevisionHeader); realRevision == "" || realRevision == sampleRevision || realRevision == emptyRevision {
-		t.Fatalf("real inventory revision = %q", realRevision)
+	otherHomeRows, err := demoAppliances(snapshot, uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
 	}
-	store.empty, store.history = true, true
-	w = call("owner", path)
-	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
-		t.Fatalf("archived inventory = %d %s", w.Code, w.Body.String())
-	}
-	store.history = false
-	store.listErr = errors.New("db down")
-	if w = call("owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get(InventoryRevisionHeader) != "" {
-		t.Fatalf("list error = %d", w.Code)
-	}
-	store.listErr, store.historyErr = nil, errors.New("db down")
-	if w = call("owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || w.Header().Get(InventoryRevisionHeader) != "" {
-		t.Fatalf("history error = %d", w.Code)
-	}
-	store.historyErr = nil
-	service.Sample = nil
-	router = chi.NewRouter()
-	router.Route("/v1", service.Routes)
-	if w = call("owner", path); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), `"appliances":[]`) {
-		t.Fatalf("disabled sample = %d %s", w.Code, w.Body.String())
+	for i, row := range rows {
+		if row.DemoDeviceID != fmt.Sprintf("demo-device-%02d", i+1) || row.DemoFixtureRevision != snapshot.FixtureRevision || row.Name != names[i] || row.HomeID != home || row.ID != again[i].ID || row.ID == otherHomeRows[i].ID || row.Category != "" || row.Identity.MatchQuality != "unresolved" || row.Identity.Brand != "" || row.Identity.FullModel != "" || row.Identity.Fuel != "" {
+			t.Fatalf("unexpected demo row %+v", row)
+		}
 	}
 }
 func (s *routeStore) Get(_ context.Context, owner, home, id string) (Appliance, error) {
@@ -186,109 +166,6 @@ func (s *routeStore) Get(_ context.Context, owner, home, id string) (Appliance, 
 	return s.a, nil
 }
 
-func TestApplianceSampleDetailOwnershipPrecedenceAndMutation(t *testing.T) {
-	home := uuid.NewString()
-	sample, err := NewSampleProvider(map[string]bool{"owner": true}, map[string]bool{home: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := sample.Appliances(home)[0]
-	store := &routeStore{a: Appliance{ID: uuid.NewString(), HomeID: home, Name: "Actual", Version: 1}, empty: true}
-	service := Service{Store: store, Sample: sample, Auth: func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Authorization") == "" {
-				w.WriteHeader(401)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}, UserID: func(r *http.Request) string { return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") }}
-	router := chi.NewRouter()
-	router.Route("/v1", service.Routes)
-	path := "/v1/homes/" + home + "/appliances/" + fixture.ID
-	call := func(method, actor, path string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, nil)
-		if actor != "" {
-			req.Header.Set("Authorization", "Bearer "+actor)
-		}
-		if method != http.MethodGet {
-			req.Header.Set("Idempotency-Key", uuid.NewString())
-			req.Header.Set("If-Match", `"1"`)
-			if method == http.MethodPatch {
-				req.Body = io.NopCloser(strings.NewReader(`{"name":"Changed"}`))
-				req.Header.Set("Content-Type", "application/json")
-			}
-		}
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		return w
-	}
-	if w := call("GET", "", path); w.Code != 401 {
-		t.Fatalf("auth = %d", w.Code)
-	}
-	if w := call("GET", "other", path); w.Code != 404 {
-		t.Fatalf("owner = %d", w.Code)
-	}
-	w := call("GET", "owner", path)
-	if w.Code != 200 || w.Header().Get("ETag") != `"1"` || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || w.Header().Get("X-EnergyLens-Fixture-Revision") != SampleRevision {
-		t.Fatalf("sample detail = %d %s", w.Code, w.Body.String())
-	}
-	var got Appliance
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.ID != fixture.ID || got.HomeID != home || got.Name != fixture.Name {
-		t.Fatalf("sample body = %+v %v", got, err)
-	}
-	if w = call("GET", "owner", "/v1/homes/"+home+"/appliances/"+uuid.NewString()); w.Code != 404 {
-		t.Fatalf("nonfixture = %d", w.Code)
-	}
-	for _, method := range []string{http.MethodPatch, http.MethodDelete} {
-		if w = call(method, "owner", path); w.Code != 404 {
-			t.Fatalf("sample mutation %s = %d", method, w.Code)
-		}
-	}
-	if store.writes != 2 {
-		t.Fatalf("mutations should reach real store: writes = %d", store.writes)
-	}
-	store.a.ID = fixture.ID
-	if w = call("GET", "owner", path); w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || !strings.Contains(w.Body.String(), "Actual") {
-		t.Fatalf("real ID precedence = %d %s", w.Code, w.Body.String())
-	}
-	if w = call("PATCH", "owner", path); w.Code != 200 || w.Header().Get("ETag") != `"2"` {
-		t.Fatalf("real patch = %d", w.Code)
-	}
-	if w = call("DELETE", "owner", path); w.Code != 204 {
-		t.Fatalf("real delete = %d", w.Code)
-	}
-	store.a.ID = uuid.NewString()
-	store.empty = false
-	if w = call("GET", "owner", path); w.Code != 404 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
-		t.Fatalf("real active precedence = %d", w.Code)
-	}
-	store.empty, store.history = true, true
-	if w = call("GET", "owner", path); w.Code != 404 {
-		t.Fatalf("archive precedence = %d", w.Code)
-	}
-	store.history, store.collision = false, true
-	if w = call("GET", "owner", path); w.Code != 404 {
-		t.Fatalf("global ID collision = %d", w.Code)
-	}
-	store.collision = false
-	for _, setErr := range []func(error){func(e error) { store.getErr = e }, func(e error) { store.listErr = e }, func(e error) { store.historyErr = e }, func(e error) { store.collisionErr = e }} {
-		setErr(errors.New("db down"))
-		if w = call("GET", "owner", path); w.Code != 500 || w.Header().Get("X-EnergyLens-Data-Mode") != "" {
-			t.Fatalf("store error = %d", w.Code)
-		}
-		setErr(nil)
-	}
-	delete(sample.AllowedUsers, "owner")
-	if w = call("GET", "owner", path); w.Code != 404 {
-		t.Fatalf("user gate = %d", w.Code)
-	}
-	sample.AllowedUsers["owner"] = true
-	delete(sample.AllowedHomes, home)
-	if w = call("GET", "owner", path); w.Code != 404 {
-		t.Fatalf("home gate = %d", w.Code)
-	}
-}
 func (s *routeStore) Create(_ context.Context, owner, home string, _ CreateInput, _ string, _ []byte) (Appliance, error) {
 	s.writes++
 	if owner != "owner" || home != s.a.HomeID {

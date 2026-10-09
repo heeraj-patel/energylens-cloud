@@ -66,9 +66,6 @@ type Config struct {
 	SampleFixturesEnabled        bool
 	SampleFixtureUserIDs         string
 	SampleFixtureHomeIDs         string
-	SampleHouseholdEnabled       bool
-	SampleHouseholdUserIDs       string
-	SampleHouseholdHomeIDs       string
 	LocalAuthActiveKeyID         string
 	LocalAuthPrivateKey          string
 	LocalAuthPublicKeys          string
@@ -109,11 +106,9 @@ func LoadConfig(role string) (Config, error) {
 		LocalAuthActiveKeyID: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ACTIVE_KEY_ID"), LocalAuthPrivateKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PRIVATE_KEY_FILE"), LocalAuthPublicKeys: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PUBLIC_KEY_FILES"), LocalAuthAudience: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_AUDIENCE"),
 		LocalAuthRegisterKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_REGISTER_RATE_KEY_FILE"), LocalAuthLoginKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LOGIN_RATE_KEY_FILE"), LocalAuthRecoveryKey: os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RECOVERY_RATE_KEY_FILE"),
 		DevAuthEmail: os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_EMAIL"), DevAuthPassword: os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_PASSWORD"),
-		SampleFixtureUserIDs:   os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_USER_IDS"),
-		SampleFixtureHomeIDs:   os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_HOME_IDS"),
-		SampleHouseholdUserIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_USER_IDS"),
-		SampleHouseholdHomeIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_HOME_IDS"),
-		OEDIIOUPath:            os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
+		SampleFixtureUserIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_USER_IDS"),
+		SampleFixtureHomeIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_HOME_IDS"),
+		OEDIIOUPath:          os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"), KBHelpOutputPath: os.Getenv("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH"),
 		KBScanGoogleSite: os.Getenv("ENERGYLENS_CLOUD_KB_GOOGLE_SITE"), KBScanGoogleCSEAPIKey: os.Getenv("ENERGYLENS_GOOGLE_CSE_API_KEY"), KBScanGoogleCSEID: os.Getenv("ENERGYLENS_GOOGLE_CSE_ID"),
 	}
@@ -222,13 +217,6 @@ func LoadConfig(role string) (Config, error) {
 		}
 		c.SampleFixturesEnabled = enabled
 	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_ENABLED"); raw != "" {
-		enabled, err := strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_SAMPLE_HOUSEHOLD_ENABLED: %w", err)
-		}
-		c.SampleHouseholdEnabled = enabled
-	}
 	if c.DevAuthEnabled && c.Environment == "" {
 		return Config{}, errors.New("development auth requires explicit ENERGYLENS_CLOUD_ENV=dev")
 	}
@@ -250,14 +238,6 @@ func LoadConfig(role string) (Config, error) {
 }
 
 func (c Config) Validate() error {
-	if c.SampleHouseholdEnabled {
-		if c.Environment != "dev" && c.Environment != "test" || c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || strings.TrimSpace(c.SampleHouseholdUserIDs) == "" || strings.TrimSpace(c.SampleHouseholdHomeIDs) == "" {
-			return errors.New("sample household requires dev/test API, database, and explicit user and home allowlists")
-		}
-	}
-	if (c.SampleHouseholdUserIDs != "" || c.SampleHouseholdHomeIDs != "") && !c.SampleHouseholdEnabled {
-		return errors.New("sample household allowlists require sample household gate")
-	}
 	if c.SampleFixturesEnabled {
 		if c.Environment != "dev" && c.Environment != "test" {
 			return errors.New("sample fixtures require dev or test environment")

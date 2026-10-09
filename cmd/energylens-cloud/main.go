@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/catalogimport"
+	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
 	"energylens.local/cloud/internal/usagefactimport"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -52,7 +54,7 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "deletion-journal" {
 		return deletionJournalOperator(ctx, args[1:])
 	}
-	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program") {
+	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
 		return operator(ctx, args)
 	}
 	if len(args) > 0 && args[0] == "migrate" {
@@ -177,6 +179,30 @@ func operator(ctx context.Context, args []string) error {
 		if e != nil {
 			return e
 		}
+	}
+	if args[0] == "import-demo-cost-snapshot" {
+		owner := fs.String("owner-id", "", "owning user UUID")
+		home := fs.String("home-id", "", "home UUID")
+		seed := fs.Bool("seed-mobile-demo-v1", false, "import the approved 18-device mobile demo schedule")
+		if e = fs.Parse(args[1:]); e != nil {
+			return e
+		}
+		if fs.NArg() != 0 || *owner == "" || *home == "" {
+			return errors.New("owner-id and home-id required; use --seed-mobile-demo-v1 or provide snapshot JSON on stdin")
+		}
+		var snapshot householdenergy.DemoCostSnapshot
+		if *seed {
+			snapshot = householdenergy.MobileDemoCostSnapshot()
+		} else {
+			snapshot, e = householdenergy.DecodeDemoCostSnapshot(io.LimitReader(os.Stdin, 1<<20))
+			if e != nil {
+				return e
+			}
+		}
+		if e = householdenergy.ImportDemoCostSnapshot(ctx, pool, *owner, *home, snapshot); e != nil {
+			return e
+		}
+		result = map[string]string{"home_id": *home, "fixture_revision": snapshot.FixtureRevision, "status": "imported"}
 	}
 	if args[0] == "provision-hub" {
 		local := fs.String("local-hub-id", "", "hub local ID")

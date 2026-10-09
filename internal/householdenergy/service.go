@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,7 +24,6 @@ type Service struct {
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
 	Now    func() time.Time
-	Sample *SampleProvider
 }
 
 type quantity struct {
@@ -66,11 +66,34 @@ type base struct {
 	FixtureRevision string     `json:"fixture_revision,omitempty"`
 }
 type bucket struct {
-	Start            time.Time  `json:"start_local"`
-	End              time.Time  `json:"end_exclusive_local"`
-	Allocation       allocation `json:"allocation"`
-	CoverageFraction any        `json:"coverage_fraction"`
+	Start             time.Time          `json:"start_local"`
+	End               time.Time          `json:"end_exclusive_local"`
+	Allocation        allocation         `json:"allocation"`
+	CoverageFraction  any                `json:"coverage_fraction"`
+	DeviceAllocations []deviceAllocation `json:"device_allocations,omitempty"`
+	Unattributed      *allocation        `json:"unattributed,omitempty"`
 }
+type deviceAllocation struct {
+	ApplianceID string     `json:"appliance_id,omitempty"`
+	DeviceID    string     `json:"device_id,omitempty"`
+	Name        *string    `json:"name,omitempty"`
+	Allocation  allocation `json:"allocation"`
+}
+
+func (d deviceAllocation) MarshalJSON() ([]byte, error) {
+	if d.DeviceID != "" {
+		return json.Marshal(struct {
+			DeviceID   string     `json:"device_id"`
+			Name       *string    `json:"name"`
+			Allocation allocation `json:"allocation"`
+		}{d.DeviceID, d.Name, d.Allocation})
+	}
+	return json.Marshal(struct {
+		ApplianceID string     `json:"appliance_id"`
+		Allocation  allocation `json:"allocation"`
+	}{d.ApplianceID, d.Allocation})
+}
+
 type interval struct {
 	Start, End time.Time
 	Wh         *big.Rat
@@ -90,17 +113,43 @@ func (s Service) Routes(r chi.Router) {
 	r.With(s.Auth).Get("/homes/{home}/energy-trends", s.trends)
 }
 
-func (s Service) dashboard(w http.ResponseWriter, r *http.Request) { s.read(w, r, "dashboard", "hour") }
+func (s Service) dashboard(w http.ResponseWriter, r *http.Request) {
+	s.read(w, r, "dashboard", "hour", "")
+}
 func (s Service) trends(w http.ResponseWriter, r *http.Request) {
-	g := r.URL.Query().Get("granularity")
-	if len(r.URL.Query()) != 1 || g != "hour" && g != "day" && g != "week" && g != "month" {
+	g, window, ok := parseTrendsQuery(r.URL.Query())
+	if !ok {
 		fail(w, 400, "invalid_request")
 		return
 	}
-	s.read(w, r, "energy_trends", g)
+	s.read(w, r, "energy_trends", g, window)
 }
 
-func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity string) {
+func parseTrendsQuery(query url.Values) (granularity, window string, ok bool) {
+	values := query["granularity"]
+	if len(values) != 1 {
+		return "", "", false
+	}
+	granularity = values[0]
+	if granularity != "hour" && granularity != "day" && granularity != "week" && granularity != "month" {
+		return "", "", false
+	}
+	if len(query) == 1 {
+		return granularity, "", true
+	}
+	windows := query["window"]
+	if len(query) == 2 && len(windows) == 1 {
+		if windows[0] == "trailing_30_days" && granularity == "day" {
+			return granularity, windows[0], true
+		}
+		if windows[0] == "last_5_occurrences" && (granularity == "day" || granularity == "week" || granularity == "month") {
+			return granularity, windows[0], true
+		}
+	}
+	return "", "", false
+}
+
+func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity, window string) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	home := chi.URLParam(r, "home")
 	if _, err := uuid.Parse(home); err != nil {
@@ -119,7 +168,8 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	defer tx.Rollback(r.Context())
 	var tz string
 	var homeVersion int64
-	err = tx.QueryRow(r.Context(), `SELECT timezone,version FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL`, home, s.UserID(r)).Scan(&tz, &homeVersion)
+	var rawDemo []byte
+	err = tx.QueryRow(r.Context(), `SELECT timezone,version,demo_cost_snapshot FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL`, home, s.UserID(r)).Scan(&tz, &homeVersion, &rawDemo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		fail(w, 404, "not_found")
 		return
@@ -138,13 +188,26 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 		now = s.Now().UTC()
 	}
 	p := periodFor(now, loc, granularity)
+	if window == "trailing_30_days" {
+		p = trailing30DaysPeriod(now, loc)
+	} else if window == "last_5_occurrences" {
+		p = last5OccurrencesPeriod(now, loc, granularity)
+	}
 	var watermark int64
 	err = tx.QueryRow(r.Context(), `SELECT COALESCE(max(cursor),0) FROM ingest_batches WHERE home_id=$1`, home).Scan(&watermark)
 	if err != nil {
 		internal(w, err)
 		return
 	}
-	items, asOf, err := readIntervals(r.Context(), tx, home, p, now)
+	var hasHistory, hasInventory bool
+	err = tx.QueryRow(r.Context(), `SELECT
+ EXISTS(SELECT 1 FROM ingest_events WHERE home_id=$1 AND event_kind='energy_interval'),
+ EXISTS(SELECT 1 FROM appliances WHERE home_id=$1)`, home).Scan(&hasHistory, &hasInventory)
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	items, _, err := readIntervals(r.Context(), tx, home, p, now)
 	if err != nil {
 		internal(w, err)
 		return
@@ -155,20 +218,32 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 		internal(w, err)
 		return
 	}
-	sample := len(items) == 0 && s.Sample != nil && s.Sample.AllowedUsers[s.UserID(r)] && s.Sample.AllowedHomes[home]
+	var demoSnapshot *DemoCostSnapshot
+	if !hasHistory && !hasInventory && len(rawDemo) > 0 && string(rawDemo) != "null" {
+		var parsed DemoCostSnapshot
+		if err = json.Unmarshal(rawDemo, &parsed); err != nil || parsed.Validate() != nil || parsed.Timezone != tz {
+			internal(w, fmt.Errorf("invalid stored demo cost snapshot"))
+			return
+		}
+		demoSnapshot = &parsed
+	}
+	sample := demoSnapshot != nil
+	var asOf *time.Time
 	if sample {
-		// Evidence outside this view's period still replaces the synthetic
-		// household. Keep this check in the ownership-verified read snapshot.
-		var hasHistory bool
-		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM ingest_events WHERE home_id=$1 AND event_kind='energy_interval')`, home).Scan(&hasHistory)
+		asOf = &now
+	} else if hasHistory {
+		asOf, err = homeEnergyAsOf(r.Context(), tx, home, now)
 		if err != nil {
 			internal(w, err)
 			return
 		}
-		sample = !hasHistory
 	}
+	var sampleUnattributed *allocation
+	var sampleDeviceRows []deviceAllocation
 	if sample {
-		buckets = sampleBuckets(p, granularity)
+		var projectedTotal allocation
+		buckets, projectedTotal, sampleDeviceRows, sampleUnattributed = projectDemoSnapshot(*demoSnapshot, p, granularity, now)
+		_ = projectedTotal
 	}
 	var total *big.Rat
 	for _, b := range buckets {
@@ -182,7 +257,13 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	}
 	a := fromKWh(total)
 	if sample {
-		a = sampleTotal(len(buckets))
+		// The cost-only snapshot intentionally provides no kWh or tariff.
+		a = sumCostAllocations(sampleDeviceRows, func() allocation {
+			if sampleUnattributed != nil {
+				return *sampleUnattributed
+			}
+			return allocation{}
+		}())
 	}
 	if !sample && tariff != nil {
 		if cost := priceBuckets(buckets, *tariff); cost != nil {
@@ -194,14 +275,19 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	b := base{SchemaRevision: "household_energy_v1", ContentRevision: "household_energy_backend_v1", HomeID: home, DataMode: "household", GeneratedAt: now, AsOf: asOf, Timezone: tz, Period: p, Scope: "attributed_devices", Availability: a.Availability, EvidenceBasis: a.EvidenceBasis}
 	if sample {
 		b.DataMode = "sample"
-		b.ContentRevision = SampleRevision
-		b.FixtureRevision = SampleRevision
+		b.ContentRevision = demoSnapshot.FixtureRevision
+		b.FixtureRevision = demoSnapshot.FixtureRevision
+		b.Scope = "whole_home_including_unattributed_load"
 	}
 	// Tariff eligibility can change as time passes, without a new tariff
 	// revision (for example, at source_as_of + 1440 hours). Include the
 	// customer-visible allocation in the identity so a newly priced or newly
 	// unpriced response cannot reuse the prior snapshot ID.
 	allocationState := allocationSnapshotState(a)
+	if sample {
+		deviceState, _ := json.Marshal(sampleDeviceRows)
+		allocationState += "|" + string(deviceState)
+	}
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s", home, tz, p.Start.UTC().Format(time.RFC3339Nano), p.End.UTC().Format(time.RFC3339Nano), homeVersion, watermark, granularity, b.DataMode, latestTariffID, latestTariffRevision, allocationState)))
 	b.SnapshotID = hex.EncodeToString(digest[:])
 	if err = tx.Commit(r.Context()); err != nil {
@@ -212,20 +298,23 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity 
 	if view == "dashboard" {
 		out = struct {
 			base
-			View                string     `json:"view"`
-			Totals              allocation `json:"totals"`
-			TrendPeriod         string     `json:"trend_period"`
-			TopRecommendationID any        `json:"top_recommendation_id"`
-			AssistantIntentID   any        `json:"assistant_intent_id"`
-		}{b, "dashboard", a, "day", nil, nil}
+			View                string             `json:"view"`
+			Totals              allocation         `json:"totals"`
+			DeviceAllocations   []deviceAllocation `json:"device_allocations,omitempty"`
+			Unattributed        *allocation        `json:"unattributed,omitempty"`
+			TrendPeriod         string             `json:"trend_period"`
+			TopRecommendationID any                `json:"top_recommendation_id"`
+			AssistantIntentID   any                `json:"assistant_intent_id"`
+		}{b, "dashboard", a, sampleDeviceRows, sampleUnattributed, "day", nil, nil}
 	} else {
 		out = struct {
 			base
-			View        string     `json:"view"`
-			Granularity string     `json:"granularity"`
-			Totals      allocation `json:"totals"`
-			Buckets     []bucket   `json:"buckets"`
-		}{b, "energy_trends", granularity, a, buckets}
+			View         string      `json:"view"`
+			Granularity  string      `json:"granularity"`
+			Totals       allocation  `json:"totals"`
+			Buckets      []bucket    `json:"buckets"`
+			Unattributed *allocation `json:"unattributed,omitempty"`
+		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -251,6 +340,32 @@ func periodFor(now time.Time, loc *time.Location, g string) period {
 		return period{start, start.AddDate(1, 0, 0)}
 	default:
 		return period{day, day.AddDate(0, 0, 1)}
+	}
+}
+
+func trailing30DaysPeriod(now time.Time, loc *time.Location) period {
+	local := now.In(loc)
+	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	return period{Start: today.AddDate(0, 0, -29), End: today.AddDate(0, 0, 1)}
+}
+
+// last5OccurrencesPeriod returns the five home-local calendar buckets ending
+// with the current occurrence. Weeks start Monday; day/week/month boundaries
+// are local-calendar boundaries, so DST changes do not shift bucket dates.
+func last5OccurrencesPeriod(now time.Time, loc *time.Location, granularity string) period {
+	local := now.In(loc)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	switch granularity {
+	case "day":
+		return period{Start: day.AddDate(0, 0, -4), End: day.AddDate(0, 0, 1)}
+	case "week":
+		weekStart := day.AddDate(0, 0, -(int(day.Weekday())+6)%7)
+		return period{Start: weekStart.AddDate(0, 0, -28), End: weekStart.AddDate(0, 0, 7)}
+	case "month":
+		monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
+		return period{Start: monthStart.AddDate(0, -4, 0), End: monthStart.AddDate(0, 1, 0)}
+	default:
+		return period{}
 	}
 }
 
@@ -288,6 +403,26 @@ func readIntervals(ctx context.Context, tx pgx.Tx, home string, p period, now ti
 		}
 	}
 	return items, asOf, rows.Err()
+}
+
+// homeEnergyAsOf is independent of the requested chart window. All views of
+// one home therefore report the same live evidence cutoff, including a window
+// that happens to contain no observations.
+func homeEnergyAsOf(ctx context.Context, tx pgx.Tx, home string, now time.Time) (*time.Time, error) {
+	var asOf *time.Time
+	err := tx.QueryRow(ctx, `WITH latest AS (
+ SELECT DISTINCT ON (e.hub_id,e.ownership_epoch,e.event_id) e.hub_id,e.ownership_epoch,e.event_id,e.revision,e.event_kind
+ FROM ingest_events e WHERE e.home_id=$1 AND e.event_kind='energy_interval'
+ ORDER BY e.hub_id,e.ownership_epoch,e.event_id,e.revision DESC)
+ SELECT max(o.end_at) FROM latest l
+ JOIN energy_observations o ON o.hub_id=l.hub_id AND o.ownership_epoch=l.ownership_epoch AND o.event_id=l.event_id AND o.revision=l.revision
+ JOIN attachments a ON a.id=o.attachment_revision_id AND a.home_id=$1
+ WHERE l.event_kind='energy_interval' AND o.end_at <= $2 AND o.end_at > o.start_at`, home, now).Scan(&asOf)
+	if asOf != nil {
+		utc := asOf.UTC()
+		asOf = &utc
+	}
+	return asOf, err
 }
 
 // readMarginalTariff returns the latest revision identity for snapshot
@@ -438,7 +573,7 @@ func makeBuckets(p period, g string, items []interval) []bucket {
 		if wh != nil {
 			kwh = new(big.Rat).Quo(wh, big.NewRat(1000, 1))
 		}
-		out = append(out, bucket{start, end, fromKWh(kwh), nil})
+		out = append(out, bucket{Start: start, End: end, Allocation: fromKWh(kwh)})
 		start = end
 	}
 	return out

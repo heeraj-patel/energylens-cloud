@@ -437,6 +437,9 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	// Its exact rollup provenance is hashed in the immutable report snapshot.
 	bucket := time.Date(local.Year(), local.Month(), 2, 0, 0, 0, 0, time.UTC)
 	measuredAt := bucket.Add(5 * 24 * time.Hour)
+	if now.After(measuredAt) {
+		measuredAt = now
+	}
 	hub, sensor, attachment := uuid.New(), uuid.New(), uuid.New()
 	if _, err = pool.Exec(ctx, `INSERT INTO hubs(id,local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES($1,'elhub_report_test',$2,'test',$3,2)`, hub, make([]byte, 32), home); err != nil {
 		t.Fatal(err)

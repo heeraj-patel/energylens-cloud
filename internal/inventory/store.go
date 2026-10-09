@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
+	"energylens.local/cloud/internal/householdenergy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,17 +33,38 @@ type Identity struct {
 	CatalogProductID *string `json:"catalog_product_id,omitempty"`
 }
 type Appliance struct {
-	ID            string         `json:"id"`
-	HomeID        string         `json:"home_id"`
-	Name          string         `json:"name"`
-	Category      string         `json:"category"`
-	Room          *string        `json:"room,omitempty"`
-	Identity      Identity       `json:"identity"`
-	Version       int64          `json:"version"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	ArchivedAt    *time.Time     `json:"archived_at"`
-	KbWasteResult *KbWasteResult `json:"kb_waste_result,omitempty"`
+	ID                  string         `json:"id"`
+	DemoDeviceID        string         `json:"demo_device_id,omitempty"`
+	DemoFixtureRevision string         `json:"-"`
+	HomeID              string         `json:"home_id"`
+	Name                string         `json:"name"`
+	Category            string         `json:"category"`
+	Room                *string        `json:"room,omitempty"`
+	Identity            Identity       `json:"identity"`
+	Version             int64          `json:"version"`
+	CreatedAt           time.Time      `json:"created_at,omitempty"`
+	UpdatedAt           time.Time      `json:"updated_at,omitempty"`
+	ArchivedAt          *time.Time     `json:"archived_at"`
+	KbWasteResult       *KbWasteResult `json:"kb_waste_result,omitempty"`
+}
+
+// Synthetic inventory has no creation or update event. Omit Go's zero-time
+// encoding instead of presenting year 0001 as a real appliance timestamp.
+func (a Appliance) MarshalJSON() ([]byte, error) {
+	type applianceAlias Appliance
+	if a.DemoDeviceID == "" {
+		return json.Marshal(applianceAlias(a))
+	}
+	return json.Marshal(struct {
+		ID           string     `json:"id"`
+		DemoDeviceID string     `json:"demo_device_id"`
+		HomeID       string     `json:"home_id"`
+		Name         string     `json:"name"`
+		Category     string     `json:"category"`
+		Identity     Identity   `json:"identity"`
+		Version      int64      `json:"version"`
+		ArchivedAt   *time.Time `json:"archived_at"`
+	}{a.ID, a.DemoDeviceID, a.HomeID, a.Name, a.Category, a.Identity, a.Version, a.ArchivedAt})
 }
 
 // KbWasteResult is emitted only for an explicit terminal waste-specific KB finding.
@@ -64,8 +87,6 @@ type PatchInput struct {
 type Store interface {
 	List(context.Context, string, string) ([]Appliance, error)
 	ListWithRevision(context.Context, string, string) ([]Appliance, string, error)
-	HasInventoryHistory(context.Context, string, string) (bool, error)
-	HasApplianceID(context.Context, string) (bool, error)
 	Get(context.Context, string, string, string) (Appliance, error)
 	Create(context.Context, string, string, CreateInput, string, []byte) (Appliance, error)
 	Patch(context.Context, string, string, string, PatchInput, int64, string, []byte) (Appliance, error)
@@ -118,15 +139,23 @@ func (s PGStore) List(ctx context.Context, owner, home string) ([]Appliance, err
 // rows, from one database snapshot. Archiving the last active row therefore
 // cannot return the revision of a never-used empty home.
 func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Appliance, string, error) {
-	var id string
-	err := s.Pool.QueryRow(ctx, `SELECT id FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL`, home, owner).Scan(&id)
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, "", err
+	}
+	defer tx.Rollback(ctx)
+	var rawDemo []byte
+	var hasEnergyHistory bool
+	err = tx.QueryRow(ctx, `SELECT h.demo_cost_snapshot,
+ EXISTS(SELECT 1 FROM ingest_events e WHERE e.home_id=h.id AND e.event_kind='energy_interval')
+ FROM homes h WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner).Scan(&rawDemo, &hasEnergyHistory)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", ErrNotFound
 	}
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := s.Pool.Query(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL ORDER BY a.created_at,a.id`, home, owner)
+	rows, err := tx.Query(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL ORDER BY a.created_at,a.id`, home, owner)
 	if err != nil {
 		return nil, "", err
 	}
@@ -146,21 +175,53 @@ func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Ap
 	if err = rows.Err(); err != nil {
 		return nil, "", err
 	}
-	revision := inventoryRevision("persisted", home, all)
+	rows.Close()
+	if err = tx.Commit(ctx); err != nil {
+		return nil, "", err
+	}
 	if err := s.attachKbWasteResults(ctx, owner, home, out); err != nil {
 		return nil, "", err
 	}
+	if len(all) == 0 && !hasEnergyHistory && len(rawDemo) > 0 && string(rawDemo) != "null" {
+		snapshot, err := householdenergy.DecodeDemoCostSnapshot(bytes.NewReader(rawDemo))
+		if err != nil {
+			return nil, "", err
+		}
+		demoRows, err := demoAppliances(snapshot, home)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, demoRows...)
+		all = append(all, demoRows...)
+		fingerprint := sha256.Sum256(rawDemo)
+		revision := inventoryRevision("persisted+demo:"+hex.EncodeToString(fingerprint[:]), home, all)
+		return out, revision, nil
+	}
+	revision := inventoryRevision("persisted", home, all)
 	return out, revision, nil
 }
-func (s PGStore) HasInventoryHistory(ctx context.Context, owner, home string) (bool, error) {
-	var exists bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM appliances a JOIN homes h ON h.id=a.home_id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL)`, home, owner).Scan(&exists)
-	return exists, err
-}
-func (s PGStore) HasApplianceID(ctx context.Context, id string) (bool, error) {
-	var exists bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM appliances WHERE id=$1)`, id).Scan(&exists)
-	return exists, err
+
+func demoAppliances(snapshot householdenergy.DemoCostSnapshot, home string) ([]Appliance, error) {
+	rows := make([]Appliance, 0, 10)
+	for _, device := range snapshot.Devices {
+		if device.Name == nil || strings.TrimSpace(*device.Name) == "" {
+			continue
+		}
+		id := uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://energylens.local/demo/"+home+"/"+device.ID)).String()
+		rows = append(rows, Appliance{
+			ID:                  id,
+			DemoDeviceID:        device.ID,
+			DemoFixtureRevision: snapshot.FixtureRevision,
+			HomeID:              home,
+			Name:                *device.Name,
+			Identity:            Identity{MatchQuality: "unresolved"},
+			Version:             1,
+		})
+	}
+	if len(rows) != 10 {
+		return nil, errors.New("demo cost snapshot must have ten named devices")
+	}
+	return rows, nil
 }
 func (s PGStore) Get(ctx context.Context, owner, home, id string) (Appliance, error) {
 	a, err := scanAppliance(s.Pool.QueryRow(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE a.id=$1 AND a.home_id=$2 AND h.owner_user_id=$3 AND h.deleted_at IS NULL AND a.archived_at IS NULL`, id, home, owner))

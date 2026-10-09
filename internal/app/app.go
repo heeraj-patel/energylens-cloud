@@ -155,19 +155,6 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			}
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
 			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID}
-			if c.SampleHouseholdEnabled {
-				allowedUsers, err := designfixture.ParseUserIDs(c.SampleHouseholdUserIDs)
-				if err != nil {
-					rt.Close()
-					return nil, fmt.Errorf("sample household user allowlist: %w", err)
-				}
-				allowedHomes, err := designfixture.ParseUserIDs(c.SampleHouseholdHomeIDs)
-				if err != nil {
-					rt.Close()
-					return nil, fmt.Errorf("sample household home allowlist: %w", err)
-				}
-				liveEnergy.Sample = &householdenergy.SampleProvider{AllowedUsers: allowedUsers, AllowedHomes: allowedHomes}
-			}
 			modules = append(modules, Module{Name: "live-household-energy", Mount: liveEnergy.Routes})
 			if c.SampleFixturesEnabled {
 				allowed, err := designfixture.ParseUserIDs(c.SampleFixtureUserIDs)
@@ -184,23 +171,6 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				modules = append(modules, Module{Name: "isolated-mobile-design-fixtures", Mount: fixtureService.Routes})
 			}
 			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
-			if c.SampleHouseholdEnabled {
-				allowedUsers, err := designfixture.ParseUserIDs(c.SampleHouseholdUserIDs)
-				if err != nil {
-					rt.Close()
-					return nil, fmt.Errorf("appliance sample user allowlist: %w", err)
-				}
-				allowedHomes, err := designfixture.ParseUserIDs(c.SampleHouseholdHomeIDs)
-				if err != nil {
-					rt.Close()
-					return nil, fmt.Errorf("appliance sample home allowlist: %w", err)
-				}
-				appliances.Sample, err = inventory.NewSampleProvider(allowedUsers, allowedHomes)
-				if err != nil {
-					rt.Close()
-					return nil, err
-				}
-			}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
 			products := catalog.Service{Store: catalog.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
 			modules = append(modules, Module{Name: "reviewed-catalog", Mount: products.Routes})
@@ -246,23 +216,6 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			historyModule := meteredhistory.Service{Store: meteredhistory.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "metered-history", Mount: historyModule.Routes})
 			summaryModule := meteredsummary.Service{Store: meteredsummary.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
-			if c.SampleHouseholdEnabled {
-				allowedUsers, err := designfixture.ParseUserIDs(c.SampleHouseholdUserIDs)
-				if err != nil {
-					rt.Close()
-					return nil, fmt.Errorf("metered sample user allowlist: %w", err)
-				}
-				allowedHomes, err := designfixture.ParseUserIDs(c.SampleHouseholdHomeIDs)
-				if err != nil {
-					rt.Close()
-					return nil, fmt.Errorf("metered sample home allowlist: %w", err)
-				}
-				summaryModule.Sample, err = meteredsummary.NewSampleProvider(allowedUsers, allowedHomes)
-				if err != nil {
-					rt.Close()
-					return nil, err
-				}
-			}
 			modules = append(modules, Module{Name: "metered-summaries", Mount: summaryModule.Routes})
 			outcomeModule := outcomes.Service{Store: outcomes.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "measured-outcomes", Mount: outcomeModule.Routes})

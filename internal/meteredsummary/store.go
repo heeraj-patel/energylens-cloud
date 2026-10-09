@@ -1,12 +1,14 @@
 package meteredsummary
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"energylens.local/cloud/internal/householdenergy"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -93,52 +95,40 @@ func (s Store) Page(ctx context.Context, q Query) ([]Row, error) {
 // PageAtRevision reads the revision and page from one database snapshot. A
 // correction committed between requests causes a conflict before any later
 // page is returned, including when an earlier row was corrected or removed.
-func (s Store) PageAtRevision(ctx context.Context, q Query, expected *int64) ([]Row, int64, error) {
-	rows, revision, _, err := s.PageAtRevisionWithHistory(ctx, q, expected, false)
-	return rows, revision, err
-}
-
-// PageAtRevisionWithHistory checks home-wide evidence in the same snapshot as
-// the page, so a concurrent insert cannot turn an empty real page into sample.
-func (s Store) PageAtRevisionWithHistory(ctx context.Context, q Query, expected *int64, checkHistory bool) ([]Row, int64, bool, error) {
+func (s Store) PageAtRevision(ctx context.Context, q Query, expected *int64) ([]Row, int64, string, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, "", err
 	}
 	defer tx.Rollback(ctx)
 	var revision int64
-	err = tx.QueryRow(ctx, `SELECT COALESCE(r.revision,0) FROM homes h LEFT JOIN metered_summary_revision r ON r.home_id=h.id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, q.HomeID, q.OwnerID).Scan(&revision)
+	var rawDemo []byte
+	err = tx.QueryRow(ctx, `SELECT COALESCE(r.revision,0),CASE WHEN NOT EXISTS(SELECT 1 FROM appliances a WHERE a.home_id=h.id) THEN h.demo_cost_snapshot ELSE NULL::jsonb END FROM homes h LEFT JOIN metered_summary_revision r ON r.home_id=h.id WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, q.HomeID, q.OwnerID).Scan(&revision, &rawDemo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, 0, false, ErrNotFound
+		return nil, 0, "", ErrNotFound
 	}
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, "", err
+	}
+	fixtureRevision := ""
+	if len(rawDemo) > 0 && string(rawDemo) != "null" {
+		snapshot, decodeErr := householdenergy.DecodeDemoCostSnapshot(bytes.NewReader(rawDemo))
+		if decodeErr != nil {
+			return nil, 0, "", decodeErr
+		}
+		fixtureRevision = snapshot.FixtureRevision
 	}
 	if expected != nil && *expected != revision {
-		return nil, 0, false, ErrRevisionChanged
+		return nil, 0, "", ErrRevisionChanged
 	}
 	rows, err := page(ctx, tx, q)
 	if err != nil {
-		return nil, 0, false, err
-	}
-	var hasHistory bool
-	if checkHistory && len(rows) == 0 {
-		err = tx.QueryRow(ctx, `SELECT EXISTS(
-			SELECT 1 FROM energy_hourly WHERE home_id=$1 UNION ALL
-			SELECT 1 FROM energy_daily WHERE home_id=$1 UNION ALL
-			SELECT 1 FROM power_hourly WHERE home_id=$1 UNION ALL
-			SELECT 1 FROM power_daily WHERE home_id=$1 UNION ALL
-			SELECT 1 FROM coverage_hourly WHERE home_id=$1 UNION ALL
-			SELECT 1 FROM coverage_daily WHERE home_id=$1
-		)`, q.HomeID).Scan(&hasHistory)
-		if err != nil {
-			return nil, 0, false, err
-		}
+		return nil, 0, "", err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return nil, 0, false, err
+		return nil, 0, "", err
 	}
-	return rows, revision, hasHistory, nil
+	return rows, revision, fixtureRevision, nil
 }
 
 type queryer interface {

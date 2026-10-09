@@ -3,7 +3,10 @@ package inventory
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -11,9 +14,11 @@ import (
 
 	"energylens.local/cloud/internal/account"
 	"energylens.local/cloud/internal/attachments"
+	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/internal/telemetry"
 	"energylens.local/cloud/migrations"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -364,5 +369,46 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	var futureEnd *time.Time
 	if err = pool.QueryRow(ctx, `SELECT ended_at FROM attachments WHERE id=$1`, future.ID).Scan(&futureEnd); err != nil || futureEnd != nil {
 		t.Fatalf("conflicted archive closed attachment: %v %v", futureEnd, err)
+	}
+	demoHome, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "Demo", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = householdenergy.ImportDemoCostSnapshot(ctx, pool, owner.ID, demoHome.ID, householdenergy.MobileDemoCostSnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	router := chi.NewRouter()
+	(Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return owner.ID }}).Routes(router)
+	path := "/homes/" + demoHome.ID + "/appliances/"
+	readHTTP := func(path string) (*httptest.ResponseRecorder, map[string]any) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return w, body
+	}
+	w, body := readHTTP(path)
+	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || len(body["appliances"].([]any)) != 10 {
+		t.Fatal("demo inventory did not serialize in sample mode")
+	}
+	demoID := body["appliances"].([]any)[0].(map[string]any)["id"].(string)
+	w, body = readHTTP(path + demoID)
+	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || body["demo_device_id"] == nil {
+		t.Fatal("demo detail did not serialize in sample mode")
+	}
+	real, err := store.Create(ctx, owner.ID, demoHome.ID, CreateInput{Name: "Real appliance", Category: "refrigerator", Identity: Identity{MatchQuality: "unresolved"}}, uuid.NewString(), hash[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, body = readHTTP(path)
+	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || len(body["appliances"].([]any)) != 1 || body["appliances"].([]any)[0].(map[string]any)["id"] != real.ID {
+		t.Fatal("real inventory mixed in demo rows")
+	}
+	w, _ = readHTTP(path + demoID)
+	if w.Code != 404 {
+		t.Fatal("demo detail survived real inventory selection")
 	}
 }

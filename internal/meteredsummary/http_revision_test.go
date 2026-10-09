@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -15,25 +16,21 @@ type revisionTestStore struct {
 	scopeErr, pageErr error
 	revision          int64
 	rows              []Row
-	history           bool
+	fixtureRevision   string
 }
 
 func (s revisionTestStore) Scope(context.Context, Query) error { return s.scopeErr }
-func (s revisionTestStore) PageAtRevisionWithHistory(context.Context, Query, *int64, bool) ([]Row, int64, bool, error) {
-	return s.rows, s.revision, s.history, s.pageErr
+func (s revisionTestStore) PageAtRevision(context.Context, Query, *int64) ([]Row, int64, string, error) {
+	return s.rows, s.revision, s.fixtureRevision, s.pageErr
 }
 
 func TestEvidenceRevisionHeaderOnlyOnSuccessfulResponses(t *testing.T) {
 	owner, home := uuid.NewString(), uuid.NewString()
-	sample, err := NewSampleProvider(map[string]bool{owner: true}, map[string]bool{home: true})
-	if err != nil {
-		t.Fatal(err)
-	}
 	path := "/homes/" + home + "/metered-summaries?granularity=day&from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z"
 	serve := func(store revisionTestStore, user, requestPath string) *httptest.ResponseRecorder {
 		t.Helper()
 		router := chi.NewRouter()
-		Service{Store: store, Sample: sample, Auth: func(next http.Handler) http.Handler {
+		Service{Store: store, Auth: func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("X-User") == "" {
 					w.WriteHeader(http.StatusUnauthorized)
@@ -76,9 +73,8 @@ func TestEvidenceRevisionHeaderOnlyOnSuccessfulResponses(t *testing.T) {
 		store revisionTestStore
 		want  string
 	}{
-		{"empty real home", revisionTestStore{revision: 0, history: true}, "v1-0"},
+		{"empty real home", revisionTestStore{revision: 0}, "v1-0"},
 		{"real evidence", revisionTestStore{revision: 42, rows: []Row{{Payload: []byte(`{"kind":"energy"}`)}}}, "v1-42"},
-		{"sample fixture", revisionTestStore{}, sample.evidenceRevision()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := serve(tc.store, owner, path)
@@ -87,7 +83,18 @@ func TestEvidenceRevisionHeaderOnlyOnSuccessfulResponses(t *testing.T) {
 			}
 		})
 	}
-	if sample.evidenceRevision() == "v1-0" {
-		t.Fatal("sample token collided with real revision")
+}
+
+func TestSnapshotBackedEmptyPageCarriesMatchingSampleEnvelope(t *testing.T) {
+	owner, home := uuid.NewString(), uuid.NewString()
+	path := "/homes/" + home + "/metered-summaries?granularity=day&from=2026-09-01T00:00:00Z&to=2026-09-02T00:00:00Z"
+	router := chi.NewRouter()
+	Service{Store: revisionTestStore{fixtureRevision: "approved_demo_revision"}, Auth: func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(w, r) })
+	}, UserID: func(*http.Request) string { return owner }}.Routes(router)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+	if w.Code != http.StatusOK || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || w.Header().Get("X-EnergyLens-Fixture-Revision") != "approved_demo_revision" || !strings.Contains(w.Body.String(), `"summaries":[]`) {
+		t.Fatalf("snapshot-backed empty page = %d %s (%v)", w.Code, w.Body.String(), home)
 	}
 }

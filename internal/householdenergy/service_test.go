@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -44,6 +45,125 @@ func TestLocalPeriodDST(t *testing.T) {
 	for i := 1; i < len(buckets); i++ {
 		if !buckets[i-1].End.Equal(buckets[i].Start) || buckets[i].End.Sub(buckets[i].Start) != time.Hour {
 			t.Fatalf("DST buckets are discontinuous at %d", i)
+		}
+	}
+}
+
+func TestTrailing30DaysUsesHomeLocalCalendarBounds(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Chicago")
+	for _, test := range []struct {
+		name      string
+		now       time.Time
+		duration  time.Duration
+		dstBucket time.Duration
+	}{
+		{name: "spring forward", now: time.Date(2026, 3, 10, 18, 0, 0, 0, time.UTC), duration: 719 * time.Hour, dstBucket: 23 * time.Hour},
+		{name: "fall back", now: time.Date(2026, 11, 3, 18, 0, 0, 0, time.UTC), duration: 721 * time.Hour, dstBucket: 25 * time.Hour},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := trailing30DaysPeriod(test.now, loc)
+			local := test.now.In(loc)
+			today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+			if !p.Start.Equal(today.AddDate(0, 0, -29)) || !p.End.Equal(today.AddDate(0, 0, 1)) || p.End.Sub(p.Start) != test.duration {
+				t.Fatalf("unexpected home-local window: %+v duration=%v", p, p.End.Sub(p.Start))
+			}
+			buckets := makeBuckets(p, "day", nil)
+			if len(buckets) != 30 {
+				t.Fatalf("trailing window has %d daily buckets", len(buckets))
+			}
+			foundDSTDay := false
+			for _, bucket := range buckets {
+				if bucket.End.Sub(bucket.Start) == test.dstBucket {
+					foundDSTDay = true
+				}
+			}
+			if !foundDSTDay {
+				t.Fatalf("trailing window lacks expected %v DST day", test.dstBucket)
+			}
+		})
+	}
+}
+
+func TestLastFiveOccurrencesAreHomeLocalAcrossDSTAndCalendarBoundaries(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Chicago")
+	for _, tc := range []struct {
+		name, granularity  string
+		now                time.Time
+		wantStart, wantEnd string
+		wantBuckets        int
+		wantDST            time.Duration
+	}{
+		{name: "days-cross-spring-DST", granularity: "day", now: time.Date(2026, 3, 10, 12, 0, 0, 0, loc), wantStart: "2026-03-06", wantEnd: "2026-03-11", wantBuckets: 5, wantDST: 23 * time.Hour},
+		{name: "weeks-cross-month-and-DST", granularity: "week", now: time.Date(2026, 3, 10, 12, 0, 0, 0, loc), wantStart: "2026-02-09", wantEnd: "2026-03-16", wantBuckets: 5, wantDST: 167 * time.Hour},
+		{name: "months-cross-year", granularity: "month", now: time.Date(2026, 2, 15, 12, 0, 0, 0, loc), wantStart: "2025-10-01", wantEnd: "2026-03-01", wantBuckets: 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := last5OccurrencesPeriod(tc.now, loc, tc.granularity)
+			if p.Start.In(loc).Format("2006-01-02") != tc.wantStart || p.End.In(loc).Format("2006-01-02") != tc.wantEnd {
+				t.Fatalf("window bounds: %s through %s", p.Start.In(loc).Format("2006-01-02"), p.End.In(loc).Format("2006-01-02"))
+			}
+			buckets := makeBuckets(p, tc.granularity, nil)
+			if len(buckets) != tc.wantBuckets {
+				t.Fatalf("got %d occurrences", len(buckets))
+			}
+			for i := 1; i < len(buckets); i++ {
+				if !buckets[i-1].End.Equal(buckets[i].Start) {
+					t.Fatalf("bucket gap at %d: %+v %+v", i, buckets[i-1], buckets[i])
+				}
+			}
+			if tc.wantDST != 0 {
+				found := false
+				for _, b := range buckets {
+					if b.End.Sub(b.Start) == tc.wantDST {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("missing DST bucket duration %v", tc.wantDST)
+				}
+			}
+		})
+	}
+}
+
+func TestExistingCalendarPeriodsStayUnchangedWithoutWindow(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Chicago")
+	now := time.Date(2026, 10, 6, 18, 0, 0, 0, time.UTC)
+	for _, tc := range []struct{ granularity, start, end string }{
+		{"hour", "2026-10-06", "2026-10-07"},
+		{"day", "2026-10-05", "2026-10-12"},
+		{"week", "2026-10-01", "2026-11-01"},
+		{"month", "2026-01-01", "2027-01-01"},
+	} {
+		p := periodFor(now, loc, tc.granularity)
+		if p.Start.In(loc).Format("2006-01-02") != tc.start || p.End.In(loc).Format("2006-01-02") != tc.end {
+			t.Errorf("%s calendar period changed: %s to %s", tc.granularity, p.Start.In(loc), p.End.In(loc))
+		}
+	}
+}
+
+func TestTrendsQueryPreservesLegacyAndAcceptsTrailingWindow(t *testing.T) {
+	for _, test := range []struct {
+		query url.Values
+		wantG string
+		wantW string
+		valid bool
+	}{
+		{query: url.Values{"granularity": {"day"}}, wantG: "day", valid: true},
+		{query: url.Values{"granularity": {"day"}, "window": {"trailing_30_days"}}, wantG: "day", wantW: "trailing_30_days", valid: true},
+		{query: url.Values{"granularity": {"day"}, "window": {"last_5_occurrences"}}, wantG: "day", wantW: "last_5_occurrences", valid: true},
+		{query: url.Values{"granularity": {"week"}, "window": {"last_5_occurrences"}}, wantG: "week", wantW: "last_5_occurrences", valid: true},
+		{query: url.Values{"granularity": {"month"}, "window": {"last_5_occurrences"}}, wantG: "month", wantW: "last_5_occurrences", valid: true},
+		{query: url.Values{"granularity": {"hour"}, "window": {"trailing_30_days"}}},
+		{query: url.Values{"granularity": {"hour"}, "window": {"last_5_occurrences"}}},
+		{query: url.Values{"granularity": {"week"}, "window": {"trailing_30_days"}}},
+		{query: url.Values{"granularity": {"day"}, "window": {"month_to_date"}}},
+		{query: url.Values{"granularity": {"day", "week"}}},
+		{query: url.Values{"granularity": {"day"}, "other": {"1"}}},
+	} {
+		g, window, ok := parseTrendsQuery(test.query)
+		if ok != test.valid || g != test.wantG || window != test.wantW {
+			t.Fatalf("parseTrendsQuery(%v) = %q, %q, %v", test.query, g, window, ok)
 		}
 	}
 }
@@ -88,27 +208,6 @@ func TestAllocationChangesSnapshotWhenCostOrEvidenceBasisChanges(t *testing.T) {
 	expired := measured
 	if allocationSnapshotState(priced) == allocationSnapshotState(expired) {
 		t.Fatal("tariff expiry transition reused the same allocation snapshot state")
-	}
-}
-
-func TestSampleBucketsReconcileAndDiscloseSyntheticBasis(t *testing.T) {
-	loc, _ := time.LoadLocation("America/Chicago")
-	p := periodFor(time.Date(2026, 10, 6, 18, 0, 0, 0, time.UTC), loc, "hour")
-	buckets := sampleBuckets(p, "hour")
-	if len(buckets) != 24 {
-		t.Fatalf("sample bucket count = %d", len(buckets))
-	}
-	total := sampleTotal(len(buckets))
-	if total.Energy.Value != "24" || total.Cost.(struct {
-		Amount   string `json:"amount"`
-		Currency string `json:"currency"`
-	}).Amount != "4.80" {
-		t.Fatalf("sample totals did not reconcile: %+v", total)
-	}
-	for _, b := range buckets {
-		if b.Allocation.EvidenceBasis != "synthetic" || b.Allocation.UsefulEnergy != nil || b.Allocation.WasteCost != nil || b.Allocation.UnclassifiedEnergy.Value != "1" {
-			t.Fatalf("unsupported classification or provenance: %+v", b.Allocation)
-		}
 	}
 }
 
@@ -206,7 +305,13 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if empty["totals"].(map[string]any)["energy"] != nil {
 		t.Fatal("missing energy became zero")
 	}
-	s.Sample = &SampleProvider{AllowedUsers: map[string]bool{owner.ID: true}, AllowedHomes: map[string]bool{home.ID: true}}
+	demoSnapshot := demoSnapshotForTest()
+	if err = ImportDemoCostSnapshot(ctx, pool, other.ID, home.ID, demoSnapshot); err == nil {
+		t.Fatal("snapshot importer accepted a different owner")
+	}
+	if err = ImportDemoCostSnapshot(ctx, pool, owner.ID, home.ID, demoSnapshot); err != nil {
+		t.Fatal(err)
+	}
 	sampleRouter := chi.NewRouter()
 	sampleRouter.Route("/v1", s.Routes)
 	getSample := func(path, actor string) (int, map[string]any) {
@@ -226,8 +331,56 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if code, _ := getSample(dash, "other"); code != 404 {
 		t.Fatalf("sample crossed owner: %d", code)
 	}
-	if code, sample := getSample(dash, "owner"); code != 200 || sample["data_mode"] != "sample" || sample["fixture_revision"] != SampleRevision || sample["evidence_basis"] != "synthetic" {
+	if code, sample := getSample(dash, "owner"); code != 200 || sample["data_mode"] != "sample" || sample["fixture_revision"] != DemoSnapshotRevision || sample["evidence_basis"] != "synthetic" || len(sample["device_allocations"].([]any)) != 18 || sample["totals"].(map[string]any)["energy"] != nil || sample["totals"].(map[string]any)["cost"].(map[string]any)["amount"] != "2.469984" || sample["scope"] != "whole_home_including_unattributed_load" {
 		t.Fatalf("missing sample response: %d %+v", code, sample)
+	}
+	_, sampleResponse := getSample(dash, "owner")
+	if sampleResponse["as_of"] != now.Format(time.RFC3339) {
+		t.Fatalf("demo response lacks request-time as_of: %v", sampleResponse["as_of"])
+	}
+	_, weekSeries := getSample("/v1/homes/"+home.ID+"/energy-trends?granularity=day", "owner")
+	weekBuckets := weekSeries["buckets"].([]any)
+	todayBucket := weekBuckets[1].(map[string]any) // Fixed test clock is Tuesday in the home timezone.
+	if weekSeries["data_mode"] != sampleResponse["data_mode"] || weekSeries["as_of"] != sampleResponse["as_of"] ||
+		todayBucket["allocation"].(map[string]any)["cost"].(map[string]any)["amount"] != sampleResponse["totals"].(map[string]any)["cost"].(map[string]any)["amount"] {
+		t.Fatal("demo day, week-to-date series, and dashboard do not share an accrued current day")
+	}
+	for _, granularity := range []string{"day", "week", "month"} {
+		path := "/v1/homes/" + home.ID + "/energy-trends?granularity=" + granularity + "&window=last_5_occurrences"
+		code, series := getSample(path, "owner")
+		if code != 200 || series["data_mode"] != "sample" || series["as_of"] != sampleResponse["as_of"] || len(series["buckets"].([]any)) != 5 {
+			t.Fatalf("demo %s occurrence response diverged: %d mode=%v as_of=%v", granularity, code, series["data_mode"], series["as_of"])
+		}
+	}
+	firstDevice := sampleResponse["device_allocations"].([]any)[0].(map[string]any)
+	if firstDevice["device_id"] != "demo-device-01" || firstDevice["name"] != "Study Desktop & Rig" || firstDevice["appliance_id"] != nil {
+		t.Fatalf("unexpected synthetic identity shape: %+v", firstDevice)
+	}
+	if code, hourly := getSample(trend, "owner"); code != 200 || sampleResponse["snapshot_id"] != hourly["snapshot_id"] || !reflect.DeepEqual(sampleResponse["period"], hourly["period"]) || !reflect.DeepEqual(sampleResponse["totals"], hourly["totals"]) {
+		t.Fatalf("dashboard and hourly trend snapshots diverged: dashboard=%+v hourly=%+v", sampleResponse, hourly)
+	}
+	if code, sample := getSample(trend, "owner"); code != 200 || sample["data_mode"] != "sample" || len(sample["buckets"].([]any)) != 24 {
+		t.Fatalf("missing sample trend response: %d %+v", code, sample)
+	} else {
+		for index, raw := range sample["buckets"].([]any) {
+			row := raw.(map[string]any)
+			if index <= 13 {
+				if len(row["device_allocations"].([]any)) != 18 || row["allocation"].(map[string]any)["energy"] != nil || row["unattributed"] == nil {
+					t.Fatalf("sample trend bucket lacks device allocations: %+v", row)
+				}
+			} else if row["allocation"].(map[string]any)["energy"] != nil || row["allocation"].(map[string]any)["availability"] != "unavailable" {
+				t.Fatalf("future trend bucket is not unavailable: %+v", row)
+			}
+		}
+	}
+	trailingTrend := "/v1/homes/" + home.ID + "/energy-trends?granularity=day&window=trailing_30_days"
+	if code, sample := getSample(trailingTrend, "owner"); code != 200 || sample["granularity"] != "day" || len(sample["buckets"].([]any)) != 30 || sample["period"].(map[string]any)["start_local"] != "2026-09-07T00:00:00-05:00" || sample["period"].(map[string]any)["end_exclusive_local"] != "2026-10-07T00:00:00-05:00" {
+		t.Fatalf("trailing 30 sample window mismatch: %d %+v", code, sample)
+	} else {
+		last := sample["buckets"].([]any)[29].(map[string]any)
+		if last["allocation"].(map[string]any)["cost"].(map[string]any)["amount"] != "2.469984" || last["allocation"].(map[string]any)["energy"] != nil {
+			t.Fatal("daily bucket did not accrue through current local time")
+		}
 	}
 	var hub, sensor, appliance string
 	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_live_energy_test',$1,'test',$2,1) RETURNING id`, make([]byte, 32), home.ID).Scan(&hub); err != nil {
@@ -241,6 +394,9 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	}
 	if err = pool.QueryRow(ctx, `INSERT INTO appliances(home_id,name,category,identity) VALUES($1,'Device','refrigerator','{}') RETURNING id`, home.ID).Scan(&appliance); err != nil {
 		t.Fatal(err)
+	}
+	if code, response := getSample(dash, "owner"); code != 200 || response["data_mode"] != "household" || response["totals"].(map[string]any)["cost"] != nil {
+		t.Fatalf("real inventory did not suppress the demo total: %d %+v", code, response)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO appliance_revisions(appliance_id,home_id,version,snapshot) VALUES($1,$2,1,'{}')`, appliance, home.ID); err != nil {
 		t.Fatal(err)
@@ -261,6 +417,24 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	code, live := get(dash, "owner")
 	if code != 200 {
 		t.Fatalf("live dashboard: %d %+v", code, live)
+	}
+	if live["data_mode"] != "household" || live["as_of"] != end.UTC().Format(time.RFC3339) || live["device_allocations"] != nil {
+		t.Fatalf("live dashboard mixed demo or reported wrong home as_of: mode=%v as_of=%v", live["data_mode"], live["as_of"])
+	}
+	for _, granularity := range []string{"day", "week", "month"} {
+		path := "/v1/homes/" + home.ID + "/energy-trends?granularity=" + granularity + "&window=last_5_occurrences"
+		code, series := get(path, "owner")
+		if code != 200 || series["data_mode"] != "household" || series["as_of"] != live["as_of"] || len(series["buckets"].([]any)) != 5 || series["unattributed"] != nil {
+			t.Fatalf("live %s occurrence response diverged: %d mode=%v as_of=%v", granularity, code, series["data_mode"], series["as_of"])
+		}
+	}
+	code, trailingLive := get(trailingTrend, "owner")
+	if code != 200 || trailingLive["granularity"] != "day" || len(trailingLive["buckets"].([]any)) != 30 {
+		t.Fatalf("live trailing 30 trend: %d %+v", code, trailingLive)
+	}
+	lastBucket := trailingLive["buckets"].([]any)[29].(map[string]any)
+	if lastBucket["allocation"].(map[string]any)["energy"].(map[string]any)["value"] != "1.500000000000" {
+		t.Fatalf("current local day did not include its completed observation: %+v", lastBucket)
 	}
 	totals := live["totals"].(map[string]any)
 	if live["availability"] != "partial" || totals["energy"].(map[string]any)["value"] != "1.500000000000" || totals["cost"] != nil || totals["waste_energy"] != nil {
@@ -472,9 +646,12 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if code, _ := get("/v1/homes/"+home.ID+"/energy-trends?granularity=invalid", "owner"); code != 400 {
 		t.Fatalf("invalid granularity: %d", code)
 	}
+	if code, _ := get("/v1/homes/"+home.ID+"/energy-trends?granularity=hour&window=trailing_30_days", "owner"); code != 400 {
+		t.Fatalf("trailing window accepted non-day granularity: %d", code)
+	}
 	now = now.AddDate(0, 0, 1)
 	code, stale := get(dash, "owner")
-	if code != 200 || stale["totals"].(map[string]any)["energy"] != nil || stale["as_of"] != nil {
+	if code != 200 || stale["totals"].(map[string]any)["energy"] != nil || stale["as_of"] != end.UTC().Format(time.RFC3339) {
 		t.Fatalf("prior-day evidence leaked into new period: %d %+v", code, stale)
 	}
 	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "household" || replaced["totals"].(map[string]any)["energy"] != nil {
