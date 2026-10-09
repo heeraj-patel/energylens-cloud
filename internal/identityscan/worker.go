@@ -15,7 +15,7 @@ import (
 type Request struct {
 	ID, Category, Manufacturer, Model, Fuel string
 	Variant, Region                         *string
-	Attempts                                int
+	Attempts, Claim                         int
 }
 type Scanner interface {
 	Scan(context.Context, Request) (json.RawMessage, error)
@@ -30,17 +30,24 @@ func (s Store) Claim(ctx context.Context, nightly bool, now time.Time) (*Request
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	// A timed-out fifth provider invocation is exhausted transient work. It is
+	// never promoted to a final missing-source result without a completed scan.
+	if _, err = tx.Exec(ctx, `UPDATE identity_scan_requests SET status='failed',claimed_at=NULL,next_attempt_at=NULL,updated_at=$1
+WHERE status='running' AND claimed_at<$1::timestamptz-interval '15 minutes' AND claim_count>=5`, now); err != nil {
+		return nil, err
+	}
 	var r Request
+	_ = nightly // Scheduled misses are picked up by any later bounded worker pass.
 	err = tx.QueryRow(ctx, `WITH chosen AS (
  SELECT q.id FROM identity_scan_requests q JOIN homes h ON h.id=q.home_id
- WHERE h.deleted_at IS NULL AND q.attempt_count<5 AND (
+ WHERE h.deleted_at IS NULL AND q.claim_count<5 AND (
    q.status='pending' OR (q.status='running' AND q.claimed_at<$1::timestamptz-interval '15 minutes')
    OR (q.status='failed' AND q.next_attempt_at<=$1)
-   OR ($2 AND q.status='missing_source' AND q.next_attempt_at<=$1))
+   OR (q.status='missing_source' AND q.next_attempt_at<=$1))
  ORDER BY q.created_at,q.id LIMIT 1 FOR UPDATE OF q SKIP LOCKED)
- UPDATE identity_scan_requests q SET status='running',claimed_at=$1,attempt_count=attempt_count+1,updated_at=$1
+ UPDATE identity_scan_requests q SET status='running',claimed_at=$1,claim_count=claim_count+1,updated_at=$1
  FROM chosen WHERE q.id=chosen.id
- RETURNING q.id,q.category,q.manufacturer,q.model,q.fuel,q.variant,q.region,q.attempt_count`, now, nightly).Scan(&r.ID, &r.Category, &r.Manufacturer, &r.Model, &r.Fuel, &r.Variant, &r.Region, &r.Attempts)
+ RETURNING q.id,q.category,q.manufacturer,q.model,q.fuel,q.variant,q.region,q.attempt_count+1,q.claim_count`, now).Scan(&r.ID, &r.Category, &r.Manufacturer, &r.Model, &r.Fuel, &r.Variant, &r.Region, &r.Attempts, &r.Claim)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, tx.Commit(ctx)
 	}
@@ -137,7 +144,7 @@ func (s Store) Finish(ctx context.Context, r Request, report json.RawMessage, sc
 		when := now.Add(time.Duration(15<<min(r.Attempts-1, 3)) * time.Minute)
 		next = &when
 	}
-	_, err := s.Pool.Exec(ctx, `UPDATE identity_scan_requests SET status=$2,candidate_report=$3,next_attempt_at=$4,claimed_at=NULL,updated_at=$5 WHERE id=$1 AND status='running' AND attempt_count=$6`, r.ID, state, report, next, now, r.Attempts)
+	_, err := s.Pool.Exec(ctx, `UPDATE identity_scan_requests SET status=$2,candidate_report=$3,next_attempt_at=$4,attempt_count=$5,claimed_at=NULL,updated_at=$6 WHERE id=$1 AND status='running' AND claim_count=$7`, r.ID, state, report, next, r.Attempts, now, r.Claim)
 	return err
 }
 

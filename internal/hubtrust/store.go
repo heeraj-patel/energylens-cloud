@@ -93,6 +93,32 @@ type Ownership struct {
 	Version    int64  `json:"version"`
 }
 
+// ListOwner returns only the current bindings for an owned, active home.
+// A missing or foreign home has the same result to avoid exposing hub IDs.
+func (s Store) ListOwner(ctx context.Context, owner, home string) ([]Ownership, error) {
+	var owned bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL)`, home, owner).Scan(&owned); err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, ErrDenied
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT b.id,b.local_hub_id,b.home_id,b.ownership_epoch,b.version FROM hubs b JOIN homes h ON h.id=b.home_id AND h.owner_user_id=$2 AND h.deleted_at IS NULL WHERE b.home_id=$1 AND b.revoked_at IS NULL ORDER BY b.id`, home, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Ownership{}
+	for rows.Next() {
+		var binding Ownership
+		if err := rows.Scan(&binding.HubID, &binding.LocalHubID, &binding.HomeID, &binding.Epoch, &binding.Version); err != nil {
+			return nil, err
+		}
+		out = append(out, binding)
+	}
+	return out, rows.Err()
+}
+
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 func decode64(s string, n int) ([]byte, error) {
 	b, e := base64.RawURLEncoding.DecodeString(s)

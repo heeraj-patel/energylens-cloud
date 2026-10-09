@@ -145,10 +145,8 @@ func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Ap
 	}
 	defer tx.Rollback(ctx)
 	var rawDemo []byte
-	var hasEnergyHistory bool
-	err = tx.QueryRow(ctx, `SELECT h.demo_cost_snapshot,
- EXISTS(SELECT 1 FROM ingest_events e WHERE e.home_id=h.id AND e.event_kind='energy_interval')
- FROM homes h WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner).Scan(&rawDemo, &hasEnergyHistory)
+	err = tx.QueryRow(ctx, `SELECT h.demo_cost_snapshot
+ FROM homes h WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner).Scan(&rawDemo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", ErrNotFound
 	}
@@ -168,40 +166,44 @@ func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Ap
 			return nil, "", e
 		}
 		all = append(all, a)
-		if a.ArchivedAt == nil {
-			out = append(out, a)
-		}
 	}
 	if err = rows.Err(); err != nil {
 		return nil, "", err
 	}
 	rows.Close()
+	if err = s.attachKbWasteResultsTx(ctx, tx, owner, home, all); err != nil {
+		return nil, "", err
+	}
+	for _, a := range all {
+		if a.ArchivedAt == nil {
+			out = append(out, a)
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, "", err
 	}
-	if err := s.attachKbWasteResults(ctx, owner, home, out); err != nil {
-		return nil, "", err
-	}
-	if len(all) == 0 && !hasEnergyHistory && len(rawDemo) > 0 && string(rawDemo) != "null" {
+	if len(rawDemo) > 0 && string(rawDemo) != "null" {
 		snapshot, err := householdenergy.DecodeDemoCostSnapshot(bytes.NewReader(rawDemo))
 		if err != nil {
 			return nil, "", err
 		}
-		demoRows, err := demoAppliances(snapshot, home)
+		demoRows, err := DemoAppliances(snapshot, home)
 		if err != nil {
 			return nil, "", err
 		}
 		out = append(out, demoRows...)
 		all = append(all, demoRows...)
 		fingerprint := sha256.Sum256(rawDemo)
-		revision := inventoryRevision("persisted+demo:"+hex.EncodeToString(fingerprint[:]), home, all)
+		revision := inventoryRevision("persisted+demo:"+hex.EncodeToString(fingerprint[:]), home, append(all, demoRows...))
 		return out, revision, nil
 	}
 	revision := inventoryRevision("persisted", home, all)
 	return out, revision, nil
 }
 
-func demoAppliances(snapshot householdenergy.DemoCostSnapshot, home string) ([]Appliance, error) {
+// DemoAppliances derives the home-scoped public inventory IDs for named demo leaves.
+// Reports use the same derivation when validating a selection.
+func DemoAppliances(snapshot householdenergy.DemoCostSnapshot, home string) ([]Appliance, error) {
 	rows := make([]Appliance, 0, 10)
 	for _, device := range snapshot.Devices {
 		if device.Name == nil || strings.TrimSpace(*device.Name) == "" {
@@ -223,6 +225,10 @@ func demoAppliances(snapshot householdenergy.DemoCostSnapshot, home string) ([]A
 	}
 	return rows, nil
 }
+
+func demoAppliances(snapshot householdenergy.DemoCostSnapshot, home string) ([]Appliance, error) {
+	return DemoAppliances(snapshot, home)
+}
 func (s PGStore) Get(ctx context.Context, owner, home, id string) (Appliance, error) {
 	a, err := scanAppliance(s.Pool.QueryRow(ctx, selectAppliance+` JOIN homes h ON h.id=a.home_id WHERE a.id=$1 AND a.home_id=$2 AND h.owner_user_id=$3 AND h.deleted_at IS NULL AND a.archived_at IS NULL`, id, home, owner))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -242,6 +248,18 @@ func (s PGStore) Get(ctx context.Context, owner, home, id string) (Appliance, er
 // never establishes a waste finding. This optional field requires an explicit
 // waste-specific result in the report, a completed scan, and the current identity.
 func (s PGStore) attachKbWasteResults(ctx context.Context, owner, home string, appliances []Appliance) error {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = s.attachKbWasteResultsTx(ctx, tx, owner, home, appliances); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s PGStore) attachKbWasteResultsTx(ctx context.Context, tx pgx.Tx, owner, home string, appliances []Appliance) error {
 	if len(appliances) == 0 {
 		return nil
 	}
@@ -249,9 +267,10 @@ func (s PGStore) attachKbWasteResults(ctx context.Context, owner, home string, a
 	for i := range appliances {
 		byID[appliances[i].ID] = &appliances[i]
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT q.id,q.appliance_id,q.identity_key FROM identity_scan_requests q
-JOIN homes h ON h.id=q.home_id
-WHERE q.home_id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL
+	rows, err := tx.Query(ctx, `SELECT q.id,s.appliance_id,s.identity_key FROM identity_scan_subscriptions s
+JOIN identity_scan_requests q ON q.id=s.request_id
+JOIN homes h ON h.id=s.home_id
+WHERE s.home_id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL
 AND q.status IN ('missing_source','reviewed_present') AND q.next_attempt_at IS NULL
 AND (q.status='reviewed_present' OR q.attempt_count=5)
 AND q.candidate_report->'models'->0->'waste_evidence'->>'status'='not_found'
@@ -267,8 +286,7 @@ AND q.candidate_report->'models'->0->'waste_evidence'->'search'->>'status'='no_s
 		if err := rows.Scan(&id, &applianceID, &key); err != nil {
 			return err
 		}
-		if a := byID[applianceID]; a != nil && a.Identity.MatchQuality == "confirmed_exact" &&
-			a.Identity.CatalogProductID == nil && bytes.Equal(key, scanKey(*a)) {
+		if a := byID[applianceID]; a != nil && a.Identity.MatchQuality == "confirmed_exact" && bytes.Equal(key, scanKey(*a)) {
 			a.KbWasteResult = &KbWasteResult{ID: id, Status: "waste_evidence_unavailable_after_kb"}
 		}
 	}
@@ -351,14 +369,20 @@ func scanKey(a Appliance) []byte {
 // enqueueScan is part of the appliance write transaction. This private request
 // stays home-scoped because a user-entered model might contain sensitive text.
 func enqueueScan(ctx context.Context, tx pgx.Tx, a Appliance) error {
-	if a.Identity.CatalogProductID != nil || a.Identity.MatchQuality != "confirmed_exact" || len(a.Category) > 100 || len(a.Identity.Brand) > 100 || len(a.Identity.FullModel) > 100 || strings.EqualFold(a.Identity.Brand, "Unknown") || strings.EqualFold(a.Identity.FullModel, "Unknown") {
+	if a.Identity.MatchQuality != "confirmed_exact" || len(a.Category) > 100 || len(a.Identity.Brand) > 100 || len(a.Identity.FullModel) > 100 || strings.EqualFold(a.Identity.Brand, "Unknown") || strings.EqualFold(a.Identity.FullModel, "Unknown") {
 		return nil
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO identity_scan_requests(home_id,appliance_id,identity_key,category,manufacturer,model,fuel,variant,region)
-SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9 WHERE NOT EXISTS (
- SELECT 1 FROM catalog_products p WHERE lower(p.category)=lower($4) AND lower(p.brand)=lower($5) AND lower(p.full_model)=lower($6) AND p.fuel=$7 AND p.match_quality='confirmed_exact'
- AND (p.variant IS NULL OR lower(p.variant)=lower($8)) AND (p.region IS NULL OR lower(p.region)=lower($9))
-) ON CONFLICT(home_id,identity_key) DO NOTHING`, a.HomeID, a.ID, scanKey(a), a.Category, a.Identity.Brand, a.Identity.FullModel, a.Identity.Fuel, a.Identity.Variant, a.Identity.Region)
+	var requestID string
+	err := tx.QueryRow(ctx, `INSERT INTO identity_scan_requests(home_id,appliance_id,identity_key,category,manufacturer,model,fuel,variant,region)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+ON CONFLICT(home_id,identity_key) DO UPDATE SET identity_key=EXCLUDED.identity_key
+RETURNING id`, a.HomeID, a.ID, scanKey(a), a.Category, a.Identity.Brand, a.Identity.FullModel, a.Identity.Fuel, a.Identity.Variant, a.Identity.Region).Scan(&requestID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO identity_scan_subscriptions(appliance_id,home_id,request_id,identity_key)
+VALUES($1,$2,$3,$4)
+ON CONFLICT(appliance_id) DO UPDATE SET home_id=EXCLUDED.home_id,request_id=EXCLUDED.request_id,identity_key=EXCLUDED.identity_key,created_at=now()`, a.ID, a.HomeID, requestID, scanKey(a))
 	return err
 }
 func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput, key string, hash []byte) (Appliance, error) {
@@ -447,7 +471,10 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 	if err = snapshot(ctx, tx, a); err != nil {
 		return Appliance{}, err
 	}
-	if (in.Identity != nil || in.Category != nil) && a.Identity.CatalogProductID == nil {
+	if in.Identity != nil || in.Category != nil {
+		if _, err = tx.Exec(ctx, `DELETE FROM identity_scan_subscriptions WHERE appliance_id=$1`, a.ID); err != nil {
+			return Appliance{}, err
+		}
 		if err = enqueueScan(ctx, tx, a); err != nil {
 			return Appliance{}, err
 		}
@@ -541,6 +568,9 @@ func (s PGStore) Archive(ctx context.Context, owner, home, id string, version in
 		return Appliance{}, err
 	}
 	if err = snapshot(ctx, tx, a); err != nil {
+		return Appliance{}, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM identity_scan_subscriptions WHERE appliance_id=$1`, a.ID); err != nil {
 		return Appliance{}, err
 	}
 	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {

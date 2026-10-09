@@ -71,8 +71,26 @@ func uuidOK(s string) bool {
 }
 func (s Service) AccountRoutes(r chi.Router) {
 	r.With(s.Auth).Post("/homes/{home}/hub-claims", s.begin)
+	r.With(s.Auth).Get("/homes/{home}/hubs", s.listOwner)
 	r.With(s.Auth).Post("/hubs/claim", s.finish)
 	r.With(s.Auth).Delete("/homes/{home}/hubs/{hub}", s.unclaim)
+}
+
+func (s Service) listOwner(w http.ResponseWriter, r *http.Request) {
+	home := chi.URLParam(r, "home")
+	if !uuidOK(home) {
+		fail(w, 404, "not_found")
+		return
+	}
+	hubs, err := s.Store.ListOwner(r.Context(), s.UserID(r), home)
+	if errors.Is(err, ErrDenied) {
+		fail(w, 404, "not_found")
+	} else if err != nil {
+		slog.Error("owner hub listing failed", "error", err)
+		fail(w, 500, "internal_error")
+	} else {
+		out(w, 200, map[string]any{"hubs": hubs})
+	}
 }
 func (s Service) EnrollmentRoutes(r chi.Router) { r.Post("/hubs/{hub}/enroll", s.enroll) }
 func (s Service) HubRoutes(r chi.Router) {

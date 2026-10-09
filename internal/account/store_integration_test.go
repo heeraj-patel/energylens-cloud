@@ -155,6 +155,9 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 				t.Fatalf("cross-owner list = %v %v", got, err)
 			}
 			name := "New name"
+			if _, err = pool.Exec(ctx, `UPDATE homes SET demo_cost_snapshot='{"snapshot_id":"imported"}'::jsonb WHERE id=$1`, home.ID); err != nil {
+				t.Fatal(err)
+			}
 			if _, err = s.Patch(ctx, b.ID, home.ID, HomePatch{Name: &name}, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("cross-owner patch = %v", err)
 			}
@@ -162,8 +165,38 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 			if err != nil || updated.Version != 2 || updated.Name != name {
 				t.Fatalf("owner patch = %+v %v", updated, err)
 			}
+			var snapshot []byte
+			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil || strings.ReplaceAll(string(snapshot), " ", "") != `{"snapshot_id":"imported"}` {
+				t.Fatalf("non-timezone edit changed imported snapshot: %s %v", snapshot, err)
+			}
 			if _, err = s.Patch(ctx, a.ID, home.ID, HomePatch{Name: &name}, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrVersion) {
 				t.Fatalf("stale patch = %v", err)
+			}
+			zone := "America/Denver"
+			zoneHash := sha256.Sum256([]byte("timezone-change"))
+			zoneKey := uuid.NewString()
+			changedZone, err := s.Patch(ctx, a.ID, home.ID, HomePatch{Timezone: &zone}, 2, zoneKey, zoneHash[:])
+			if err != nil || changedZone.Timezone != zone || changedZone.Version != 3 {
+				t.Fatalf("timezone patch = %+v %v", changedZone, err)
+			}
+			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil || snapshot != nil {
+				t.Fatalf("timezone change retained imported snapshot: %s %v", snapshot, err)
+			}
+			if _, err = pool.Exec(ctx, `UPDATE homes SET demo_cost_snapshot='{"snapshot_id":"fresh"}'::jsonb WHERE id=$1`, home.ID); err != nil {
+				t.Fatal(err)
+			}
+			replayedZone, err := s.Patch(ctx, a.ID, home.ID, HomePatch{Timezone: &zone}, 2, zoneKey, zoneHash[:])
+			if err != nil || replayedZone != changedZone {
+				t.Fatalf("timezone patch replay = %+v %v", replayedZone, err)
+			}
+			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil || strings.ReplaceAll(string(snapshot), " ", "") != `{"snapshot_id":"fresh"}` {
+				t.Fatalf("timezone replay changed snapshot: %s %v", snapshot, err)
+			}
+			if _, err = s.Patch(ctx, a.ID, home.ID, HomePatch{Timezone: &zone}, 2, uuid.NewString(), zoneHash[:]); !errors.Is(err, ErrVersion) {
+				t.Fatalf("stale timezone patch = %v", err)
+			}
+			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil || strings.ReplaceAll(string(snapshot), " ", "") != `{"snapshot_id":"fresh"}` {
+				t.Fatalf("rejected timezone patch changed snapshot: %s %v", snapshot, err)
 			}
 			accountPref, err = prefs.GetAccountPreferences(ctx, a.ID)
 			if err != nil || accountPref.Version != 2 || accountPref.HistoryDisclosureAcceptedAt == nil {

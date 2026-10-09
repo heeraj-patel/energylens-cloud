@@ -159,13 +159,22 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set(InventoryRevisionHeader, revision)
+	hasDemo, hasPersisted := false, false
 	for _, appliance := range a {
 		if appliance.DemoDeviceID != "" {
-			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set("X-EnergyLens-Data-Mode", "sample")
+			hasDemo = true
 			w.Header().Set("X-EnergyLens-Fixture-Revision", appliance.DemoFixtureRevision)
-			break
+		} else {
+			hasPersisted = true
 		}
+	}
+	if hasDemo {
+		w.Header().Set("Cache-Control", "no-store")
+		mode := "sample"
+		if hasPersisted {
+			mode = "mixed"
+		}
+		w.Header().Set("X-EnergyLens-Data-Mode", mode)
 	}
 	write(w, 200, map[string]any{"appliances": a})
 }

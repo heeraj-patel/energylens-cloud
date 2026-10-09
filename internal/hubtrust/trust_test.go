@@ -138,6 +138,27 @@ func TestHubTrustTransaction(t *testing.T) {
 	if got.HubID != id || got.HomeID != home || got.Epoch != 2 {
 		t.Fatalf("bad ownership: %+v", got)
 	}
+	ownerHubs, e := s.ListOwner(ctx, owner, home)
+	if e != nil || len(ownerHubs) != 1 || ownerHubs[0] != got {
+		t.Fatalf("owner hub readback: %+v %v", ownerHubs, e)
+	}
+	if _, e = s.ListOwner(ctx, other, home); !errorsIs(e, ErrDenied) {
+		t.Fatalf("foreign hub readback: %v", e)
+	}
+	ownerRoute := func(user string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/v1/homes/"+home+"/hubs", nil)
+		router := chi.NewRouter()
+		router.Route("/v1", (Service{Store: s, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return user }}).AccountRoutes)
+		router.ServeHTTP(rec, request)
+		return rec
+	}
+	if rec := ownerRoute(owner); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"local_hub_id":"elhub_unit"`) {
+		t.Fatalf("owner route readback: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ownerRoute(other); rec.Code != 404 {
+		t.Fatalf("foreign route readback: %d", rec.Code)
+	}
 	for _, cert := range []struct {
 		serial string
 		epoch  int64
@@ -207,6 +228,10 @@ func TestHubTrustTransaction(t *testing.T) {
 	unclaimKey := uuid.NewString()
 	if e = s.Unclaim(ctx, owner, home, id, got.Version, unclaimKey); e != nil {
 		t.Fatal(e)
+	}
+	ownerHubs, e = s.ListOwner(ctx, owner, home)
+	if e != nil || len(ownerHubs) != 0 {
+		t.Fatalf("unclaimed hub remained in owner list: %+v %v", ownerHubs, e)
 	}
 	if rec := ownershipRequest(0xa11, 2); rec.Code != 403 || !strings.Contains(rec.Body.String(), `"code":"ownership_revoked"`) {
 		t.Fatalf("unclaimed hub disclosed former home: %d", rec.Code)

@@ -239,7 +239,9 @@ func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, ve
 		return Home{}, ErrVersion
 	}
 	var h Home
-	err = tx.QueryRow(ctx, `UPDATE homes SET name=COALESCE($3,name),timezone=COALESCE($4,timezone),version=version+1,updated_at=now() WHERE id=$1 AND owner_user_id=$2 RETURNING id,name,timezone,version,created_at,updated_at`, home, owner, in.Name, in.Timezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt)
+	err = tx.QueryRow(ctx, `UPDATE homes SET name=COALESCE($3,name),timezone=COALESCE($4,timezone),
+		demo_cost_snapshot=CASE WHEN $4::text IS NOT NULL AND $4::text IS DISTINCT FROM timezone THEN NULL ELSE demo_cost_snapshot END,
+		version=version+1,updated_at=now() WHERE id=$1 AND owner_user_id=$2 RETURNING id,name,timezone,version,created_at,updated_at`, home, owner, in.Name, in.Timezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return Home{}, err
 	}

@@ -133,11 +133,16 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.Create(ctx, owner.ID, home.ID, confirmed, uuid.NewString(), hash[:]); err != nil {
+	secondConfirmed, err := store.Create(ctx, owner.ID, home.ID, confirmed, uuid.NewString(), hash[:])
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM identity_scan_requests WHERE home_id=$1`, home.ID).Scan(&scanCount); err != nil || scanCount != 1 {
 		t.Fatalf("confirmed identity dedup: %d %v", scanCount, err)
+	}
+	var subscriptions int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM identity_scan_subscriptions s JOIN identity_scan_requests q ON q.id=s.request_id WHERE q.home_id=$1`, home.ID).Scan(&subscriptions); err != nil || subscriptions != 2 {
+		t.Fatalf("same-identity appliances were not both subscribed: %d %v", subscriptions, err)
 	}
 	// Annual-source completion alone cannot imply missing waste evidence.
 	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=5,candidate_report='{"status":"no_evidence"}'::jsonb WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
@@ -162,12 +167,21 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil || read.KbWasteResult != nil {
 		t.Fatalf("retrying scan exposed waste result: %+v %v", read.KbWasteResult, err)
 	}
+	pendingRevision := revision()
 	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET next_attempt_at=NULL WHERE appliance_id=$1`, firstConfirmed.ID); err != nil {
 		t.Fatal(err)
 	}
 	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
 	if err != nil || read.KbWasteResult == nil || read.KbWasteResult.Status != "waste_evidence_unavailable_after_kb" {
 		t.Fatalf("terminal waste result missing: %+v %v", read.KbWasteResult, err)
+	}
+	if terminalRevision := revision(); terminalRevision == pendingRevision {
+		t.Fatal("terminal KB waste state did not change inventory revision")
+	}
+	terminalResultID := read.KbWasteResult.ID
+	read, err = store.Get(ctx, owner.ID, home.ID, secondConfirmed.ID)
+	if err != nil || read.KbWasteResult == nil || read.KbWasteResult.ID != terminalResultID {
+		t.Fatalf("shared terminal result did not fan out: %+v %v", read.KbWasteResult, err)
 	}
 	listed, err := store.List(ctx, owner.ID, home.ID)
 	if err != nil {
@@ -190,6 +204,16 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	read, err = store.Get(ctx, owner.ID, home.ID, firstConfirmed.ID)
 	if err != nil || read.KbWasteResult != nil {
 		t.Fatalf("stale identity scan exposed waste result: %+v %v", read.KbWasteResult, err)
+	}
+	read, err = store.Get(ctx, owner.ID, home.ID, secondConfirmed.ID)
+	if err != nil || read.KbWasteResult == nil {
+		t.Fatalf("editing one subscriber removed the other link: %+v %v", read.KbWasteResult, err)
+	}
+	if _, err = store.Archive(ctx, owner.ID, home.ID, secondConfirmed.ID, 1, uuid.NewString(), hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Get(ctx, owner.ID, home.ID, secondConfirmed.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived appliance remained readable: %v", err)
 	}
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM identity_scan_requests WHERE home_id=$1`, home.ID).Scan(&scanCount); err != nil || scanCount != 2 {
 		t.Fatalf("changed identity trigger: %d %v", scanCount, err)
@@ -264,6 +288,29 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	linked, err := store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Identity: &exact}, 2, uuid.NewString(), patchHash[:])
 	if err != nil || linked.Identity.CatalogProductID == nil || *linked.Identity.CatalogProductID != missing {
 		t.Fatalf("exact catalog link %+v %v", linked, err)
+	}
+	var linkedRequestID string
+	if err = pool.QueryRow(ctx, `SELECT q.id FROM identity_scan_subscriptions s JOIN identity_scan_requests q ON q.id=s.request_id WHERE s.appliance_id=$1 AND q.status='pending'`, a.ID).Scan(&linkedRequestID); err != nil {
+		t.Fatalf("catalog-linked exact model did not enqueue separate waste research: %v", err)
+	}
+	linkedRead, err := store.Get(ctx, owner.ID, home.ID, a.ID)
+	if err != nil || linkedRead.KbWasteResult != nil {
+		t.Fatalf("pending catalog waste lookup was exposed: %+v %v", linkedRead.KbWasteResult, err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='failed',attempt_count=1 WHERE id=$1`, linkedRequestID); err != nil {
+		t.Fatal(err)
+	}
+	linkedRead, err = store.Get(ctx, owner.ID, home.ID, a.ID)
+	if err != nil || linkedRead.KbWasteResult != nil {
+		t.Fatalf("failed catalog waste lookup was treated as final: %+v %v", linkedRead.KbWasteResult, err)
+	}
+	const linkedWasteMiss = `{"schema_version":1,"model_count":1,"models":[{"category":"refrigerator","manufacturer":"Acme","model":"A123","status":"no_evidence","waste_evidence":{"status":"not_found","checked_sources":["epa","configured_site_search"],"search":{"status":"no_search_leads"}}}]}`
+	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=5,next_attempt_at=NULL,candidate_report=$2::jsonb WHERE id=$1`, linkedRequestID, linkedWasteMiss); err != nil {
+		t.Fatal(err)
+	}
+	linkedRead, err = store.Get(ctx, owner.ID, home.ID, a.ID)
+	if err != nil || linkedRead.KbWasteResult == nil {
+		t.Fatalf("catalog-linked final waste miss was not attached: %+v %v", linkedRead.KbWasteResult, err)
 	}
 	cleared, err := store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Room: []byte("null")}, 3, uuid.NewString(), patchHash[:])
 	if err != nil || cleared.Room != nil || cleared.Version != 4 {
@@ -404,11 +451,20 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, body = readHTTP(path)
-	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "" || len(body["appliances"].([]any)) != 1 || body["appliances"].([]any)[0].(map[string]any)["id"] != real.ID {
-		t.Fatal("real inventory mixed in demo rows")
+	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "mixed" || len(body["appliances"].([]any)) != 11 {
+		t.Fatal("mixed inventory omitted persisted or seeded rows")
 	}
-	w, _ = readHTTP(path + demoID)
-	if w.Code != 404 {
-		t.Fatal("demo detail survived real inventory selection")
+	var foundReal, foundDemo bool
+	for _, raw := range body["appliances"].([]any) {
+		item := raw.(map[string]any)
+		foundReal = foundReal || item["id"] == real.ID
+		foundDemo = foundDemo || item["id"] == demoID
+	}
+	if !foundReal || !foundDemo {
+		t.Fatal("mixed inventory did not preserve stable persisted and demo identities")
+	}
+	w, body = readHTTP(path + demoID)
+	if w.Code != 200 || w.Header().Get("X-EnergyLens-Data-Mode") != "sample" || body["demo_device_id"] == nil {
+		t.Fatal("demo detail lost per-row sample provenance")
 	}
 }

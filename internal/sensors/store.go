@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -103,6 +104,10 @@ func (s Store) Create(ctx context.Context, owner, home string, in CreateInput, k
 	}
 	v, err := scanSensor(tx.QueryRow(ctx, `INSERT INTO sensor_endpoints(home_id,hub_id,ownership_epoch,local_sensor_id,parent_sensor_id,kind,capabilities) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,home_id,hub_id,ownership_epoch,local_sensor_id,parent_sensor_id,kind,capabilities,version`, home, in.HubID, current, in.LocalSensorID, in.ParentSensorID, in.Kind, in.Capabilities))
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return Sensor{}, ErrConflict
+		}
 		return Sensor{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO sensor_request_idempotency(owner_user_id,home_id,key,request_hash,sensor_id) VALUES($1,$2,$3,$4,$5)`, owner, home, key, hash, v.ID)

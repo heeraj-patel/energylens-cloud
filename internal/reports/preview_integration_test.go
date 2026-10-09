@@ -27,6 +27,8 @@ type reportVerifier struct{}
 type fakeReportProvider struct {
 	calls int
 	last  RenderedReport
+	ids   []string
+	err   error
 }
 
 type blockingReportProvider struct {
@@ -46,10 +48,11 @@ func (p *blockingReportProvider) SendReport(ctx context.Context, id string, _ []
 	}
 }
 
-func (p *fakeReportProvider) SendReport(_ context.Context, _ string, _ []string, report RenderedReport) error {
+func (p *fakeReportProvider) SendReport(_ context.Context, id string, _ []string, report RenderedReport) error {
 	p.calls++
+	p.ids = append(p.ids, id)
 	p.last = report
-	return nil
+	return p.err
 }
 
 func (reportVerifier) Verify(_ context.Context, token string) (account.Identity, error) {
@@ -263,8 +266,7 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if processed, err := (DeliveryWorker{DB: pool, Provider: provider}).DeliverOne(ctx, now); !errors.Is(err, ErrDeliveryDisabled) || processed || provider.calls != 0 {
 		t.Fatalf("delivery enabled by default: %v %v", processed, err)
 	}
-	// Delivery holds the home and preview dependencies through the provider
-	// call. A tombstone, appliance edit, or estimate invalidation must wait.
+	// A delivery lease survives the provider call, but database locks do not.
 	blocking := &blockingReportProvider{started: make(chan struct{}), release: make(chan struct{})}
 	workerResult := make(chan error, 1)
 	go func() {
@@ -298,61 +300,76 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 		lockErr = lockTx.QueryRow(ctx, lock.query, lock.id).Scan(&lockedID)
 		_ = lockTx.Rollback(ctx)
 		var pgErr *pgconn.PgError
-		if !errors.As(lockErr, &pgErr) || pgErr.Code != "55P03" {
+		if lockErr != nil || errors.As(lockErr, &pgErr) {
 			close(blocking.release)
-			t.Fatalf("%s escaped delivery transaction: %v", lock.name, lockErr)
+			t.Fatalf("%s remained locked during provider call: %v", lock.name, lockErr)
 		}
 	}
-	for _, mutation := range []struct {
-		name  string
-		query string
-		id    uuid.UUID
-	}{
-		{"home tombstone", `UPDATE homes SET deleted_at=$2,version=version+1 WHERE id=$1`, home},
-		{"estimate invalidation", `INSERT INTO estimate_run_invalidations(run_id,reason) VALUES($1,'dependency_changed')`, run},
-	} {
-		mutationTx, mutationErr := pool.Begin(ctx)
-		if mutationErr != nil {
-			close(blocking.release)
-			t.Fatal(mutationErr)
-		}
-		_, mutationErr = mutationTx.Exec(ctx, `SET LOCAL lock_timeout='100ms'`)
-		if mutationErr == nil {
-			if mutation.name == "home tombstone" {
-				_, mutationErr = mutationTx.Exec(ctx, mutation.query, mutation.id, now)
-			} else {
-				_, mutationErr = mutationTx.Exec(ctx, mutation.query, mutation.id)
-			}
-		}
-		_ = mutationTx.Rollback(ctx)
-		var pgErr *pgconn.PgError
-		if !errors.As(mutationErr, &pgErr) || pgErr.Code != "55P03" {
-			close(blocking.release)
-			t.Fatalf("%s committed during provider call: %v", mutation.name, mutationErr)
-		}
+	var leasedState string
+	var leaseExpiry *time.Time
+	if err = pool.QueryRow(ctx, `SELECT state,lease_expires_at FROM report_delivery_requests WHERE id=$1`, blocking.id).Scan(&leasedState, &leaseExpiry); err != nil || leasedState != "leased" || leaseExpiry == nil {
+		close(blocking.release)
+		t.Fatalf("provider call has no durable lease: %s %v %v", leasedState, leaseExpiry, err)
 	}
 	close(blocking.release)
 	if workerErr := <-workerResult; workerErr != nil {
 		t.Fatalf("blocked delivery: %v", workerErr)
 	}
-	// Reset the first row to pending to exercise the normal fake provider path.
-	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL WHERE id=$1`, blocking.id); err != nil {
-		t.Fatal(err)
-	}
 	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now); err != nil || !processed || provider.calls != 1 || provider.last.SnapshotSHA256 != p.SnapshotSHA256 || !strings.Contains(provider.last.HTML, p.ID) {
 		t.Fatalf("fake delivery: %v %v %+v", processed, err, provider)
 	}
 	var sentCount int
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM report_delivery_requests WHERE state='sent'`).Scan(&sentCount); err != nil || sentCount != 1 {
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM report_delivery_requests WHERE state='sent'`).Scan(&sentCount); err != nil || sentCount != 2 {
 		t.Fatalf("sent count %d %v", sentCount, err)
+	}
+	var retryID string
+	if err = pool.QueryRow(ctx, `SELECT id FROM report_delivery_requests WHERE state='pending' ORDER BY created_at,id LIMIT 1`).Scan(&retryID); err != nil {
+		t.Fatalf("find retry request: %v", err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='canceled' WHERE state='pending' AND id<>$1`, retryID); err != nil {
+		t.Fatal(err)
+	}
+	transient := errors.New("temporary provider failure")
+	provider.err = transient
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now); !processed || !errors.Is(err, transient) || provider.calls != 2 || provider.ids[1] != retryID {
+		t.Fatalf("provider failure was not recorded for stable request: processed=%v err=%v calls=%d ids=%v", processed, err, provider.calls, provider.ids)
+	}
+	var retryState string
+	var retryAttempts int
+	var retryAt time.Time
+	var clearedLease *time.Time
+	if err = pool.QueryRow(ctx, `SELECT state,attempts,next_attempt_at,lease_expires_at FROM report_delivery_requests WHERE id=$1`, retryID).Scan(&retryState, &retryAttempts, &retryAt, &clearedLease); err != nil || retryState != "pending" || retryAttempts != 1 || !retryAt.Equal(now.Add(time.Minute)) || clearedLease != nil {
+		t.Fatalf("provider failure retry state: state=%s attempts=%d next=%s lease=%v err=%v", retryState, retryAttempts, retryAt, clearedLease, err)
+	}
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(59*time.Second)); err != nil || processed || provider.calls != 2 {
+		t.Fatalf("retry ignored persisted backoff: processed=%v err=%v calls=%d", processed, err, provider.calls)
+	}
+	provider.err = nil
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(time.Minute)); err != nil || !processed || provider.calls != 3 || provider.ids[2] != retryID {
+		t.Fatalf("retry did not use same provider id: processed=%v err=%v calls=%d ids=%v", processed, err, provider.calls, provider.ids)
+	}
+	if err = pool.QueryRow(ctx, `SELECT state,attempts FROM report_delivery_requests WHERE id=$1`, retryID).Scan(&retryState, &retryAttempts); err != nil || retryState != "sent" || retryAttempts != 2 {
+		t.Fatalf("successful retry state: state=%s attempts=%d err=%v", retryState, retryAttempts, err)
+	}
+	// A process crash leaves the lease behind. Once it expires, another worker
+	// retries with the same provider request ID for deduplication.
+	crashedLease := uuid.NewString()
+	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='leased',sent_at=NULL,lease_token=$2,lease_expires_at=$3 WHERE id=$1`, retryID, crashedLease, now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(2*time.Minute)); err != nil || !processed || provider.calls != 4 || provider.ids[3] != retryID {
+		t.Fatalf("expired lease was not recovered with stable request ID: processed=%v err=%v calls=%d ids=%v", processed, err, provider.calls, provider.ids)
 	}
 	// The provider's documented idempotency window is 24 hours. Once the
 	// preview's shorter-or-equal lifetime ends, even a pending retry must stop.
-	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL WHERE id=$1`, queued.ID); err != nil {
+	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL,next_attempt_at=$2 WHERE id=$1`, queued.ID, now); err != nil {
 		t.Fatal(err)
 	}
-	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(25*time.Hour)); err != nil || !processed || provider.calls != 1 {
-		t.Fatalf("expired retry reached provider: processed=%v err=%v calls=%d", processed, err, provider.calls)
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(25*time.Hour)); err != nil || !processed || provider.calls != 4 {
+		var dbgState string
+		var dbgDue, dbgExpires time.Time
+		_ = pool.QueryRow(ctx, `SELECT d.state,d.next_attempt_at,p.expires_at FROM report_delivery_requests d JOIN report_previews p ON p.id=d.preview_id WHERE d.id=$1`, queued.ID).Scan(&dbgState, &dbgDue, &dbgExpires)
+		t.Fatalf("expired retry reached provider: processed=%v err=%v calls=%d state=%s due=%s expires=%s at=%s", processed, err, provider.calls, dbgState, dbgDue, dbgExpires, now.Add(25*time.Hour))
 	}
 	stored, err := json.Marshal(p)
 	if err != nil {
@@ -378,7 +395,10 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO estimate_run_invalidations(run_id,reason) VALUES($1,'dependency_changed')`, run); err != nil {
 		t.Fatal(err)
 	}
-	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(time.Hour)); err != nil || !processed || provider.calls != 1 {
+	if _, err = pool.Exec(ctx, `UPDATE report_delivery_requests SET state='pending',sent_at=NULL,next_attempt_at=$2 WHERE id=$1`, queued.ID, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := (DeliveryWorker{DB: pool, Provider: provider, Enabled: true}).DeliverOne(ctx, now.Add(time.Hour)); err != nil || !processed || provider.calls != 4 {
 		t.Fatalf("stale queued delivery reached provider: %v %v calls=%d", processed, err, provider.calls)
 	}
 	staleDelivery := delivery

@@ -37,9 +37,13 @@ func normalizeIdentity(category, manufacturer, model, fuel string) string {
 // ExportHelp reads final KB no-evidence outcomes. A transient lookup error or
 // a scheduled retry never enters the human queue.
 func ExportHelp(ctx context.Context, pool *pgxpool.Pool, path string) (int, error) {
-	rows, err := pool.Query(ctx, `SELECT q.appliance_id::text,q.manufacturer,q.model,q.category,q.fuel,q.status,q.updated_at
-FROM identity_scan_requests q JOIN homes h ON h.id=q.home_id
-WHERE h.deleted_at IS NULL AND q.status='missing_source' AND q.attempt_count=5
+	rows, err := pool.Query(ctx, `SELECT a.id::text,q.manufacturer,q.model,q.category,q.fuel,q.status,q.updated_at
+FROM identity_scan_subscriptions s
+JOIN appliances a ON a.id=s.appliance_id AND a.home_id=s.home_id AND a.archived_at IS NULL
+JOIN identity_scan_requests q ON q.id=s.request_id AND q.home_id=s.home_id AND q.identity_key=s.identity_key
+JOIN homes h ON h.id=s.home_id
+WHERE h.deleted_at IS NULL AND a.identity->>'match_quality'='confirmed_exact'
+ AND q.status='missing_source' AND q.attempt_count=5
  AND q.next_attempt_at IS NULL AND q.candidate_report IS NOT NULL
  AND q.candidate_report->'models'->0->>'status' IN ('no_evidence','rated_input_only')
 ORDER BY q.appliance_id,q.updated_at,q.id`)

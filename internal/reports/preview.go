@@ -14,6 +14,8 @@ import (
 	"sort"
 	"time"
 
+	"energylens.local/cloud/internal/householdenergy"
+	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/recommendation"
 
 	"github.com/google/uuid"
@@ -214,7 +216,10 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	defer tx.Rollback(ctx)
 	var version int64
 	var timezone string
-	err = tx.QueryRow(ctx, `SELECT version,timezone FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL FOR UPDATE`, home, owner).Scan(&version, &timezone)
+	var rawDemo, demoDigest []byte
+	err = tx.QueryRow(ctx, `SELECT version,timezone,demo_cost_snapshot,
+		CASE WHEN demo_cost_snapshot IS NOT NULL THEN public.digest(demo_cost_snapshot::text,'sha256') END
+		FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL FOR UPDATE`, home, owner).Scan(&version, &timezone, &rawDemo, &demoDigest)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Preview{}, ErrNotFound
 	}
@@ -238,6 +243,20 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Preview{}, err
+	}
+	seeded := make(map[uuid.UUID]inventory.Appliance)
+	if len(rawDemo) > 0 && string(rawDemo) != "null" {
+		snapshot, decodeErr := householdenergy.DecodeDemoCostSnapshot(bytes.NewReader(rawDemo))
+		if decodeErr != nil {
+			return Preview{}, decodeErr
+		}
+		seededRows, deriveErr := inventory.DemoAppliances(snapshot, home)
+		if deriveErr != nil {
+			return Preview{}, deriveErr
+		}
+		for _, row := range seededRows {
+			seeded[uuid.MustParse(row.ID)] = row
+		}
 	}
 	loc, err := time.LoadLocation(timezone)
 	if err != nil || timezone == "Local" {
@@ -264,8 +283,9 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	preview := Preview{ID: uuid.NewString(), HomeID: home, SchemaVersion: "manual-preview/v2", CreatedAt: now.UTC(), ExpiresAt: now.UTC().Add(24 * time.Hour), Scope: "selected_appliances", HomeTotalStatus: "unavailable_incomplete_scope", MeasuredStatus: "unavailable", RecommendationsStatus: "unavailable", Assumptions: []string{"Per-device estimates use reviewed source evidence and a current monthly tariff.", "Measured electricity covers only complete daily sensor buckets for selected appliances; coverage may be incomplete.", "No whole-home total, measured savings, waste finding, or incentive is asserted."}, Items: []Item{}, Recommendations: []ReportRecommendation{}}
 	type dependency struct {
 		id         uuid.UUID
-		version    int64
+		version    *int64
 		estimateID *uuid.UUID
+		demoID     *string
 	}
 	deps := []dependency{}
 	for rows.Next() {
@@ -288,7 +308,8 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 			}
 		}
 		preview.Items = append(preview.Items, item)
-		deps = append(deps, dependency{id: id, version: applianceVersion, estimateID: runID})
+		versionCopy := applianceVersion
+		deps = append(deps, dependency{id: id, version: &versionCopy, estimateID: runID})
 	}
 	if err == nil {
 		err = rows.Err()
@@ -297,10 +318,30 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	if err != nil {
 		return Preview{}, err
 	}
+	for _, id := range ordered {
+		row, isSeeded := seeded[id]
+		if !isSeeded {
+			continue
+		}
+		if len(deps) > 0 {
+			for _, dep := range deps {
+				if dep.id == id {
+					return Preview{}, ErrInvalidSelection
+				}
+			}
+		}
+		demoID := row.DemoDeviceID
+		preview.Items = append(preview.Items, Item{ApplianceID: row.ID, Category: safeCategory(row.Category),
+			Explanation: "No current reviewed monthly estimate is available for this appliance."})
+		deps = append(deps, dependency{id: id, demoID: &demoID})
+	}
 	if len(preview.Items) != len(selected) {
 		return Preview{}, ErrInvalidSelection
 	}
 	for i := range preview.Items {
+		if _, ok := seeded[uuid.MustParse(preview.Items[i].ApplianceID)]; ok {
+			continue
+		}
 		var energyKWh string
 		var buckets int
 		var sensors int
@@ -378,7 +419,12 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 		return Preview{}, err
 	}
 	for _, d := range deps {
-		_, err = tx.Exec(ctx, `INSERT INTO report_preview_items(preview_id,appliance_id,appliance_version,estimate_run_id) VALUES($1,$2,$3,$4)`, preview.ID, d.id, d.version, d.estimateID)
+		var dependencyDigest []byte
+		if d.demoID != nil {
+			dependencyDigest = demoDigest
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO report_preview_items(preview_id,appliance_id,appliance_version,estimate_run_id,demo_device_id,demo_snapshot_sha256)
+			VALUES($1,$2,$3,$4,$5,$6)`, preview.ID, d.id, d.version, d.estimateID, d.demoID, dependencyDigest)
 		if err != nil {
 			return Preview{}, err
 		}
@@ -409,11 +455,7 @@ func (s Store) Get(ctx context.Context, owner, home, previewID string, now time.
 		return Preview{}, err
 	}
 	var stale bool
-	err = s.DB.QueryRow(ctx, `SELECT h.version<>$2 OR EXISTS (SELECT 1 FROM report_preview_invalidations v WHERE v.preview_id=$1) OR EXISTS (
-		SELECT 1 FROM report_preview_items i LEFT JOIN appliances a ON a.id=i.appliance_id AND a.home_id=h.id
-		WHERE i.preview_id=$1 AND (a.id IS NULL OR a.archived_at IS NOT NULL OR a.version<>i.appliance_version OR
-		(i.estimate_run_id IS NOT NULL AND EXISTS(SELECT 1 FROM estimate_run_invalidations v WHERE v.run_id=i.estimate_run_id)))
-	) FROM homes h WHERE h.id=$3 AND h.owner_user_id=$4 AND h.deleted_at IS NULL`, previewID, homeVersion, home, owner).Scan(&stale)
+	err = s.DB.QueryRow(ctx, dependencyStaleSQL, previewID, home, homeVersion).Scan(&stale)
 	if err != nil {
 		return Preview{}, err
 	}

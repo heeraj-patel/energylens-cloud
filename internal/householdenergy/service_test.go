@@ -181,13 +181,157 @@ func TestAmbiguousMeterTopologyStaysUnknown(t *testing.T) {
 	}
 }
 
+func TestRealDeviceAttributionOnlyForDirectUnambiguousMeters(t *testing.T) {
+	start := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	first, second := uuid.NewString(), uuid.NewString()
+	parent := uuid.NewString()
+	electricity := "electricity"
+	items := []interval{
+		{Start: start, End: start.Add(15 * time.Minute), Wh: big.NewRat(1000, 1), Fuel: &electricity, ApplianceID: first, SensorKind: "plug"},
+		{Start: start.Add(15 * time.Minute), End: start.Add(30 * time.Minute), Wh: big.NewRat(500, 1), Fuel: &electricity, ApplianceID: second, SensorKind: "strip_outlet"},
+		{Start: start.Add(30 * time.Minute), End: start.Add(45 * time.Minute), Wh: big.NewRat(250, 1), Fuel: &electricity, ApplianceID: first, SensorKind: "circuit"},
+		{Start: start.Add(45 * time.Minute), End: start.Add(time.Hour), Wh: big.NewRat(250, 1), Fuel: &electricity, ApplianceID: first, SensorKind: "plug", ParentSensorID: &parent},
+	}
+	buckets := makeBuckets(period{start, start.Add(time.Hour)}, "hour", items)
+	tariff := &marginalTariff{Rate: big.NewRat(20, 100), Currency: "USD"}
+	priceBuckets(buckets, *tariff)
+	rows, wh := attributeDeviceBuckets(buckets, items, tariff)
+	if len(rows) != 1 || len(rows[0]) != 2 || rows[0][0].ApplianceID != min(first, second) {
+		t.Fatalf("unexpected measured rows: %+v", rows)
+	}
+	if wh[first].Cmp(big.NewRat(1000, 1)) != 0 || wh[second].Cmp(big.NewRat(500, 1)) != 0 {
+		t.Fatalf("broad or nested meter was attributed: %+v", wh)
+	}
+	periodRows := sumDeviceAllocations(wh, tariff)
+	var deviceCost big.Rat
+	for _, row := range periodRows {
+		a := row.Allocation
+		if a.UsefulCost != nil || a.WasteCost != nil || a.UsefulEnergy != nil || a.WasteEnergy != nil {
+			t.Fatalf("unsupported useful/waste split: %+v", a)
+		}
+		v, _ := new(big.Rat).SetString(a.Cost.(money).Amount)
+		deviceCost.Add(&deviceCost, v)
+	}
+	if deviceCost.Cmp(big.NewRat(30, 100)) != 0 || buckets[0].Allocation.Cost.(money).Amount != "0.400000" {
+		t.Fatalf("device allocation did not stay within home cost: rows=%+v bucket=%+v", periodRows, buckets[0])
+	}
+	items[1].Start = start.Add(10 * time.Minute)
+	ambiguousBuckets := makeBuckets(period{start, start.Add(time.Hour)}, "hour", items)
+	ambiguousRows, _ := attributeDeviceBuckets(ambiguousBuckets, items, tariff)
+	if len(ambiguousRows[0]) != 0 || ambiguousBuckets[0].Allocation.Energy != nil {
+		t.Fatalf("overlapping topology was attributed: %+v", ambiguousRows)
+	}
+}
+
+func TestIntervalCrossingBucketAndPeriodBoundariesIsProportionallyAllocated(t *testing.T) {
+	start := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	periodStart := start.Add(time.Hour)
+	periodEnd := periodStart.Add(time.Hour)
+	items := []interval{{Start: start.Add(30 * time.Minute), End: start.Add(90 * time.Minute), Wh: big.NewRat(12, 1)}}
+	buckets := makeBuckets(period{periodStart, periodEnd}, "hour", items)
+	if len(buckets) != 1 || buckets[0].Allocation.Energy == nil || buckets[0].Allocation.Energy.Value != "0.006000000000" {
+		t.Fatalf("period-edge interval allocation = %+v", buckets)
+	}
+	full := makeBuckets(period{start, start.Add(2 * time.Hour)}, "hour", items)
+	if len(full) != 2 || full[0].Allocation.Energy.Value != "0.006000000000" || full[1].Allocation.Energy.Value != "0.006000000000" {
+		t.Fatalf("bucket-seam interval was not split evenly: %+v", full)
+	}
+}
+
+func TestClippedIntervalsConserveEnergyAcrossAdjacentWindows(t *testing.T) {
+	start := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	original := interval{Start: start.Add(30 * time.Minute), End: start.Add(3 * time.Hour), Wh: big.NewRat(125, 1)}
+	var allocated big.Rat
+	for i, want := range []int64{25, 50, 50} {
+		v := original
+		if !clipInterval(&v, period{start.Add(time.Duration(i) * time.Hour), start.Add(time.Duration(i+1) * time.Hour)}) || v.Wh.Cmp(big.NewRat(want, 1)) != 0 {
+			t.Fatalf("window %d allocation = %s, want %d Wh", i, v.Wh, want)
+		}
+		allocated.Add(&allocated, v.Wh)
+	}
+	if allocated.Cmp(original.Wh) != 0 {
+		t.Fatalf("adjacent windows allocated %s of %s Wh", &allocated, original.Wh)
+	}
+	outside := original
+	if clipInterval(&outside, period{start.Add(3 * time.Hour), start.Add(4 * time.Hour)}) {
+		t.Fatal("interval outside the query boundary was included")
+	}
+}
+
+func TestFractionalBucketEnergyAndMoneyConserveSerializedTotals(t *testing.T) {
+	start := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	items := []interval{{Start: start, End: start.Add(3 * time.Hour), Wh: big.NewRat(1, 1)}}
+	hourly := makeBuckets(period{start, start.Add(3 * time.Hour)}, "hour", items)
+	daily := makeBuckets(period{start, start.Add(3 * time.Hour)}, "day", items)
+	tariff := marginalTariff{Rate: big.NewRat(1, 1), Currency: "USD"}
+	hourlyCost, dailyCost := priceBuckets(hourly, tariff), priceBuckets(daily, tariff)
+	if hourlyCost.Amount != "0.001000" || dailyCost.Amount != hourlyCost.Amount {
+		t.Fatalf("fractional interval cost varies with granularity: hourly=%+v daily=%+v", hourlyCost, dailyCost)
+	}
+	var energy, cost big.Rat
+	for _, b := range hourly {
+		energy.Add(&energy, mustDecimal(b.Allocation.Energy.Value))
+		cost.Add(&cost, mustDecimal(b.Allocation.Cost.(money).Amount))
+	}
+	if energy.Cmp(big.NewRat(1, 1000)) != 0 || cost.Cmp(mustDecimal(hourlyCost.Amount)) != 0 {
+		t.Fatalf("serialized buckets do not conserve totals: energy=%s cost=%s", &energy, &cost)
+	}
+	// Each exact bucket cost rounds upward in isolation. Cumulative rounding
+	// must keep the correction distributed without creating a negative bucket.
+	tiny := make([]interval, 24)
+	for i := range tiny {
+		tiny[i] = interval{Start: start.Add(time.Duration(i) * time.Hour), End: start.Add(time.Duration(i+1) * time.Hour), Wh: big.NewRat(6, 10000)}
+	}
+	tinyBuckets := makeBuckets(period{start, start.Add(24 * time.Hour)}, "hour", tiny)
+	tinyTotal := priceBuckets(tinyBuckets, tariff)
+	cost.SetInt64(0)
+	for _, b := range tinyBuckets {
+		amount := mustDecimal(b.Allocation.Cost.(money).Amount)
+		if amount.Sign() < 0 {
+			t.Fatalf("positive interval produced negative bucket cost: %s", amount)
+		}
+		cost.Add(&cost, amount)
+	}
+	if cost.Cmp(mustDecimal(tinyTotal.Amount)) != 0 {
+		t.Fatalf("tiny bucket costs sum to %s, total is %s", &cost, tinyTotal.Amount)
+	}
+}
+
+func TestSubCentCostsAreIndependentOfBucketGranularity(t *testing.T) {
+	start := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	items := make([]interval, 24)
+	for i := range items {
+		items[i] = interval{Start: start.Add(time.Duration(i) * time.Hour), End: start.Add(time.Duration(i+1) * time.Hour), Wh: big.NewRat(10, 1)}
+	}
+	tariff := marginalTariff{Rate: big.NewRat(15, 100), Currency: "USD"}
+	hourly := makeBuckets(period{start, start.Add(24 * time.Hour)}, "hour", items)
+	daily := makeBuckets(period{start, start.Add(24 * time.Hour)}, "day", items)
+	hourlyTotal := priceBuckets(hourly, tariff)
+	dailyTotal := priceBuckets(daily, tariff)
+	if hourlyTotal == nil || dailyTotal == nil || hourlyTotal.Amount != "0.036000" || dailyTotal.Amount != hourlyTotal.Amount {
+		t.Fatalf("sub-cent total depends on granularity: hourly=%+v daily=%+v", hourlyTotal, dailyTotal)
+	}
+	var hourlyBuckets big.Rat
+	for _, b := range hourly {
+		amount := b.Allocation.Cost.(money).Amount
+		v, ok := new(big.Rat).SetString(amount)
+		if !ok {
+			t.Fatalf("invalid bucket cost %q", amount)
+		}
+		hourlyBuckets.Add(&hourlyBuckets, v)
+	}
+	if hourlyBuckets.Cmp(big.NewRat(36, 1000)) != 0 {
+		t.Fatalf("hourly sub-cent costs did not reconcile: %s", &hourlyBuckets)
+	}
+}
+
 func TestMeasuredCostReconcilesAndKeepsClassificationsUnknown(t *testing.T) {
 	start := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 	buckets := makeBuckets(period{start, start.Add(time.Hour)}, "hour", []interval{
 		{Start: start.Add(time.Minute), End: start.Add(2 * time.Minute), Wh: big.NewRat(1500, 1)},
 	})
 	cost := priceBuckets(buckets, marginalTariff{Rate: big.NewRat(20, 100), Currency: "USD"})
-	if cost == nil || cost.Amount != "0.30" || buckets[0].Allocation.Cost.(money).Amount != cost.Amount || buckets[0].Allocation.UnclassifiedCost.(money).Amount != cost.Amount {
+	if cost == nil || cost.Amount != "0.300000" || buckets[0].Allocation.Cost.(money).Amount != cost.Amount || buckets[0].Allocation.UnclassifiedCost.(money).Amount != cost.Amount {
 		t.Fatalf("measured energy cost did not reconcile: total=%+v buckets=%+v", cost, buckets)
 	}
 	if buckets[0].Allocation.EvidenceBasis != "mixed" || buckets[0].Allocation.UsefulCost != nil || buckets[0].Allocation.WasteCost != nil {
@@ -395,8 +539,8 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if err = pool.QueryRow(ctx, `INSERT INTO appliances(home_id,name,category,identity) VALUES($1,'Device','refrigerator','{}') RETURNING id`, home.ID).Scan(&appliance); err != nil {
 		t.Fatal(err)
 	}
-	if code, response := getSample(dash, "owner"); code != 200 || response["data_mode"] != "household" || response["totals"].(map[string]any)["cost"] != nil {
-		t.Fatalf("real inventory did not suppress the demo total: %d %+v", code, response)
+	if code, response := getSample(dash, "owner"); code != 200 || response["data_mode"] != "mixed" || response["totals"].(map[string]any)["cost"].(map[string]any)["amount"] != "2.469984" || len(response["device_allocations"].([]any)) != 18 {
+		t.Fatalf("real inventory did not retain seeded values in mixed mode: %d %+v", code, response)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO appliance_revisions(appliance_id,home_id,version,snapshot) VALUES($1,$2,1,'{}')`, appliance, home.ID); err != nil {
 		t.Fatal(err)
@@ -418,13 +562,17 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("live dashboard: %d %+v", code, live)
 	}
-	if live["data_mode"] != "household" || live["as_of"] != end.UTC().Format(time.RFC3339) || live["device_allocations"] != nil {
-		t.Fatalf("live dashboard mixed demo or reported wrong home as_of: mode=%v as_of=%v", live["data_mode"], live["as_of"])
+	if live["data_mode"] != "mixed" || live["as_of"] != end.UTC().Format(time.RFC3339) || len(live["device_allocations"].([]any)) != 19 {
+		t.Fatalf("mixed dashboard lost seeded rows or reported wrong home as_of: mode=%v as_of=%v", live["data_mode"], live["as_of"])
+	}
+	real := live["device_allocations"].([]any)[18].(map[string]any)
+	if real["appliance_id"] != appliance || real["allocation"].(map[string]any)["energy"].(map[string]any)["value"] != "1.500000000000" {
+		t.Fatalf("live appliance was not attributed: %+v", real)
 	}
 	for _, granularity := range []string{"day", "week", "month"} {
 		path := "/v1/homes/" + home.ID + "/energy-trends?granularity=" + granularity + "&window=last_5_occurrences"
 		code, series := get(path, "owner")
-		if code != 200 || series["data_mode"] != "household" || series["as_of"] != live["as_of"] || len(series["buckets"].([]any)) != 5 || series["unattributed"] != nil {
+		if code != 200 || series["data_mode"] != "mixed" || series["as_of"] != live["as_of"] || len(series["buckets"].([]any)) != 5 || series["unattributed"] != nil {
 			t.Fatalf("live %s occurrence response diverged: %d mode=%v as_of=%v", granularity, code, series["data_mode"], series["as_of"])
 		}
 	}
@@ -444,8 +592,8 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 		t.Fatal("snapshot unchanged after new evidence")
 	}
 	withoutTariffSnapshot := live["snapshot_id"]
-	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "household" || replaced["totals"].(map[string]any)["cost"] != nil {
-		t.Fatalf("real evidence did not replace sample: %d %+v", code, replaced)
+	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "mixed" || replaced["totals"].(map[string]any)["cost"] != nil || len(replaced["device_allocations"].([]any)) != 19 {
+		t.Fatalf("real evidence did not retain separate seeded allocations: %d %+v", code, replaced)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.20,'kWh','USD','user_tariff','owner bill',$2,false,$3)`, home.ID, now.Add(-10*24*time.Hour), now.Add(-30*24*time.Hour)); err != nil {
 		t.Fatal(err)
@@ -455,8 +603,12 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 		t.Fatalf("priced dashboard: %d %+v", code, priced)
 	}
 	pricedTotals := priced["totals"].(map[string]any)
-	if pricedTotals["cost"].(map[string]any)["amount"] != "0.30" || pricedTotals["unclassified_cost"].(map[string]any)["amount"] != "0.30" || pricedTotals["useful_cost"] != nil || pricedTotals["waste_cost"] != nil || priced["evidence_basis"] != "mixed" {
+	if pricedTotals["cost"].(map[string]any)["amount"] != "0.300000" || pricedTotals["unclassified_cost"].(map[string]any)["amount"] != "0.300000" || pricedTotals["useful_cost"] != nil || pricedTotals["waste_cost"] != nil || priced["evidence_basis"] != "mixed" {
 		t.Fatalf("measured cost contract mismatch: %+v", priced)
+	}
+	pricedReal := priced["device_allocations"].([]any)[18].(map[string]any)["allocation"].(map[string]any)
+	if pricedReal["cost"].(map[string]any)["amount"] != "0.300000" || pricedReal["unclassified_cost"].(map[string]any)["amount"] != "0.300000" || pricedReal["useful_cost"] != nil || pricedReal["waste_cost"] != nil {
+		t.Fatalf("measured appliance pricing or classification mismatch: %+v", pricedReal)
 	}
 	if priced["snapshot_id"] == withoutTariffSnapshot {
 		t.Fatal("snapshot did not change when a tariff revision was added")
@@ -485,7 +637,7 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 		t.Fatalf("correction did not change dashboard snapshot: %d %+v", code, corrected)
 	}
 	correctedTotals := corrected["totals"].(map[string]any)
-	if correctedTotals["energy"].(map[string]any)["value"] != "0.500000000000" || correctedTotals["cost"].(map[string]any)["amount"] != "0.10" {
+	if correctedTotals["energy"].(map[string]any)["value"] != "0.500000000000" || correctedTotals["cost"].(map[string]any)["amount"] != "0.100000" {
 		t.Fatalf("corrected observation was not priced once: %+v", corrected)
 	}
 	code, correctedSeries := get(trend, "owner")
@@ -493,7 +645,7 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 		t.Fatalf("corrected views diverged: %d %+v", code, correctedSeries)
 	}
 	seriesTotals := correctedSeries["totals"].(map[string]any)
-	if seriesTotals["energy"].(map[string]any)["value"] != "0.500000000000" || seriesTotals["cost"].(map[string]any)["amount"] != "0.10" {
+	if seriesTotals["energy"].(map[string]any)["value"] != "0.500000000000" || seriesTotals["cost"].(map[string]any)["amount"] != "0.100000" {
 		t.Fatalf("corrected totals diverged: %+v", correctedSeries)
 	}
 	bucketEnergy, bucketCost := new(big.Rat), new(big.Rat)
@@ -520,8 +672,8 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if bucketEnergy.Cmp(big.NewRat(1, 2)) != 0 || bucketCost.Cmp(big.NewRat(1, 10)) != 0 {
 		t.Fatalf("corrected buckets do not reconcile: energy=%s cost=%s", bucketEnergy, bucketCost)
 	}
-	// This correction crosses an hourly bucket boundary. Neither view can
-	// allocate the interval to an hour, so neither may retain its old cost.
+	// This correction crosses an hourly bucket boundary. Both adjacent hours
+	// receive their proportional share and the total remains unchanged.
 	straddlingStart := start.Add(-30 * time.Second)
 	straddlingEnd := end.Add(-30 * time.Second)
 	correction.Revision = 3
@@ -530,25 +682,34 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if _, err = (telemetry.Store{Pool: pool}).Accept(ctx, hub, "live-energy-cert", 1, telemetry.Batch{BatchID: uuid.NewString(), OwnershipEpoch: 1, SchemaVersion: 1, Events: []telemetry.Event{correction}}, hash[:]); err != nil {
 		t.Fatal(err)
 	}
-	code, unallocated := get(dash, "owner")
-	if code != 200 || unallocated["snapshot_id"] == corrected["snapshot_id"] {
-		t.Fatalf("measurement eligibility correction retained snapshot: %d %+v", code, unallocated)
+	code, allocated := get(dash, "owner")
+	if code != 200 || allocated["snapshot_id"] == corrected["snapshot_id"] {
+		t.Fatalf("boundary correction did not change snapshot: %d %+v", code, allocated)
 	}
-	code, unallocatedSeries := get(trend, "owner")
-	if code != 200 || unallocatedSeries["snapshot_id"] != unallocated["snapshot_id"] || !reflect.DeepEqual(unallocatedSeries["period"], unallocated["period"]) || unallocatedSeries["scope"] != unallocated["scope"] {
-		t.Fatalf("unallocated views diverged: %d %+v", code, unallocatedSeries)
+	code, allocatedSeries := get(trend, "owner")
+	if code != 200 || allocatedSeries["snapshot_id"] != allocated["snapshot_id"] || !reflect.DeepEqual(allocatedSeries["period"], allocated["period"]) || allocatedSeries["scope"] != allocated["scope"] {
+		t.Fatalf("boundary allocated views diverged: %d %+v", code, allocatedSeries)
 	}
-	for _, response := range []map[string]any{unallocated, unallocatedSeries} {
-		unknown := response["totals"].(map[string]any)
-		if unknown["energy"] != nil || unknown["cost"] != nil || unknown["unclassified_cost"] != nil || unknown["useful_energy"] != nil || unknown["useful_cost"] != nil || unknown["waste_energy"] != nil || unknown["waste_cost"] != nil || response["availability"] != "unavailable" {
-			t.Fatalf("unallocatable measurement fabricated a total: %+v", response)
+	for _, response := range []map[string]any{allocated, allocatedSeries} {
+		totals := response["totals"].(map[string]any)
+		if totals["energy"].(map[string]any)["value"] != "0.500000000000" || totals["cost"].(map[string]any)["amount"] != "0.100000" || response["availability"] != "partial" {
+			t.Fatalf("boundary interval total was lost or changed: %+v", response)
 		}
 	}
-	for _, raw := range unallocatedSeries["buckets"].([]any) {
+	var seamEnergy, seamCost big.Rat
+	for _, raw := range allocatedSeries["buckets"].([]any) {
 		part := raw.(map[string]any)["allocation"].(map[string]any)
-		if part["energy"] != nil || part["cost"] != nil || part["useful_energy"] != nil || part["useful_cost"] != nil || part["waste_energy"] != nil || part["waste_cost"] != nil {
-			t.Fatalf("unallocatable correction retained a bucket value: %+v", part)
+		if part["energy"] != nil {
+			v, _ := new(big.Rat).SetString(part["energy"].(map[string]any)["value"].(string))
+			seamEnergy.Add(&seamEnergy, v)
 		}
+		if part["cost"] != nil {
+			v, _ := new(big.Rat).SetString(part["cost"].(map[string]any)["amount"].(string))
+			seamCost.Add(&seamCost, v)
+		}
+	}
+	if seamEnergy.Cmp(big.NewRat(1, 2)) != 0 || seamCost.Cmp(big.NewRat(1, 10)) != 0 {
+		t.Fatalf("boundary buckets do not reconcile: energy=%s cost=%s", &seamEnergy, &seamCost)
 	}
 	correction.Revision = 4
 	correction.Start = &start
@@ -557,24 +718,24 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, restored := get(dash, "owner")
-	if code != 200 || restored["totals"].(map[string]any)["cost"].(map[string]any)["amount"] != "0.10" {
+	if code != 200 || restored["totals"].(map[string]any)["cost"].(map[string]any)["amount"] != "0.100000" {
 		t.Fatalf("restored measurement was not priced: %d %+v", code, restored)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,2,'electricity',0.25,'kWh','USD','user_tariff','updated bill',$2,false,$3)`, home.ID, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	code, revised := get(dash, "owner")
-	if code != 200 || revised["snapshot_id"] == restored["snapshot_id"] || revised["totals"].(map[string]any)["cost"] != nil {
-		t.Fatalf("tariff revision did not invalidate snapshot or ambiguity was priced: %d %+v", code, revised)
+	if code != 200 || revised["snapshot_id"] == restored["snapshot_id"] || revised["totals"].(map[string]any)["cost"].(map[string]any)["amount"] != "0.100000" {
+		t.Fatalf("historically effective tariff was not retained after new revision: %d %+v", code, revised)
 	}
 	code, revisedSeries := get(trend, "owner")
 	if code != 200 || revisedSeries["snapshot_id"] != revised["snapshot_id"] || !reflect.DeepEqual(revisedSeries["period"], revised["period"]) || revisedSeries["scope"] != revised["scope"] {
-		t.Fatalf("tariff ambiguity views diverged: %d %+v", code, revisedSeries)
+		t.Fatalf("effective tariff views diverged: %d %+v", code, revisedSeries)
 	}
 	for _, response := range []map[string]any{revised, revisedSeries} {
 		total := response["totals"].(map[string]any)
-		if total["cost"] != nil || total["unclassified_cost"] != nil || total["useful_energy"] != nil || total["useful_cost"] != nil || total["waste_energy"] != nil || total["waste_cost"] != nil {
-			t.Fatalf("ambiguous tariff fabricated cost or classification: %+v", response)
+		if total["cost"].(map[string]any)["amount"] != "0.100000" || total["unclassified_cost"].(map[string]any)["amount"] != "0.100000" || total["useful_energy"] != nil || total["useful_cost"] != nil || total["waste_energy"] != nil || total["waste_cost"] != nil {
+			t.Fatalf("effective tariff cost or classification mismatch: %+v", response)
 		}
 	}
 	// The tariff expires at exactly 60*24 hours; test the strict freshness
@@ -643,6 +804,36 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 			}
 		})
 	}
+	t.Run("adjacent effective rates split one observation", func(t *testing.T) {
+		tariffHome, createErr := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "Rate transition", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		middle := start.Add(end.Sub(start) / 2)
+		for _, row := range []struct {
+			revision int
+			rate     string
+			from     time.Time
+			to       *time.Time
+		}{{1, "0.10", start.Add(-time.Hour), &middle}, {2, "0.20", middle, nil}} {
+			if _, createErr = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from,effective_to) VALUES($1,$2,'electricity',$3,'kWh','USD','user_tariff','reviewed bill',$4,false,$5,$6)`, tariffHome.ID, row.revision, row.rate, now.Add(-24*time.Hour), row.from, row.to); createErr != nil {
+				t.Fatal(createErr)
+			}
+		}
+		readTx, readErr := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		_, _, schedule, readErr := readMarginalTariff(ctx, readTx, tariffHome.ID, now, items)
+		_ = readTx.Rollback(ctx)
+		if readErr != nil || schedule == nil {
+			t.Fatalf("adjacent rates were not selected: %+v %v", schedule, readErr)
+		}
+		buckets := makeBuckets(period{Start: start, End: end}, "hour", items)
+		if cost := priceEffectiveBuckets(buckets, items, *schedule); cost == nil || cost.Amount != "0.225000" {
+			t.Fatalf("mid-interval tariff price = %+v", cost)
+		}
+	})
 	if code, _ := get("/v1/homes/"+home.ID+"/energy-trends?granularity=invalid", "owner"); code != 400 {
 		t.Fatalf("invalid granularity: %d", code)
 	}
@@ -654,7 +845,7 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if code != 200 || stale["totals"].(map[string]any)["energy"] != nil || stale["as_of"] != end.UTC().Format(time.RFC3339) {
 		t.Fatalf("prior-day evidence leaked into new period: %d %+v", code, stale)
 	}
-	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "household" || replaced["totals"].(map[string]any)["energy"] != nil {
-		t.Fatalf("historical evidence restored sample mode: %d %+v", code, replaced)
+	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "mixed" || replaced["totals"].(map[string]any)["energy"] != nil {
+		t.Fatalf("historical evidence lost mixed mode: %d %+v", code, replaced)
 	}
 }
