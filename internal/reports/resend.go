@@ -16,6 +16,10 @@ import (
 
 const resendEmailsURL = "https://api.resend.com/emails"
 
+// ErrProviderRejected means the provider explicitly rejected the request.
+// Network errors and malformed success receipts remain ambiguous.
+var ErrProviderRejected = errors.New("report provider rejected request")
+
 // ResendProvider uses Resend's 24-hour Idempotency-Key window. Report
 // previews expire within 24 hours, so an approved request cannot be retried
 // after the provider's duplicate-suppression window. The Cloud runtime only
@@ -75,7 +79,10 @@ func (p *ResendProvider) SendReport(ctx context.Context, requestID string, recip
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		// Provider responses may include recipients or body. Do not log them.
-		return fmt.Errorf("report provider rejected request: HTTP %d", response.StatusCode)
+		if response.StatusCode >= 400 && response.StatusCode < 500 && response.StatusCode != http.StatusRequestTimeout {
+			return fmt.Errorf("%w: HTTP %d", ErrProviderRejected, response.StatusCode)
+		}
+		return fmt.Errorf("report provider response unconfirmed: HTTP %d", response.StatusCode)
 	}
 	var receipt struct {
 		ID string `json:"id"`

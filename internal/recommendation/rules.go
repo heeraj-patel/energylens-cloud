@@ -25,18 +25,40 @@ type Appliance struct {
 }
 
 type Action struct {
-	RuleID         string     `json:"rule_id"`
-	RuleVersion    int        `json:"rule_version"`
-	ApplianceID    string     `json:"appliance_id"`
-	State          string     `json:"state"` // candidate or active
-	Title          string     `json:"title"`
-	Explanation    string     `json:"explanation"`
-	NextQuestion   string     `json:"next_question,omitempty"`
-	BenefitGroup   string     `json:"benefit_group"`
-	EvidenceRefs   []Evidence `json:"evidence_refs"`
-	SavingsAmount  *string    `json:"savings_amount"` // absent until a comparable scenario exists
+	RuleID         string      `json:"rule_id"`
+	RuleVersion    int         `json:"rule_version"`
+	ApplianceID    string      `json:"appliance_id"`
+	State          string      `json:"state"` // candidate or active
+	Title          string      `json:"title"`
+	Explanation    string      `json:"explanation"`
+	NextQuestion   string      `json:"next_question,omitempty"`
+	BenefitGroup   string      `json:"benefit_group"`
+	TipCategory    TipCategory `json:"tip_category"`
+	EvidenceRefs   []Evidence  `json:"evidence_refs"`
+	SavingsAmount  *string     `json:"savings_amount"` // absent until a comparable scenario exists
 	usageFrequency int64
 	usageUnit      string
+}
+
+// TipCategory identifies the kind of action at its source. BenefitGroup is
+// reserved for appliance-scoped ranking and does not determine this category.
+type TipCategory string
+
+const (
+	TipGeneral TipCategory = "general"
+	TipCare    TipCategory = "care"
+	TipUpgrade TipCategory = "upgrade"
+)
+
+func tipCategory(ruleID string) TipCategory {
+	switch ruleID {
+	case "refrigerator.maintenance":
+		return TipCare
+	case "lighting.equivalent_bulb":
+		return TipUpgrade
+	default:
+		return TipGeneral
+	}
 }
 
 type rule struct {
@@ -101,7 +123,7 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 		out = append(out, Action{RuleID: "dryer.gas_cycle_options", RuleVersion: 1, ApplianceID: a.ID,
 			State: state, Title: "Review gas dryer cycle options",
 			Explanation:  "Check manufacturer-supported sensor-dry and suitable load settings. Gas and electrical use need separate evidence; this action does not identify waste or establish savings.",
-			NextQuestion: next, BenefitGroup: "laundry_cycle", EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: "cycles_per_week"})
+			NextQuestion: next, BenefitGroup: "laundry_cycle", TipCategory: TipGeneral, EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: "cycles_per_week"})
 	}
 	for _, r := range initial {
 		if a.Category != r.category || a.Fuel != r.fuel {
@@ -137,13 +159,13 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 		}
 		out = append(out, Action{RuleID: r.id, RuleVersion: 1, ApplianceID: a.ID, State: state,
 			Title: r.title, Explanation: r.explanation, NextQuestion: next,
-			BenefitGroup: r.group, EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: r.answerKind})
+			BenefitGroup: r.group, TipCategory: tipCategory(r.id), EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: r.answerKind})
 	}
 	if len(out) == 0 {
 		out = append(out, Action{RuleID: "general.gather_information", RuleVersion: 1, ApplianceID: a.ID,
 			State: "candidate", Title: "Gather appliance information",
 			Explanation:  "Add the appliance model and reviewed guidance to see whether a specific action applies.",
-			NextQuestion: "confirm_model", BenefitGroup: "information", EvidenceRefs: []Evidence{}})
+			NextQuestion: "confirm_model", BenefitGroup: "information", TipCategory: TipGeneral, EvidenceRefs: []Evidence{}})
 	}
 	return rankActions(out)
 }

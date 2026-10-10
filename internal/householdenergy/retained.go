@@ -42,9 +42,10 @@ func refKey(scope retainedScope, ref retainedRef) string {
 // same event twice or dropping the purged share. A dirty, corrected, conflicting
 // or boundary-cut hour is explicitly unavailable instead of being interpolated.
 func mergeRetainedIntervals(ctx context.Context, tx pgx.Tx, home string, p period, raw []interval) ([]interval, error) {
-	rows, err := tx.Query(ctx, `SELECT h.bucket_start,h.energy_wh::text,h.status,h.source_refs,
+	rows, err := tx.Query(ctx, `SELECT h.bucket_start,h.energy_wh::text,h.covered_seconds::text,h.status,h.source_refs,
  h.hub_id::text,h.ownership_epoch,h.sensor_id::text,h.attachment_id::text,
  a.appliance_id::text,s.kind,s.parent_sensor_id::text,
+ topology.root_id::text,topology.root_kind,topology.root_id IS NOT NULL,NOT EXISTS (SELECT 1 FROM sensor_endpoints child WHERE child.home_id=s.home_id AND child.hub_id=s.hub_id AND child.ownership_epoch=s.ownership_epoch AND child.parent_sensor_id=s.id),
  EXISTS(SELECT 1 FROM metered_rollup_dirty d WHERE d.kind='energy_hour' AND d.home_id=h.home_id
    AND d.hub_id=h.hub_id AND d.ownership_epoch=h.ownership_epoch AND d.sensor_id=h.sensor_id
    AND d.attachment_id=h.attachment_id AND d.bucket_start=h.bucket_start)
@@ -54,6 +55,13 @@ func mergeRetainedIntervals(ctx context.Context, tx pgx.Tx, home string, p perio
  FROM energy_hourly h
  JOIN sensor_endpoints s ON s.id=h.sensor_id AND s.home_id=h.home_id AND s.hub_id=h.hub_id AND s.ownership_epoch=h.ownership_epoch
  JOIN attachments a ON a.id=h.attachment_id AND a.home_id=h.home_id AND a.sensor_id=h.sensor_id
+ LEFT JOIN LATERAL (WITH RECURSIVE ancestry(id,parent_sensor_id,kind,depth) AS (
+   SELECT s.id,s.parent_sensor_id,s.kind,0
+   UNION ALL
+   SELECT parent.id,parent.parent_sensor_id,parent.kind,ancestry.depth+1
+   FROM ancestry JOIN sensor_endpoints parent ON parent.id=ancestry.parent_sensor_id AND parent.home_id=s.home_id AND parent.hub_id=s.hub_id AND parent.ownership_epoch=s.ownership_epoch
+   WHERE ancestry.depth < 32
+ ) SELECT id AS root_id,kind AS root_kind FROM ancestry WHERE parent_sensor_id IS NULL ORDER BY depth DESC LIMIT 1) topology ON TRUE
  WHERE h.home_id=$1 AND h.bucket_start<$3 AND h.bucket_start+interval '1 hour'>$2
  ORDER BY h.bucket_start,h.hub_id,h.ownership_epoch,h.sensor_id,h.attachment_id`, home, p.Start, p.End)
 	if err != nil {
@@ -63,12 +71,15 @@ func mergeRetainedIntervals(ctx context.Context, tx pgx.Tx, home string, p perio
 	for rows.Next() {
 		var h retainedHour
 		var value *string
+		var covered *string
 		var refs []byte
-		if err = rows.Scan(&h.Start, &value, &h.status, &refs, &h.HubID, &h.Epoch, &h.SensorID, &h.AttachmentID, &h.ApplianceID, &h.SensorKind, &h.ParentSensorID, &h.stale); err != nil {
+		if err = rows.Scan(&h.Start, &value, &covered, &h.status, &refs, &h.HubID, &h.Epoch, &h.SensorID, &h.AttachmentID, &h.ApplianceID, &h.SensorKind, &h.ParentSensorID, &h.TopologyRootID, &h.TopologyRootKind, &h.TopologyComplete, &h.TopologyTerminal, &h.stale); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		h.End = h.Start.Add(time.Hour)
+		fuel := "electricity" // Energy interval ingestion accepts this fuel only.
+		h.Fuel = &fuel
 		h.scope = intervalScope(h.interval, h.Start)
 		if err = json.Unmarshal(refs, &h.refs); err != nil {
 			rows.Close()
@@ -80,6 +91,14 @@ func mergeRetainedIntervals(ctx context.Context, tx pgx.Tx, home string, p perio
 			if !ok {
 				rows.Close()
 				return nil, fmt.Errorf("invalid retained energy decimal")
+			}
+		}
+		if covered != nil {
+			var ok bool
+			h.Covered, ok = new(big.Rat).SetString(*covered)
+			if !ok {
+				rows.Close()
+				return nil, fmt.Errorf("invalid retained coverage decimal")
 			}
 		}
 		hours = append(hours, h)
@@ -116,6 +135,7 @@ func mergeRetainedIntervals(ctx context.Context, tx pgx.Tx, home string, p perio
 		if h.stale || h.status != "complete" || h.Wh == nil || h.Start.Before(p.Start) || h.End.After(p.End) {
 			h.Unavailable = true
 			h.Wh = nil
+			h.Covered = nil
 		}
 		result = append(result, h.interval)
 	}
@@ -127,6 +147,9 @@ func mergeRetainedIntervals(ctx context.Context, tx pgx.Tx, home string, p perio
 			if !selected[intervalScope(v, hour)] {
 				part := v
 				part.Wh = new(big.Rat).Mul(v.Wh, new(big.Rat).SetFrac(big.NewInt(end.Sub(start).Nanoseconds()), big.NewInt(v.End.Sub(v.Start).Nanoseconds())))
+				if v.Covered != nil {
+					part.Covered = new(big.Rat).Mul(v.Covered, new(big.Rat).SetFrac(big.NewInt(end.Sub(start).Nanoseconds()), big.NewInt(v.End.Sub(v.Start).Nanoseconds())))
+				}
 				part.Start, part.End = start, end
 				result = append(result, part)
 			}

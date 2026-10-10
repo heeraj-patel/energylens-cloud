@@ -8,13 +8,14 @@ import (
 	"io"
 	"time"
 
+	"energylens.local/cloud/internal/democost"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const DemoSnapshotRevision = "mobile_demo_cost_v1"
-const maxDailySnapshotCostMicros int64 = 1_000_000_000_000 // $1,000,000 per device/day; bounds fixed-point projection.
 
 // MobileDemoCostSnapshot is the explicit operator seed for the approved
 // mobile demonstration schedule. It is never consulted by request handlers;
@@ -59,32 +60,10 @@ func MobileDemoCostSnapshot() DemoCostSnapshot {
 
 // DemoCostSnapshot is an explicitly imported cost-only synthetic snapshot.
 // Values are integer microcurrency units; no energy or tariff is inferred.
-type DemoCostSnapshot struct {
-	Version             int                     `json:"version"`
-	FixtureRevision     string                  `json:"fixture_revision"`
-	Timezone            string                  `json:"timezone"`
-	ReferenceLocalDate  string                  `json:"reference_local_date"`
-	AdjustmentLocalDate string                  `json:"adjustment_local_date,omitempty"`
-	Currency            string                  `json:"currency"`
-	Provenance          string                  `json:"provenance"`
-	Devices             []DemoSnapshotDevice    `json:"devices"`
-	Unattributed        DemoSnapshotAttribution `json:"unattributed"`
-}
-type DemoSnapshotCosts struct {
-	Useful int64 `json:"useful_cost_micros"`
-	Waste  int64 `json:"waste_cost_micros"`
-}
-type DemoSnapshotDevice struct {
-	ID        string            `json:"id"`
-	Name      *string           `json:"name"`
-	Reference DemoSnapshotCosts `json:"reference"`
-	Default   DemoSnapshotCosts `json:"default"`
-}
-type DemoSnapshotAttribution struct {
-	Reference  DemoSnapshotCosts  `json:"reference"`
-	Default    DemoSnapshotCosts  `json:"default"`
-	Adjustment *DemoSnapshotCosts `json:"adjustment,omitempty"`
-}
+type DemoCostSnapshot = democost.Snapshot
+type DemoSnapshotCosts = democost.Costs
+type DemoSnapshotDevice = democost.Device
+type DemoSnapshotAttribution = democost.Attribution
 
 func DecodeDemoCostSnapshot(r io.Reader) (DemoCostSnapshot, error) {
 	dec := json.NewDecoder(r)
@@ -100,50 +79,6 @@ func DecodeDemoCostSnapshot(r io.Reader) (DemoCostSnapshot, error) {
 		return snapshot, err
 	}
 	return snapshot, nil
-}
-
-func (s DemoCostSnapshot) Validate() error {
-	if s.Version != 1 || s.FixtureRevision == "" || s.Provenance != "synthetic" || s.Currency != "USD" || s.Timezone == "" || len(s.Devices) != 18 {
-		return errors.New("snapshot requires version 1, synthetic USD provenance, timezone, revision, and exactly 18 devices")
-	}
-	if _, err := time.LoadLocation(s.Timezone); err != nil {
-		return fmt.Errorf("invalid snapshot timezone: %w", err)
-	}
-	if _, err := time.Parse("2006-01-02", s.ReferenceLocalDate); err != nil {
-		return errors.New("invalid reference_local_date")
-	}
-	if s.AdjustmentLocalDate != "" {
-		if _, err := time.Parse("2006-01-02", s.AdjustmentLocalDate); err != nil {
-			return errors.New("invalid adjustment_local_date")
-		}
-		if s.Unattributed.Adjustment == nil {
-			return errors.New("adjustment_local_date requires unattributed.adjustment")
-		}
-	}
-	if s.Unattributed.Adjustment != nil && s.AdjustmentLocalDate == "" {
-		return errors.New("unattributed.adjustment requires adjustment_local_date")
-	}
-	expectedNames := []*string{stringPtr("Study Desktop & Rig"), stringPtr(`Living Room 65" TV`), stringPtr("Phone & Tablet Chargers"), stringPtr("Kitchen Refrigerator"), stringPtr("Hallway Central AC"), stringPtr("Living Room Soundbar"), stringPtr("Home Office Monitors"), stringPtr("Mesh Wi-Fi Gateway & Router"), stringPtr("Subwoofer & Amp Rack"), stringPtr("Central Heat Pump"), nil, nil, nil, nil, nil, nil, nil, nil}
-	for i, d := range s.Devices {
-		if d.ID != fmt.Sprintf("demo-device-%02d", i+1) {
-			return fmt.Errorf("device %d must be demo-device-%02d", i+1, i+1)
-		}
-		if (d.Name == nil) != (expectedNames[i] == nil) || d.Name != nil && *d.Name != *expectedNames[i] {
-			return fmt.Errorf("device %s has unexpected name", d.ID)
-		}
-		if !validDailyCosts(d.Reference) || !validDailyCosts(d.Default) {
-			return fmt.Errorf("device %s costs must be between zero and the supported maximum", d.ID)
-		}
-	}
-	for _, c := range []DemoSnapshotCosts{s.Unattributed.Reference, s.Unattributed.Default} {
-		if !validDailyCosts(c) {
-			return errors.New("unattributed costs exceed the supported range")
-		}
-	}
-	if s.Unattributed.Adjustment != nil && !validDailyCosts(*s.Unattributed.Adjustment) {
-		return errors.New("adjustment costs exceed the supported range")
-	}
-	return nil
 }
 
 // ImportDemoCostSnapshot replaces only the explicitly scoped home's snapshot.
@@ -355,9 +290,6 @@ func sumCostAllocations(rows []deviceAllocation, extras ...allocation) allocatio
 }
 func ptr(a allocation) *allocation { return &a }
 func stringPtr(v string) *string   { return &v }
-func validDailyCosts(c DemoSnapshotCosts) bool {
-	return c.Useful >= 0 && c.Useful <= maxDailySnapshotCostMicros && c.Waste >= 0 && c.Waste <= maxDailySnapshotCostMicros
-}
 func moneyMicrosUnits(value any) int64 {
 	m, ok := value.(money)
 	if !ok {

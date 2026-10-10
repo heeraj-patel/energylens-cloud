@@ -216,6 +216,6 @@ func purgeHomeTx(ctx context.Context, tx pgx.Tx, home string) error {
 			return err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE homes SET name='Deleted home',timezone='UTC' WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NOT NULL`, home, owner)
+	_, err = tx.Exec(ctx, `UPDATE homes SET name='Deleted home',timezone='UTC',demo_cost_snapshot=NULL WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NOT NULL`, home, owner)
 	return err
 }

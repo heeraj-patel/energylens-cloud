@@ -74,6 +74,9 @@ type bucket struct {
 	DeviceAllocations []deviceAllocation `json:"device_allocations,omitempty"`
 	Unattributed      *allocation        `json:"unattributed,omitempty"`
 	energyKWh         *big.Rat           `json:"-"`
+	selected          []interval         `json:"-"`
+	deviceItems       []interval         `json:"-"`
+	wholeHome         bool               `json:"-"`
 }
 type deviceAllocation struct {
 	ApplianceID string     `json:"appliance_id,omitempty"`
@@ -103,10 +106,13 @@ type interval struct {
 	ApplianceID                            string
 	SensorKind                             string
 	ParentSensorID                         *string
+	TopologyRootID, TopologyRootKind       *string
+	TopologyComplete, TopologyTerminal     bool
 	HubID, SensorID, AttachmentID, EventID string
 	Epoch, Revision                        int64
 	Unavailable                            bool
 	Summarized                             bool
+	Covered                                *big.Rat
 }
 type marginalTariff struct {
 	ID, Currency string
@@ -149,6 +155,9 @@ func parseTrendsQuery(query url.Values) (granularity, window string, ok bool) {
 	}
 	windows := query["window"]
 	if len(query) == 2 && len(windows) == 1 {
+		if windows[0] == "month_to_date" && granularity == "day" {
+			return granularity, windows[0], true
+		}
 		if windows[0] == "trailing_30_days" && granularity == "day" {
 			return granularity, windows[0], true
 		}
@@ -198,7 +207,9 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		now = s.Now().UTC()
 	}
 	p := periodFor(now, loc, granularity)
-	if window == "trailing_30_days" {
+	if window == "month_to_date" {
+		p = monthToDatePeriod(now, loc)
+	} else if window == "trailing_30_days" {
 		p = trailing30DaysPeriod(now, loc)
 	} else if window == "last_5_occurrences" {
 		p = last5OccurrencesPeriod(now, loc, granularity)
@@ -235,7 +246,11 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		return
 	}
 	buckets := makeBuckets(p, granularity, items)
-	latestTariffID, latestTariffRevision, tariff, err := readMarginalTariff(r.Context(), tx, home, now, items)
+	selectedItems := make([]interval, 0, len(items))
+	for _, row := range buckets {
+		selectedItems = append(selectedItems, row.selected...)
+	}
+	latestTariffID, latestTariffRevision, tariff, err := readMarginalTariff(r.Context(), tx, home, now, selectedItems)
 	if err != nil {
 		internal(w, err)
 		return
@@ -243,11 +258,9 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 	var demoSnapshot *DemoCostSnapshot
 	if len(rawDemo) > 0 && string(rawDemo) != "null" {
 		var parsed DemoCostSnapshot
-		if err = json.Unmarshal(rawDemo, &parsed); err != nil || parsed.Validate() != nil || parsed.Timezone != tz {
-			internal(w, fmt.Errorf("invalid stored demo cost snapshot"))
-			return
+		if json.Unmarshal(rawDemo, &parsed) == nil && parsed.Validate() == nil && parsed.Timezone == tz {
+			demoSnapshot = &parsed
 		}
-		demoSnapshot = &parsed
 	}
 	sample := demoSnapshot != nil && !hasHistory && !hasInventory
 	seededTotals := demoSnapshot != nil && !hasHistory
@@ -302,7 +315,7 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		}())
 	}
 	if !sample && tariff != nil {
-		if cost := priceEffectiveBuckets(buckets, items, *tariff); cost != nil {
+		if cost := priceEffectiveBuckets(buckets, selectedItems, *tariff); cost != nil {
 			a.Cost = *cost
 			a.UnclassifiedCost = *cost
 			a.EvidenceBasis = "mixed"
@@ -314,12 +327,20 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		realRows, deviceWh := attributeDeviceBuckets(buckets, items, nil)
 		periodRows := sumDeviceAllocations(deviceWh, nil)
 		if tariff != nil {
-			priceAttributedDevices(buckets, realRows, periodRows, items, *tariff)
+			priceAttributedDevices(buckets, realRows, periodRows, selectedItems, *tariff)
 		}
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)
 		}
 		sampleDeviceRows = append(sampleDeviceRows, periodRows...)
+		if len(buckets) > 0 && allWholeHomeBuckets(buckets) {
+			if residual := measuredResidual(a, periodRows); residual != nil {
+				sampleUnattributed = residual
+			}
+			for i := range buckets {
+				buckets[i].Unattributed = measuredResidual(buckets[i].Allocation, realRows[i])
+			}
+		}
 	}
 	b := base{SchemaRevision: "household_energy_v1", ContentRevision: "household_energy_backend_v1", HomeID: home, DataMode: "household", GeneratedAt: now, AsOf: asOf, Timezone: tz, Period: p, Scope: "attributed_devices", Availability: a.Availability, EvidenceBasis: a.EvidenceBasis}
 	if sample {
@@ -336,11 +357,22 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 			b.Scope = "whole_home_including_unattributed_load"
 		}
 	}
+	if !seededTotals && allWholeHomeBuckets(buckets) {
+		b.Scope = "whole_home_including_unattributed_load"
+	}
+	var efficiency *efficiencyMonthToDate
+	if view == "energy_trends" && window == "month_to_date" && seededTotals {
+		efficiency = syntheticEfficiencyMonthToDate(a)
+	}
 	// Tariff eligibility can change as time passes, without a new tariff
 	// revision (for example, at source_as_of + 1440 hours). Include the
 	// customer-visible allocation in the identity so a newly priced or newly
 	// unpriced response cannot reuse the prior snapshot ID.
 	allocationState := allocationSnapshotState(a)
+	if efficiency != nil {
+		state, _ := json.Marshal(efficiency)
+		allocationState += "|" + string(state)
+	}
 	if demoSnapshot != nil {
 		deviceState, _ := json.Marshal(sampleDeviceRows)
 		allocationState += "|" + string(deviceState)
@@ -370,12 +402,13 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 	} else {
 		out = struct {
 			base
-			View         string      `json:"view"`
-			Granularity  string      `json:"granularity"`
-			Totals       allocation  `json:"totals"`
-			Buckets      []bucket    `json:"buckets"`
-			Unattributed *allocation `json:"unattributed,omitempty"`
-		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed}
+			View         string                 `json:"view"`
+			Granularity  string                 `json:"granularity"`
+			Totals       allocation             `json:"totals"`
+			Buckets      []bucket               `json:"buckets"`
+			Unattributed *allocation            `json:"unattributed,omitempty"`
+			Efficiency   *efficiencyMonthToDate `json:"efficiency_month_to_date,omitempty"`
+		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed, efficiency}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -410,6 +443,13 @@ func trailing30DaysPeriod(now time.Time, loc *time.Location) period {
 	return period{Start: today.AddDate(0, 0, -29), End: today.AddDate(0, 0, 1)}
 }
 
+func monthToDatePeriod(now time.Time, loc *time.Location) period {
+	local := now.In(loc)
+	start := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
+	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	return period{Start: start, End: today.AddDate(0, 0, 1)}
+}
+
 // last5OccurrencesPeriod returns the five home-local calendar buckets ending
 // with the current occurrence. Weeks start Monday; day/week/month boundaries
 // are local-calendar boundaries, so DST changes do not shift bucket dates.
@@ -434,11 +474,18 @@ func readIntervals(ctx context.Context, tx pgx.Tx, home string, p period, now ti
 	rows, err := tx.Query(ctx, `WITH latest AS (
  SELECT DISTINCT ON (e.hub_id,e.ownership_epoch,e.event_id) e.hub_id,e.ownership_epoch,e.event_id,e.revision,e.event_kind
  FROM ingest_events e WHERE e.home_id=$1 AND e.event_kind='energy_interval' ORDER BY e.hub_id,e.ownership_epoch,e.event_id,e.revision DESC)
-		SELECT o.start_at,o.end_at,o.energy_wh::numeric::text,o.fuel,a.appliance_id::text,s.kind,s.parent_sensor_id::text,o.hub_id::text,e.sensor_id::text,o.attachment_revision_id::text,o.event_id::text,o.ownership_epoch,o.revision FROM latest l
+		SELECT o.start_at,o.end_at,o.energy_wh::numeric::text,o.fuel,a.appliance_id::text,s.kind,s.parent_sensor_id::text,o.hub_id::text,e.sensor_id::text,o.attachment_revision_id::text,o.event_id::text,o.ownership_epoch,o.revision,o.covered_seconds,topology.root_id::text,topology.root_kind,topology.root_id IS NOT NULL,NOT EXISTS (SELECT 1 FROM sensor_endpoints child WHERE child.home_id=s.home_id AND child.hub_id=s.hub_id AND child.ownership_epoch=s.ownership_epoch AND child.parent_sensor_id=s.id) FROM latest l
  JOIN energy_observations o ON o.hub_id=l.hub_id AND o.ownership_epoch=l.ownership_epoch AND o.event_id=l.event_id AND o.revision=l.revision
 	 JOIN ingest_events e ON e.hub_id=o.hub_id AND e.ownership_epoch=o.ownership_epoch AND e.event_id=o.event_id AND e.revision=o.revision AND e.home_id=$1
  JOIN attachments a ON a.id=o.attachment_revision_id AND a.home_id=$1
 	 JOIN sensor_endpoints s ON s.id=a.sensor_id AND s.id=e.sensor_id AND s.home_id=$1 AND s.hub_id=o.hub_id AND s.ownership_epoch=o.ownership_epoch
+	 LEFT JOIN LATERAL (WITH RECURSIVE ancestry(id,parent_sensor_id,kind,depth) AS (
+	   SELECT s.id,s.parent_sensor_id,s.kind,0
+	   UNION ALL
+	   SELECT parent.id,parent.parent_sensor_id,parent.kind,ancestry.depth+1
+	   FROM ancestry JOIN sensor_endpoints parent ON parent.id=ancestry.parent_sensor_id AND parent.home_id=s.home_id AND parent.hub_id=s.hub_id AND parent.ownership_epoch=s.ownership_epoch
+	   WHERE ancestry.depth < 32
+	 ) SELECT id AS root_id,kind AS root_kind FROM ancestry WHERE parent_sensor_id IS NULL ORDER BY depth DESC LIMIT 1) topology ON TRUE
 		 WHERE l.event_kind='energy_interval' AND o.start_at < $3 AND o.end_at > $2 AND o.end_at <= $4 AND o.end_at > o.start_at ORDER BY o.start_at,o.event_id`, home, p.Start, p.End, now)
 	if err != nil {
 		return nil, nil, err
@@ -450,10 +497,12 @@ func readIntervals(ctx context.Context, tx pgx.Tx, home string, p period, now ti
 		var v interval
 		var raw string
 		var fuel *string
-		if err = rows.Scan(&v.Start, &v.End, &raw, &fuel, &v.ApplianceID, &v.SensorKind, &v.ParentSensorID, &v.HubID, &v.SensorID, &v.AttachmentID, &v.EventID, &v.Epoch, &v.Revision); err != nil {
+		var covered int64
+		if err = rows.Scan(&v.Start, &v.End, &raw, &fuel, &v.ApplianceID, &v.SensorKind, &v.ParentSensorID, &v.HubID, &v.SensorID, &v.AttachmentID, &v.EventID, &v.Epoch, &v.Revision, &covered, &v.TopologyRootID, &v.TopologyRootKind, &v.TopologyComplete, &v.TopologyTerminal); err != nil {
 			return nil, nil, err
 		}
 		v.Fuel = fuel
+		v.Covered = new(big.Rat).SetInt64(covered)
 		var ok bool
 		v.Wh, ok = new(big.Rat).SetString(raw)
 		if !ok {
@@ -481,6 +530,9 @@ func clipInterval(v *interval, p period) bool {
 	}
 	fraction := new(big.Rat).SetFrac(big.NewInt(end.Sub(start).Nanoseconds()), big.NewInt(v.End.Sub(v.Start).Nanoseconds()))
 	v.Wh = new(big.Rat).Mul(v.Wh, fraction)
+	if v.Covered != nil {
+		v.Covered = new(big.Rat).Mul(v.Covered, fraction)
+	}
 	v.Start, v.End = start, end
 	return true
 }
@@ -540,10 +592,7 @@ func mustDecimal(value string) *big.Rat {
 	return r
 }
 
-// attributeDeviceBuckets keeps a measured appliance row only when the sensor
-// identifies a direct plug/outlet and every observation in that bucket is
-// unambiguous. Circuit and utility meters can include other loads. Parent
-// sensors can nest with another meter, even when the intervals do not overlap.
+// Device allocations use the same topology decision as the household bucket.
 func attributeDeviceBuckets(buckets []bucket, items []interval, tariff *marginalTariff) ([][]deviceAllocation, map[string]*big.Rat) {
 	rows := make([][]deviceAllocation, len(buckets))
 	periodWh := make(map[string]*big.Rat)
@@ -551,26 +600,13 @@ func attributeDeviceBuckets(buckets []bucket, items []interval, tariff *marginal
 		if b.Allocation.Energy == nil {
 			continue
 		}
-		selected := make([]interval, 0)
-		for _, item := range items {
-			if item.Start.Before(b.End) && item.End.After(b.Start) {
-				selected = append(selected, item)
-			}
-		}
-		ambiguous := false
-		for i := range selected {
-			for j := i + 1; j < len(selected); j++ {
-				if selected[i].Start.Before(selected[j].End) && selected[j].Start.Before(selected[i].End) {
-					ambiguous = true
-				}
-			}
-		}
-		if ambiguous {
-			continue
+		selected := b.deviceItems
+		if selected == nil {
+			_, selected, _ = selectBucketSources(items, b.Start, b.End)
 		}
 		bucketWh := make(map[string]*big.Rat)
 		for _, item := range selected {
-			if item.Unavailable || item.ApplianceID == "" || item.ParentSensorID != nil || item.SensorKind != "plug" && item.SensorKind != "strip_outlet" {
+			if item.Unavailable || !terminalDevice(item) {
 				continue
 			}
 			start, end := maxTime(item.Start, b.Start), minTime(item.End, b.End)
@@ -637,9 +673,9 @@ func makeBuckets(p period, g string, items []interval) []bucket {
 		if end.After(p.End) {
 			end = p.End
 		}
+		selected, devices, wholeHome := selectBucketSources(items, start, end)
 		var wh *big.Rat
-		selected := []interval{}
-		for _, v := range items {
+		for _, v := range selected {
 			low, high := v.Start, v.End
 			if low.Before(start) {
 				low = start
@@ -648,7 +684,6 @@ func makeBuckets(p period, g string, items []interval) []bucket {
 				high = end
 			}
 			if high.After(low) {
-				selected = append(selected, v)
 				if v.Unavailable || v.Summarized && (v.Start.Before(start) || v.End.After(end)) {
 					continue
 				}
@@ -660,27 +695,20 @@ func makeBuckets(p period, g string, items []interval) []bucket {
 				wh.Add(wh, allocatedWh)
 			}
 		}
-		// Distinct meters can include nested circuits and plugs; even one meter
-		// can submit conflicting intervals. Never add overlapping measurements.
 		for _, v := range selected {
 			if v.Unavailable || v.Summarized && (v.Start.Before(start) || v.End.After(end)) {
 				wh = nil
-			}
-		}
-		for i := 0; i < len(selected); i++ {
-			for j := i + 1; j < len(selected); j++ {
-				leftStart, leftEnd := maxTime(selected[i].Start, start), minTime(selected[i].End, end)
-				rightStart, rightEnd := maxTime(selected[j].Start, start), minTime(selected[j].End, end)
-				if leftStart.Before(rightEnd) && rightStart.Before(leftEnd) {
-					wh = nil
-				}
 			}
 		}
 		var kwh *big.Rat
 		if wh != nil {
 			kwh = new(big.Rat).Quo(wh, big.NewRat(1000, 1))
 		}
-		out = append(out, bucket{Start: start, End: end, Allocation: fromKWh(kwh), energyKWh: kwh})
+		coverage := any(nil)
+		if wholeHome {
+			coverage = selectedCoverage(selected, start, end)
+		}
+		out = append(out, bucket{Start: start, End: end, Allocation: fromKWh(kwh), CoverageFraction: coverage, energyKWh: kwh, selected: selected, deviceItems: devices, wholeHome: wholeHome})
 		start = end
 	}
 	// Round cumulative energy so every nonnegative bucket remains nonnegative

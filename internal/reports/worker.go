@@ -31,6 +31,20 @@ type DeliveryWorker struct {
 // acquired, commits the lease, and only then calls the provider without holding
 // database locks. The stable request ID is the provider idempotency key.
 func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, error) {
+	return w.deliver(ctx, now, nil)
+}
+
+// DeliverRequest processes only a direct request. Queued requests remain the
+// worker's responsibility, and direct requests are never picked up by it.
+func (w DeliveryWorker) DeliverRequest(ctx context.Context, requestID string, now time.Time) (bool, error) {
+	id, err := uuid.Parse(requestID)
+	if err != nil || id == uuid.Nil || requestID != id.String() {
+		return false, ErrNotFound
+	}
+	return w.deliver(ctx, now, &id)
+}
+
+func (w DeliveryWorker) deliver(ctx context.Context, now time.Time, requestedID *uuid.UUID) (bool, error) {
 	if !w.Enabled {
 		return false, ErrDeliveryDisabled
 	}
@@ -43,7 +57,7 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 		return false, err
 	}
 	defer tx.Rollback(ctx)
-	var id, home, previewID string
+	var id, home, previewID, mode string
 	var recipients []string
 	var approved string
 	var raw []byte
@@ -51,14 +65,18 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 	var previewVersion, homeVersion int64
 	var attempts int
 	err = tx.QueryRow(ctx, `SELECT d.id,d.home_id,d.preview_id,d.recipients,d.approved_snapshot_sha256,
-		p.payload,p.expires_at,p.home_version,h.version,d.attempts
+			p.payload,p.expires_at,p.home_version,h.version,d.attempts,d.delivery_mode
 		FROM report_delivery_requests d
 		JOIN report_previews p ON p.id=d.preview_id AND p.owner_user_id=d.owner_user_id AND p.home_id=d.home_id
 		JOIN homes h ON h.id=d.home_id AND h.owner_user_id=d.owner_user_id AND h.deleted_at IS NULL
-		WHERE (d.state='pending' AND d.next_attempt_at <= $1)
-		   OR (d.state='leased' AND d.lease_expires_at <= $1)
+			WHERE ($2::uuid IS NULL AND d.delivery_mode='queued' AND
+			  ((d.state='pending' AND d.next_attempt_at <= $1) OR
+			   (d.state='leased' AND d.lease_expires_at <= $1)))
+			   OR ($2::uuid IS NOT NULL AND d.id=$2 AND d.delivery_mode='direct' AND d.attempts<5 AND
+			  (d.state='pending' OR (d.state='leased' AND d.lease_expires_at <= $1) OR
+			   (d.state IN ('canceled','unconfirmed') AND d.last_error_code='provider_failed')))
 		ORDER BY CASE WHEN d.state='pending' THEN d.next_attempt_at ELSE d.lease_expires_at END,d.created_at,d.id
-		LIMIT 1 FOR UPDATE OF d,h,p SKIP LOCKED`, now).Scan(&id, &home, &previewID, &recipients, &approved, &raw, &expires, &previewVersion, &homeVersion, &attempts)
+			LIMIT 1 FOR UPDATE OF d,h,p SKIP LOCKED`, now, requestedID).Scan(&id, &home, &previewID, &recipients, &approved, &raw, &expires, &previewVersion, &homeVersion, &attempts, &mode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -124,8 +142,11 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 	providerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	providerErr := w.Provider.SendReport(providerCtx, id, recipients, report)
 	cancel()
+	// A disconnected client must not leave a provider-accepted request leased.
+	finalizeCtx, finalizeCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer finalizeCancel()
 	if providerErr == nil {
-		_, err = w.DB.Exec(ctx, `UPDATE report_delivery_requests SET state='sent',attempts=attempts+1,sent_at=$3,last_error_code=NULL,lease_token=NULL,lease_expires_at=NULL
+		_, err = w.DB.Exec(finalizeCtx, `UPDATE report_delivery_requests SET state='sent',attempts=attempts+1,sent_at=$3,last_error_code=NULL,lease_token=NULL,lease_expires_at=NULL
 			WHERE id=$1 AND state='leased' AND lease_token=$2`, id, leaseToken, now)
 		if err != nil {
 			return true, err
@@ -135,10 +156,12 @@ func (w DeliveryWorker) DeliverOne(ctx context.Context, now time.Time) (bool, er
 
 	nextAttempt := now.Add(reportRetryDelay(attempts + 1))
 	nextState := "pending"
-	if attempts+1 >= 5 {
+	if mode == "direct" && !errors.Is(providerErr, ErrProviderRejected) {
+		nextState = "unconfirmed"
+	} else if mode == "direct" || attempts+1 >= 5 {
 		nextState = "canceled"
 	}
-	_, err = w.DB.Exec(ctx, `UPDATE report_delivery_requests SET attempts=attempts+1,state=$3,
+	_, err = w.DB.Exec(finalizeCtx, `UPDATE report_delivery_requests SET attempts=attempts+1,state=$3,
 		next_attempt_at=$4,last_error_code='provider_failed',lease_token=NULL,lease_expires_at=NULL
 		WHERE id=$1 AND state='leased' AND lease_token=$2`, id, leaseToken, nextState, nextAttempt)
 	if err != nil {

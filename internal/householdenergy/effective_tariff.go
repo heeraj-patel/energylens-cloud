@@ -27,16 +27,11 @@ func readEffectiveTariff(ctx context.Context, tx pgx.Tx, home string, now time.T
 		return latestID, latestRevision, nil, nil
 	}
 	first, last := items[0].Start, items[0].End
-	for i, item := range items {
+	for _, item := range items {
 		if item.Unavailable || item.Fuel == nil || *item.Fuel != "electricity" || item.Wh == nil {
 			return latestID, latestRevision, nil, nil
 		}
 		first, last = minTime(first, item.Start), maxTime(last, item.End)
-		for j := 0; j < i; j++ {
-			if item.Start.Before(items[j].End) && items[j].Start.Before(item.End) {
-				return latestID, latestRevision, nil, nil
-			}
-		}
 	}
 	rows, err := tx.Query(ctx, `SELECT id::text,revision,rate::text,currency,effective_from,effective_to,source_as_of
  FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity' AND rate_unit='kWh'
@@ -75,6 +70,11 @@ func selectTariffSchedule(now time.Time, items []interval, segments []marginalTa
 	currency := ""
 	for _, item := range items {
 		cuts := tariffCuts(item.Start, item.End, segments)
+		// A retained hour has only its aggregate energy. A tariff transition
+		// within that hour cannot be priced from the retained precision.
+		if item.Summarized && len(cuts) > 2 {
+			return nil
+		}
 		for i := 0; i+1 < len(cuts); i++ {
 			selected := tariffAt(cuts[i], segments)
 			if selected == nil || selected.SourceAsOf.After(now) || !selected.SourceAsOf.After(now.Add(-1440*time.Hour)) {
@@ -134,6 +134,9 @@ func priceIntervalRange(item interval, from, to time.Time, schedule marginalTari
 		return amount
 	}
 	cuts := tariffCuts(start, end, schedule.Segments)
+	if item.Summarized && len(cuts) > 2 {
+		return nil
+	}
 	for i := 0; i+1 < len(cuts); i++ {
 		t := tariffAt(cuts[i], schedule.Segments)
 		if t == nil {
@@ -153,7 +156,11 @@ func priceEffectiveBuckets(buckets []bucket, items []interval, schedule marginal
 		if buckets[i].energyKWh == nil {
 			continue
 		}
-		for _, item := range items {
+		selected := buckets[i].selected
+		if selected == nil {
+			selected = items
+		}
+		for _, item := range selected {
 			part := priceIntervalRange(item, buckets[i].Start, buckets[i].End, schedule)
 			if part == nil {
 				return nil
@@ -178,18 +185,30 @@ func priceEffectiveBuckets(buckets []bucket, items []interval, schedule marginal
 func priceAttributedDevices(buckets []bucket, rows [][]deviceAllocation, periodRows []deviceAllocation, items []interval, schedule marginalTariff) {
 	period := make(map[string]*big.Rat)
 	displayed := make(map[string]*big.Rat)
+	unpriced := make(map[string]bool)
 	for i := range buckets {
 		for j := range rows[i] {
 			id := rows[i][j].ApplianceID
 			amount := new(big.Rat)
-			for _, item := range items {
-				if item.ApplianceID != id || item.ParentSensorID != nil || item.SensorKind != "plug" && item.SensorKind != "strip_outlet" {
+			valid := true
+			selected := buckets[i].deviceItems
+			if selected == nil {
+				selected = items
+			}
+			for _, item := range selected {
+				if item.ApplianceID != id || !terminalDevice(item) {
 					continue
 				}
 				part := priceIntervalRange(item, buckets[i].Start, buckets[i].End, schedule)
-				if part != nil {
-					amount.Add(amount, part)
+				if part == nil {
+					valid = false
+					break
 				}
+				amount.Add(amount, part)
+			}
+			if !valid {
+				unpriced[id] = true
+				continue
 			}
 			if period[id] == nil {
 				period[id], displayed[id] = new(big.Rat), new(big.Rat)
@@ -205,7 +224,7 @@ func priceAttributedDevices(buckets []bucket, rows [][]deviceAllocation, periodR
 	}
 	for i := range periodRows {
 		id := periodRows[i].ApplianceID
-		if period[id] == nil {
+		if period[id] == nil || unpriced[id] {
 			continue
 		}
 		cost := money{Amount: period[id].FloatString(6), Currency: schedule.Currency}

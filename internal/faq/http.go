@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"energylens.local/cloud/internal/programs"
+	"energylens.local/cloud/internal/recommendation"
 	"energylens.local/cloud/internal/weather"
 
 	"github.com/go-chi/chi/v5"
@@ -16,10 +18,12 @@ import (
 )
 
 type Service struct {
-	Store   EvidenceStore
-	Weather *weather.Service
-	Auth    func(http.Handler) http.Handler
-	UserID  func(*http.Request) string
+	Store           EvidenceStore
+	Weather         *weather.Service
+	Recommendations recommendation.EvidenceStore
+	Programs        programs.OwnerStore
+	Auth            func(http.Handler) http.Handler
+	UserID          func(*http.Request) string
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -64,6 +68,48 @@ func (s Service) answer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := Input{QuestionID: question, AsOf: now}
+	inputRefs := 0
+	if (question == "top_waste_opportunities" || question == "reduce_cost") && s.Recommendations != nil {
+		appliances, readErr := s.Recommendations.Current(r.Context(), s.UserID(r), home, now)
+		if readErr != nil {
+			slog.Error("FAQ recommendation read failed", "error", readErr)
+			fail(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		for _, item := range appliances {
+			for _, action := range recommendation.Evaluate(item) {
+				if action.State != "active" || len(action.EvidenceRefs) == 0 || len(in.Actions) >= 20 || inputRefs+len(action.EvidenceRefs) > 100 {
+					continue
+				}
+				refs := make([]Evidence, 0, len(action.EvidenceRefs))
+				for _, ref := range action.EvidenceRefs {
+					refs = append(refs, Evidence{ID: ref.ID, Kind: ref.Kind, Revision: ref.Revision})
+				}
+				in.Actions = append(in.Actions, Finding{Label: "hypothesis", Text: action.Title + ". " + action.Explanation, EvidenceRef: refs})
+				inputRefs += len(refs)
+			}
+		}
+	}
+	if question == "programs_for_device" && s.Programs != nil {
+		var result programs.OwnerProgramResult
+		var readErr error
+		if appliance == nil {
+			result, readErr = s.Programs.ListHome(r.Context(), s.UserID(r), home, now)
+		} else {
+			result, readErr = s.Programs.List(r.Context(), s.UserID(r), home, *appliance, now)
+		}
+		if readErr != nil && !errors.Is(readErr, programs.ErrLocationRequired) {
+			slog.Error("FAQ program read failed", "error", readErr)
+			fail(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		for _, program := range result.Programs {
+			if program.Revision < 1 || len(in.Programs) >= 20 {
+				continue
+			}
+			in.Programs = append(in.Programs, Finding{Label: "hypothesis", Text: program.Title + ". " + program.AdministratorName + ". " + program.BenefitDisplay, EvidenceRef: []Evidence{{ID: program.RevisionID, Kind: "reviewed_program_revision", Revision: program.Revision}}})
+		}
+	}
 	var expires time.Time
 	weatherStatus, weatherReason := "unavailable", "provider_unconfigured"
 	if question == "high_bill_possible_contributors" {
@@ -157,7 +203,9 @@ func (s Service) answer(w http.ResponseWriter, r *http.Request) {
 	if current != nil {
 		in.OperatingCost, _ = OperatingCostFromEstimate(current.Result, *requested)
 		if in.OperatingCost != nil {
-			if periodEnd, err := time.Parse("2006-01-02", in.OperatingCost.PeriodEnd); err == nil { expires = periodEnd }
+			if periodEnd, err := time.Parse("2006-01-02", in.OperatingCost.PeriodEnd); err == nil {
+				expires = periodEnd
+			}
 		}
 	}
 	answer, _ := Render(in)

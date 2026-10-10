@@ -19,22 +19,9 @@ import (
 const lockKey int64 = 0x656c636d69677274 // elcmigrt
 
 func Run(ctx context.Context, dsn, environment string) error {
-	if strings.TrimSpace(dsn) == "" {
-		return errors.New("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL is required")
-	}
-	cfg, err := pgx.ParseConfig(dsn)
+	cfg, err := ValidateConfig(dsn, environment)
 	if err != nil {
-		return fmt.Errorf("invalid migration database configuration: %w", err)
-	}
-	if environment != "dev" && environment != "test" {
-		if cfg.TLSConfig == nil || cfg.TLSConfig.ServerName == "" || cfg.TLSConfig.InsecureSkipVerify {
-			return errors.New("migration database must use sslmode=verify-full")
-		}
-		for _, fallback := range cfg.Fallbacks {
-			if fallback.TLSConfig == nil || fallback.TLSConfig.InsecureSkipVerify {
-				return errors.New("migration database plaintext or unverified fallback is forbidden")
-			}
-		}
+		return err
 	}
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
@@ -42,6 +29,31 @@ func Run(ctx context.Context, dsn, environment string) error {
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 	return Apply(ctx, conn, migrations.FS)
+}
+
+// ValidateConfig checks the migration role without connecting to the database.
+func ValidateConfig(dsn, environment string) (*pgx.ConnConfig, error) {
+	if strings.TrimSpace(dsn) == "" {
+		return nil, errors.New("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL is required")
+	}
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("invalid migration database configuration: %w", err)
+	}
+	if environment != "dev" && environment != "test" && environment != "staging" && environment != "production" {
+		return nil, errors.New("ENERGYLENS_CLOUD_ENV must be dev, test, staging, or production")
+	}
+	if environment != "dev" && environment != "test" {
+		if cfg.TLSConfig == nil || cfg.TLSConfig.ServerName == "" || cfg.TLSConfig.InsecureSkipVerify {
+			return nil, errors.New("migration database must use sslmode=verify-full")
+		}
+		for _, fallback := range cfg.Fallbacks {
+			if fallback.TLSConfig == nil || fallback.TLSConfig.InsecureSkipVerify {
+				return nil, errors.New("migration database plaintext or unverified fallback is forbidden")
+			}
+		}
+	}
+	return cfg, nil
 }
 
 func Files(fsys fs.FS) ([]string, error) {

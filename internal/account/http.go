@@ -20,6 +20,7 @@ type Service struct {
 	Store       Store
 	Verifier    Verifier
 	Preferences PreferenceStore
+	Profile     ProfileStore
 	Deletion    DeletionStore
 }
 
@@ -43,6 +44,9 @@ func jsonOut(w http.ResponseWriter, status int, v any) {
 }
 func (s Service) Routes(r chi.Router) {
 	r.With(s.auth).Get("/me", s.me)
+	if s.Profile != nil {
+		r.With(s.auth).Patch("/me/profile", s.patchProfile)
+	}
 	if s.Deletion != nil {
 		r.With(s.auth).Delete("/me", s.deleteMe)
 	}
@@ -96,8 +100,14 @@ func (s Service) auth(next http.Handler) http.Handler {
 func contextWithUser(r *http.Request, u User) context.Context {
 	return context.WithValue(r.Context(), userKey{}, u)
 }
-func user(r *http.Request) User                             { return r.Context().Value(userKey{}).(User) }
-func (s Service) me(w http.ResponseWriter, r *http.Request) { jsonOut(w, 200, user(r)) }
+func user(r *http.Request) User { return r.Context().Value(userKey{}).(User) }
+func (s Service) me(w http.ResponseWriter, r *http.Request) {
+	u := user(r)
+	if u.ProfileVersion > 0 {
+		etag(w, u.ProfileVersion)
+	}
+	jsonOut(w, 200, u)
+}
 func (s Service) deleteMe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	identity := r.Context().Value(identityKey{}).(Identity)

@@ -32,6 +32,31 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "check-config" {
+		if len(args) != 2 {
+			return errors.New("usage: energylens-cloud check-config api|worker|migrate")
+		}
+		if args[1] == "migrate" {
+			_, err := migrate.ValidateConfig(os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL"), os.Getenv("ENERGYLENS_CLOUD_ENV"))
+			if err != nil {
+				return errors.New("migration configuration rejected")
+			}
+			return nil
+		}
+		if args[1] != "api" && args[1] != "worker" {
+			return errors.New("check-config role must be api, worker, or migrate")
+		}
+		cfg, err := app.LoadConfig(args[1])
+		if err != nil {
+			return errors.New("Cloud configuration rejected")
+		}
+		if cfg.LocalAuthEnabled {
+			if err := app.CheckLocalAuthKeys(cfg, "", ""); err != nil {
+				return errors.New("Cloud local auth key configuration rejected")
+			}
+		}
+		return nil
+	}
 	if len(args) > 0 && args[0] == "export-unresolved-device-help" {
 		return identityHelpExport(ctx, args[1:])
 	}

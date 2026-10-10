@@ -25,6 +25,12 @@ type Service struct {
 	Store  PreviewStore
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
+	// DirectSend invokes the configured provider for an approved direct request.
+	DirectSend func(context.Context, string) (bool, error)
+}
+
+type directDeliveryStore interface {
+	Delivery(context.Context, string, string, string) (DeliveryRequest, error)
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -37,6 +43,7 @@ type deliveryRequestBody struct {
 	ApprovedSnapshotSHA256 string   `json:"approved_snapshot_sha256"`
 	Recipients             []string `json:"recipients"`
 	Approved               bool     `json:"approved"`
+	SendNow                bool     `json:"send_now,omitempty"`
 }
 
 func (s Service) enqueue(w http.ResponseWriter, r *http.Request) {
@@ -89,9 +96,20 @@ func (s Service) enqueue(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	if input.SendNow && (s.DirectSend == nil || s.Store == nil) {
+		respondError(w, http.StatusServiceUnavailable, "delivery_unavailable")
+		return
+	}
+	if input.SendNow {
+		if _, ok := s.Store.(directDeliveryStore); !ok {
+			respondError(w, http.StatusServiceUnavailable, "delivery_unavailable")
+			return
+		}
+	}
 	request, err := s.Store.QueueDelivery(r.Context(), s.UserID(r), home, DeliveryInput{
 		PreviewID: previewID, ApprovedSnapshotSHA256: input.ApprovedSnapshotSHA256,
 		Recipients: input.Recipients, Approved: input.Approved, IdempotencyKey: key,
+		SendNow: input.SendNow,
 	}, time.Now().UTC())
 	switch {
 	case errors.Is(err, ErrNotFound):
@@ -100,6 +118,8 @@ func (s Service) enqueue(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid_request")
 	case errors.Is(err, ErrKeyReuse):
 		respondError(w, http.StatusConflict, "idempotency_key_reuse")
+	case errors.Is(err, ErrDeliveryModeConflict):
+		respondError(w, http.StatusConflict, "delivery_mode_conflict")
 	case errors.Is(err, ErrSnapshotMismatch):
 		respondError(w, http.StatusConflict, "snapshot_mismatch")
 	case errors.Is(err, ErrStalePreview):
@@ -110,6 +130,29 @@ func (s Service) enqueue(w http.ResponseWriter, r *http.Request) {
 		slog.Error("report delivery enqueue failed", "error", err)
 		respondError(w, http.StatusInternalServerError, "internal_error")
 	default:
+		if input.SendNow {
+			if request.State != "sent" {
+				_, sendErr := s.DirectSend(r.Context(), request.ID)
+				if sendErr != nil {
+					slog.Warn("direct report provider acceptance unconfirmed", "error", sendErr)
+				}
+			}
+			current, readErr := s.Store.(directDeliveryStore).Delivery(r.Context(), s.UserID(r), home, request.ID)
+			if readErr != nil {
+				respondError(w, http.StatusServiceUnavailable, "delivery_unconfirmed")
+				return
+			}
+			if current.State != "sent" {
+				if current.State == "canceled" {
+					respondError(w, http.StatusBadGateway, "delivery_failed")
+				} else {
+					respondError(w, http.StatusServiceUnavailable, "delivery_unconfirmed")
+				}
+				return
+			}
+			respondJSON(w, http.StatusCreated, current)
+			return
+		}
 		respondJSON(w, http.StatusCreated, request)
 	}
 }

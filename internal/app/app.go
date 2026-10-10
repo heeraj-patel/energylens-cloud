@@ -149,7 +149,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				verifier = dev
 				modules = append(modules, Module{Name: "dev-auth", Mount: dev.Routes})
 			}
-			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Verifier: verifier}
+			accounts := account.Service{Store: account.PGStore{Pool: rt.Pool}, Preferences: account.PGPreferenceStore{Pool: rt.Pool}, Profile: account.PGProfileStore{Pool: rt.Pool}, Verifier: verifier}
 			if c.AccountDeletionEnabled {
 				accounts.Deletion = account.PGStore{Pool: rt.Pool}
 			}
@@ -180,7 +180,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "home-tariffs", Mount: tariffs.Routes})
 			estimates := estimation.Service{Store: estimation.PGRunStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-estimates", Mount: estimates.Routes})
-			answersFAQ := faq.Service{Store: faq.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			answersFAQ := faq.Service{Store: faq.PGStore{Pool: rt.Pool}, Recommendations: recommendation.PGStore{Pool: rt.Pool}, Programs: programs.PGOwnerStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			if c.WeatherOpenMeteoAPIKey != "" {
 				cells, err := weather.ParseCoarseCells(c.WeatherCoarseCells)
 				if err != nil {
@@ -196,6 +196,17 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			ownerPrograms := programs.OwnerService{Store: programs.PGOwnerStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-programs", Mount: ownerPrograms.Routes})
 			reportPreviews := reports.Service{Store: reports.Store{DB: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			if c.ReportDirectSendEnabled {
+				provider, providerErr := reports.NewResendProvider(c.ResendAPIKey, c.ResendFrom)
+				if providerErr != nil {
+					rt.Close()
+					return nil, providerErr
+				}
+				direct := reports.DeliveryWorker{DB: rt.Pool, Provider: provider, Enabled: true}
+				reportPreviews.DirectSend = func(ctx context.Context, requestID string) (bool, error) {
+					return direct.DeliverRequest(ctx, requestID, time.Now().UTC())
+				}
+			}
 			modules = append(modules, Module{Name: "home-report-previews", Mount: reportPreviews.Routes})
 			cursorKey, previousCursorKey, err := c.meteredExportKeys()
 			if err != nil {

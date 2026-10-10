@@ -41,6 +41,8 @@ func (h LocalAuthHTTP) Routes(r chi.Router) {
 		r.Post("/logout", h.logout)
 		r.Post("/recovery", h.recovery)
 		r.Post("/reset-password", h.reset)
+		r.Post("/change-password", h.changePassword)
+		r.Post("/change-email", h.changeEmail)
 	})
 }
 
@@ -78,6 +80,10 @@ func localAuthDecode(w http.ResponseWriter, r *http.Request, out any) bool {
 }
 
 func localAuthError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrEmailInUse) {
+		fail(w, http.StatusConflict, "email_in_use", "email address is already in use")
+		return
+	}
 	if errors.Is(err, ErrInvalidCredential) {
 		fail(w, 401, "invalid_credential", "invalid credential")
 		return

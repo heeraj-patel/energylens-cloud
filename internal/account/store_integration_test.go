@@ -3,12 +3,16 @@ package account
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"energylens.local/cloud/internal/democost"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
 	"github.com/google/uuid"
@@ -197,6 +201,63 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 			}
 			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil || strings.ReplaceAll(string(snapshot), " ", "") != `{"snapshot_id":"fresh"}` {
 				t.Fatalf("rejected timezone patch changed snapshot: %s %v", snapshot, err)
+			}
+			names := []string{"Study Desktop & Rig", `Living Room 65" TV`, "Phone & Tablet Chargers", "Kitchen Refrigerator", "Hallway Central AC", "Living Room Soundbar", "Home Office Monitors", "Mesh Wi-Fi Gateway & Router", "Subwoofer & Amp Rack", "Central Heat Pump"}
+			validDemo := democost.Snapshot{Version: 1, FixtureRevision: "mobile_demo_cost_v1", Timezone: zone, ReferenceLocalDate: "2026-10-01", AdjustmentLocalDate: "2026-10-02", Currency: "USD", Provenance: "synthetic", Unattributed: democost.Attribution{Reference: democost.Costs{Useful: 1234, Waste: 56}, Default: democost.Costs{Useful: 3456, Waste: 78}, Adjustment: &democost.Costs{Useful: 910, Waste: 11}}}
+			for i := 0; i < 18; i++ {
+				device := democost.Device{ID: fmt.Sprintf("demo-device-%02d", i+1), Reference: democost.Costs{Useful: int64(i + 1), Waste: 2}, Default: democost.Costs{Useful: int64(i + 3), Waste: 4}}
+				if i < len(names) {
+					device.Name = &names[i]
+				}
+				validDemo.Devices = append(validDemo.Devices, device)
+			}
+			if err = validDemo.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			validRaw, err := json.Marshal(validDemo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `UPDATE homes SET demo_cost_snapshot=$2::jsonb WHERE id=$1`, home.ID, string(validRaw)); err != nil {
+				t.Fatal(err)
+			}
+			newZone := "America/Los_Angeles"
+			validKey := uuid.NewString()
+			validHash := sha256.Sum256([]byte("valid imported schedule retarget"))
+			retargeted, err := s.Patch(ctx, a.ID, home.ID, HomePatch{Timezone: &newZone}, 3, validKey, validHash[:])
+			if err != nil || retargeted.Timezone != newZone || retargeted.Version != 4 {
+				t.Fatalf("valid imported schedule patch = %+v %v", retargeted, err)
+			}
+			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil {
+				t.Fatal(err)
+			}
+			var afterDemo democost.Snapshot
+			if err = json.Unmarshal(snapshot, &afterDemo); err != nil {
+				t.Fatal(err)
+			}
+			validDemo.Timezone = newZone
+			if !reflect.DeepEqual(afterDemo, validDemo) {
+				t.Fatalf("valid imported schedule changed more than timezone: %+v", afterDemo)
+			}
+			replayedValid, err := s.Patch(ctx, a.ID, home.ID, HomePatch{Timezone: &newZone}, 3, validKey, validHash[:])
+			if err != nil || replayedValid != retargeted {
+				t.Fatalf("valid schedule replay = %+v %v", replayedValid, err)
+			}
+			newLocation := Location{CountryCode: "US", PostalCode: "60601", Precision: "postal_code", Source: "user_entered"}
+			zipHash := sha256.Sum256([]byte("zip change from Pacific to Central"))
+			changedZIP, err := s.Patch(ctx, a.ID, home.ID, HomePatch{Location: &newLocation}, 4, uuid.NewString(), zipHash[:])
+			if err != nil || changedZIP.Timezone != "America/Chicago" || changedZIP.Location.PostalCode != "60601" || changedZIP.Version != 5 {
+				t.Fatalf("ZIP did not derive home timezone: %+v %v", changedZIP, err)
+			}
+			if err = pool.QueryRow(ctx, `SELECT demo_cost_snapshot FROM homes WHERE id=$1`, home.ID).Scan(&snapshot); err != nil {
+				t.Fatal(err)
+			}
+			if err = json.Unmarshal(snapshot, &afterDemo); err != nil {
+				t.Fatal(err)
+			}
+			validDemo.Timezone = "America/Chicago"
+			if !reflect.DeepEqual(afterDemo, validDemo) {
+				t.Fatalf("ZIP retarget changed imported local schedule: %+v", afterDemo)
 			}
 			accountPref, err = prefs.GetAccountPreferences(ctx, a.ID)
 			if err != nil || accountPref.Version != 2 || accountPref.HistoryDisclosureAcceptedAt == nil {

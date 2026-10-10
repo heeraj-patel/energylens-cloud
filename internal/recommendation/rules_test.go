@@ -48,6 +48,30 @@ func TestEvaluateCategoryAndFuelBoundary(t *testing.T) {
 	}
 }
 
+func TestTipCategoryIsExplicitPerSourceRule(t *testing.T) {
+	for _, r := range initial {
+		want := TipGeneral
+		switch r.id {
+		case "refrigerator.maintenance":
+			want = TipCare
+		case "lighting.equivalent_bulb":
+			want = TipUpgrade
+		}
+		got := Evaluate(Appliance{ID: "device", Category: r.category, Fuel: r.fuel})
+		if len(got) != 1 || got[0].TipCategory != want {
+			t.Fatalf("rule %s category: %+v; want %s", r.id, got, want)
+		}
+	}
+	for _, action := range []Action{
+		Evaluate(Appliance{Category: "unknown", Fuel: "electricity"})[0],
+		EvaluateGasEnabled(Appliance{Category: "dryer", Fuel: "natural_gas"})[0],
+	} {
+		if action.TipCategory != TipGeneral {
+			t.Fatalf("fallback or gas rule category: %+v", action)
+		}
+	}
+}
+
 func TestGasDryerRequiresOptInAndSeparateEvidence(t *testing.T) {
 	a := Appliance{ID: "dryer-1", Category: "dryer", Fuel: "natural_gas", Identity: "confirmed_exact",
 		Tariff: &Evidence{ID: "electric-rate", Kind: "tariff", Revision: 1},

@@ -21,6 +21,7 @@ var ErrStalePreview = errors.New("report preview has changed or expired")
 var ErrSnapshotMismatch = errors.New("approved snapshot digest does not match")
 var ErrDeliveryRate = errors.New("manual report request limit reached")
 var ErrApprovalRequired = errors.New("explicit report approval required")
+var ErrDeliveryModeConflict = errors.New("report recipients already have a request in another delivery mode")
 
 var emailParts = regexp.MustCompile(`^[A-Za-z0-9_+%-]+(?:\.[A-Za-z0-9_+%-]+)*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$`)
 
@@ -60,6 +61,7 @@ type DeliveryInput struct {
 	Recipients             []string
 	Approved               bool
 	IdempotencyKey         uuid.UUID
+	SendNow                bool
 }
 
 type DeliveryRequest struct {
@@ -98,6 +100,9 @@ func (s Store) QueueDelivery(ctx context.Context, owner, home string, in Deliver
 		Digest     string
 		Recipients []string
 	}{in.PreviewID, in.ApprovedSnapshotSHA256, recipients})
+	if in.SendNow {
+		requestBody = append(requestBody, 1)
+	}
 	requestHash := sha256.Sum256(requestBody)
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -165,8 +170,12 @@ func (s Store) QueueDelivery(ctx context.Context, owner, home string, in Deliver
 		return DeliveryRequest{}, ErrStalePreview
 	}
 	var duplicate DeliveryRequest
-	err = tx.QueryRow(ctx, `SELECT id,preview_id,recipients,state,created_at FROM report_delivery_requests WHERE owner_user_id=$1 AND preview_id=$2 AND recipient_hash=$3`, owner, previewID, recipientHash[:]).Scan(&duplicate.ID, &duplicate.PreviewID, &duplicate.Recipients, &duplicate.State, &duplicate.CreatedAt)
+	var duplicateMode string
+	err = tx.QueryRow(ctx, `SELECT id,preview_id,recipients,state,created_at,delivery_mode FROM report_delivery_requests WHERE owner_user_id=$1 AND preview_id=$2 AND recipient_hash=$3`, owner, previewID, recipientHash[:]).Scan(&duplicate.ID, &duplicate.PreviewID, &duplicate.Recipients, &duplicate.State, &duplicate.CreatedAt, &duplicateMode)
 	if err == nil {
+		if (in.SendNow && duplicateMode != "direct") || (!in.SendNow && duplicateMode != "queued") {
+			return DeliveryRequest{}, ErrDeliveryModeConflict
+		}
 		return duplicate, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -181,8 +190,12 @@ func (s Store) QueueDelivery(ctx context.Context, owner, home string, in Deliver
 		return DeliveryRequest{}, ErrDeliveryRate
 	}
 	request := DeliveryRequest{ID: uuid.NewString(), PreviewID: in.PreviewID, Recipients: recipients, State: "pending", CreatedAt: now.UTC()}
-	_, err = tx.Exec(ctx, `INSERT INTO report_delivery_requests(id,owner_user_id,home_id,preview_id,idempotency_key,request_hash,recipient_hash,recipients,approved_snapshot_sha256,state,created_at,next_attempt_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$10)`, request.ID, owner, home, previewID, in.IdempotencyKey, requestHash[:], recipientHash[:], recipients, digest, request.CreatedAt)
+	mode := "queued"
+	if in.SendNow {
+		mode = "direct"
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO report_delivery_requests(id,owner_user_id,home_id,preview_id,idempotency_key,request_hash,recipient_hash,recipients,approved_snapshot_sha256,state,created_at,next_attempt_at,delivery_mode)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$10,$11)`, request.ID, owner, home, previewID, in.IdempotencyKey, requestHash[:], recipientHash[:], recipients, digest, request.CreatedAt, mode)
 	if err != nil {
 		return DeliveryRequest{}, err
 	}
@@ -190,4 +203,17 @@ func (s Store) QueueDelivery(ctx context.Context, owner, home string, in Deliver
 		return DeliveryRequest{}, err
 	}
 	return request, nil
+}
+
+// Delivery reads the request selected by its immutable ID without exposing
+// recipients from another home or account.
+func (s Store) Delivery(ctx context.Context, owner, home, requestID string) (DeliveryRequest, error) {
+	var out DeliveryRequest
+	err := s.DB.QueryRow(ctx, `SELECT id,preview_id,recipients,state,created_at FROM report_delivery_requests
+		WHERE id=$1 AND owner_user_id=$2 AND home_id=$3`, requestID, owner, home).
+		Scan(&out.ID, &out.PreviewID, &out.Recipients, &out.State, &out.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DeliveryRequest{}, ErrNotFound
+	}
+	return out, err
 }

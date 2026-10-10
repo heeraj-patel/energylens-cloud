@@ -142,7 +142,7 @@ func TestExistingCalendarPeriodsStayUnchangedWithoutWindow(t *testing.T) {
 	}
 }
 
-func TestTrendsQueryPreservesLegacyAndAcceptsTrailingWindow(t *testing.T) {
+func TestTrendsQueryPreservesLegacyAndAcceptsNamedWindows(t *testing.T) {
 	for _, test := range []struct {
 		query url.Values
 		wantG string
@@ -151,19 +151,47 @@ func TestTrendsQueryPreservesLegacyAndAcceptsTrailingWindow(t *testing.T) {
 	}{
 		{query: url.Values{"granularity": {"day"}}, wantG: "day", valid: true},
 		{query: url.Values{"granularity": {"day"}, "window": {"trailing_30_days"}}, wantG: "day", wantW: "trailing_30_days", valid: true},
+		{query: url.Values{"granularity": {"day"}, "window": {"month_to_date"}}, wantG: "day", wantW: "month_to_date", valid: true},
 		{query: url.Values{"granularity": {"day"}, "window": {"last_5_occurrences"}}, wantG: "day", wantW: "last_5_occurrences", valid: true},
 		{query: url.Values{"granularity": {"week"}, "window": {"last_5_occurrences"}}, wantG: "week", wantW: "last_5_occurrences", valid: true},
 		{query: url.Values{"granularity": {"month"}, "window": {"last_5_occurrences"}}, wantG: "month", wantW: "last_5_occurrences", valid: true},
 		{query: url.Values{"granularity": {"hour"}, "window": {"trailing_30_days"}}},
 		{query: url.Values{"granularity": {"hour"}, "window": {"last_5_occurrences"}}},
 		{query: url.Values{"granularity": {"week"}, "window": {"trailing_30_days"}}},
-		{query: url.Values{"granularity": {"day"}, "window": {"month_to_date"}}},
+		{query: url.Values{"granularity": {"hour"}, "window": {"month_to_date"}}},
+		{query: url.Values{"granularity": {"week"}, "window": {"month_to_date"}}},
 		{query: url.Values{"granularity": {"day", "week"}}},
 		{query: url.Values{"granularity": {"day"}, "other": {"1"}}},
 	} {
 		g, window, ok := parseTrendsQuery(test.query)
 		if ok != test.valid || g != test.wantG || window != test.wantW {
 			t.Fatalf("parseTrendsQuery(%v) = %q, %q, %v", test.query, g, window, ok)
+		}
+	}
+}
+
+func TestMonthToDatePeriodUsesHomeLocalCalendar(t *testing.T) {
+	loc, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		utc, start, end string
+	}{
+		{"2026-11-01T04:30:00Z", "2026-10-01", "2026-11-01"},
+		{"2026-11-01T06:30:00Z", "2026-11-01", "2026-11-02"},
+		{"2026-11-10T18:00:00Z", "2026-11-01", "2026-11-11"},
+	} {
+		now, err := time.Parse(time.RFC3339, tc.utc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := monthToDatePeriod(now, loc)
+		if got := p.Start.In(loc).Format("2006-01-02"); got != tc.start {
+			t.Errorf("%s start = %s, want %s", tc.utc, got, tc.start)
+		}
+		if got := p.End.In(loc).Format("2006-01-02"); got != tc.end {
+			t.Errorf("%s end = %s, want %s", tc.utc, got, tc.end)
 		}
 	}
 }
@@ -212,7 +240,7 @@ func TestRealDeviceAttributionOnlyForDirectUnambiguousMeters(t *testing.T) {
 		v, _ := new(big.Rat).SetString(a.Cost.(money).Amount)
 		deviceCost.Add(&deviceCost, v)
 	}
-	if deviceCost.Cmp(big.NewRat(30, 100)) != 0 || buckets[0].Allocation.Cost.(money).Amount != "0.400000" {
+	if deviceCost.Cmp(big.NewRat(30, 100)) != 0 || buckets[0].Allocation.Cost.(money).Amount != "0.300000" {
 		t.Fatalf("device allocation did not stay within home cost: rows=%+v bucket=%+v", periodRows, buckets[0])
 	}
 	items[1].Start = start.Add(10 * time.Minute)
@@ -521,9 +549,28 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if code, sample := getSample(trailingTrend, "owner"); code != 200 || sample["granularity"] != "day" || len(sample["buckets"].([]any)) != 30 || sample["period"].(map[string]any)["start_local"] != "2026-09-07T00:00:00-05:00" || sample["period"].(map[string]any)["end_exclusive_local"] != "2026-10-07T00:00:00-05:00" {
 		t.Fatalf("trailing 30 sample window mismatch: %d %+v", code, sample)
 	} else {
+		if sample["efficiency_month_to_date"] != nil {
+			t.Fatal("MTD efficiency leaked into trailing window")
+		}
 		last := sample["buckets"].([]any)[29].(map[string]any)
 		if last["allocation"].(map[string]any)["cost"].(map[string]any)["amount"] != "2.469984" || last["allocation"].(map[string]any)["energy"] != nil {
 			t.Fatal("daily bucket did not accrue through current local time")
+		}
+	}
+	mtdTrend := "/v1/homes/" + home.ID + "/energy-trends?granularity=day&window=month_to_date"
+	if code, sample := getSample(mtdTrend, "owner"); code != 200 {
+		t.Fatalf("demo MTD read failed: %d %+v", code, sample)
+	} else {
+		efficiency, ok := sample["efficiency_month_to_date"].(map[string]any)
+		if !ok || efficiency["evidence_basis"] != "synthetic" ||
+			efficiency["waste_timing_basis"] != "unknown_75_25_demo_fallback" ||
+			!reflect.DeepEqual(efficiency["month_to_date_cost"], sample["totals"].(map[string]any)["cost"]) ||
+			!reflect.DeepEqual(efficiency["waste_opportunity"], sample["totals"].(map[string]any)["waste_cost"]) {
+			t.Fatalf("demo MTD projection not tied to same-home totals: %+v", sample)
+		}
+		widths, ok := efficiency["chart_segment_width_percent"].(map[string]any)
+		if !ok || len(widths) != 4 || widths["night"] == nil || widths["away"] == nil || widths["peak_rates"] == nil || widths["habits"] == nil {
+			t.Fatalf("demo MTD projection lacks final chart widths: %+v", efficiency)
 		}
 	}
 	var hub, sensor, appliance string
@@ -564,6 +611,9 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	}
 	if live["data_mode"] != "mixed" || live["as_of"] != end.UTC().Format(time.RFC3339) || len(live["device_allocations"].([]any)) != 19 {
 		t.Fatalf("mixed dashboard lost seeded rows or reported wrong home as_of: mode=%v as_of=%v", live["data_mode"], live["as_of"])
+	}
+	if code, mixedMTD := get(mtdTrend, "owner"); code != 200 || mixedMTD["efficiency_month_to_date"] != nil {
+		t.Fatalf("demo opportunity attached to measured home total: %d %+v", code, mixedMTD)
 	}
 	real := live["device_allocations"].([]any)[18].(map[string]any)
 	if real["appliance_id"] != appliance || real["allocation"].(map[string]any)["energy"].(map[string]any)["value"] != "1.500000000000" {

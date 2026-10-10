@@ -73,6 +73,24 @@ func TestDemoSnapshotReferenceSplitAndDailyAdjustment(t *testing.T) {
 	}
 }
 
+func TestDemoSnapshotMonthToDateCostIncludesPartialCurrentDay(t *testing.T) {
+	s := demoSnapshotForTest()
+	loc, err := time.LoadLocation(s.Timezone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, loc)
+	p := monthToDatePeriod(now, loc)
+	buckets, total, _, _ := projectDemoSnapshot(s, p, "day", now)
+	if len(buckets) != 2 || total.Cost.(money).Amount != "6.840000" ||
+		total.UsefulCost.(money).Amount != "6.000000" || total.WasteCost.(money).Amount != "0.840000" {
+		t.Fatalf("month-to-date cost did not reconcile with current-day fraction: %+v (%d buckets)", total, len(buckets))
+	}
+	if buckets[0].Allocation.Cost.(money).Amount != "4.560000" || buckets[1].Allocation.Cost.(money).Amount != "2.280000" {
+		t.Fatalf("unexpected daily costs: %+v", buckets)
+	}
+}
+
 func TestDemoSnapshotHourlyCostsReconcileAndProrateLocalDay(t *testing.T) {
 	s := demoSnapshotForTest()
 	loc, _ := time.LoadLocation(s.Timezone)

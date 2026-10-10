@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"energylens.local/cloud/internal/democost"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,10 +20,12 @@ var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
 var ErrDeleted = errors.New("account deleted")
 
 type User struct {
-	ID            string    `json:"id"`
-	Email         *string   `json:"email"`
-	EmailVerified bool      `json:"email_verified"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Email          *string   `json:"email"`
+	EmailVerified  bool      `json:"email_verified"`
+	DisplayName    *string   `json:"display_name"`
+	ProfileVersion int64     `json:"profile_version"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 type Location struct {
 	CountryCode string  `json:"country_code"`
@@ -32,13 +36,14 @@ type Location struct {
 	Source      string  `json:"source"`
 }
 type Home struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Timezone  string    `json:"timezone"`
-	Location  Location  `json:"location"`
-	Version   int64     `json:"version"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Timezone           string    `json:"timezone"`
+	Location           Location  `json:"location"`
+	TimezoneResolution string    `json:"timezone_resolution,omitempty"`
+	Version            int64     `json:"version"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 type HomeCreate struct {
 	Name     string   `json:"name"`
@@ -67,8 +72,8 @@ func (s PGStore) Resolve(ctx context.Context, id Identity) (User, error) {
 	}
 	var u User
 	var deletedAt *time.Time
-	q := `SELECT u.id,u.email,u.email_verified,u.created_at,u.deleted_at FROM users u JOIN auth_identities i ON i.user_id=u.id WHERE i.issuer=$1 AND i.subject=$2`
-	err := s.Pool.QueryRow(ctx, q, id.Issuer, id.Subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt, &deletedAt)
+	q := `SELECT u.id,u.email,u.email_verified,u.display_name,u.profile_version,u.created_at,u.deleted_at FROM users u JOIN auth_identities i ON i.user_id=u.id WHERE i.issuer=$1 AND i.subject=$2`
+	err := s.Pool.QueryRow(ctx, q, id.Issuer, id.Subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.DisplayName, &u.ProfileVersion, &u.CreatedAt, &deletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		tx, e := s.Pool.Begin(ctx)
 		if e != nil {
@@ -88,7 +93,7 @@ func (s PGStore) Resolve(ctx context.Context, id Identity) (User, error) {
 		} else if e = tx.Commit(ctx); e != nil {
 			return User{}, e
 		}
-		err = s.Pool.QueryRow(ctx, q, id.Issuer, id.Subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt, &deletedAt)
+		err = s.Pool.QueryRow(ctx, q, id.Issuer, id.Subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.DisplayName, &u.ProfileVersion, &u.CreatedAt, &deletedAt)
 	}
 	if err != nil {
 		return User{}, fmt.Errorf("resolve identity: %w", err)
@@ -98,7 +103,7 @@ func (s PGStore) Resolve(ctx context.Context, id Identity) (User, error) {
 	}
 	// A verified email may change without changing the user's primary identity.
 	if id.EmailVerified && id.Email != "" {
-		err = s.Pool.QueryRow(ctx, `UPDATE users SET email=$2,email_verified=true,updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id,email,email_verified,created_at`, u.ID, id.Email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt)
+		err = s.Pool.QueryRow(ctx, `UPDATE users SET email=$2,email_verified=true,updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id,email,email_verified,display_name,profile_version,created_at`, u.ID, id.Email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.DisplayName, &u.ProfileVersion, &u.CreatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrDeleted
 		}
@@ -221,7 +226,9 @@ func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, ve
 		return Home{}, err
 	}
 	var current int64
-	err = tx.QueryRow(ctx, `SELECT version FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL FOR UPDATE`, home, owner).Scan(&current)
+	var currentTimezone string
+	var currentDemo []byte
+	err = tx.QueryRow(ctx, `SELECT version,timezone,demo_cost_snapshot FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL FOR UPDATE`, home, owner).Scan(&current, &currentTimezone, &currentDemo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Home{}, ErrNotFound
 	}
@@ -238,13 +245,42 @@ func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, ve
 	if current != version {
 		return Home{}, ErrVersion
 	}
+	effectiveTimezone := in.Timezone
+	timezoneResolution := ""
+	if in.Location != nil {
+		var oldCountry, oldPostal string
+		if err = tx.QueryRow(ctx, `SELECT country_code,postal_code FROM home_location_revisions WHERE home_id=$1 ORDER BY revision DESC LIMIT 1`, home).Scan(&oldCountry, &oldPostal); err != nil {
+			return Home{}, err
+		}
+		if in.Location.CountryCode != oldCountry || in.Location.PostalCode != oldPostal {
+			timezoneResolution = "unresolved"
+			if in.Location.CountryCode == "US" {
+				if zone, found := resolveUSZIPTimeZone(in.Location.PostalCode); found {
+					effectiveTimezone = &zone
+					timezoneResolution = "resolved"
+				}
+			}
+			if timezoneResolution == "unresolved" && in.Timezone != nil {
+				timezoneResolution = ""
+			}
+		}
+	}
+	updatedDemo := currentDemo
+	if effectiveTimezone != nil && *effectiveTimezone != currentTimezone && len(currentDemo) > 0 {
+		updatedDemo = democost.Retarget(currentDemo, currentTimezone, *effectiveTimezone)
+	}
+	var demoParam any
+	if len(updatedDemo) > 0 {
+		demoParam = string(updatedDemo)
+	}
 	var h Home
 	err = tx.QueryRow(ctx, `UPDATE homes SET name=COALESCE($3,name),timezone=COALESCE($4,timezone),
-		demo_cost_snapshot=CASE WHEN $4::text IS NOT NULL AND $4::text IS DISTINCT FROM timezone THEN NULL ELSE demo_cost_snapshot END,
-		version=version+1,updated_at=now() WHERE id=$1 AND owner_user_id=$2 RETURNING id,name,timezone,version,created_at,updated_at`, home, owner, in.Name, in.Timezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt)
+		demo_cost_snapshot=$5::jsonb,
+		version=version+1,updated_at=now() WHERE id=$1 AND owner_user_id=$2 RETURNING id,name,timezone,version,created_at,updated_at`, home, owner, in.Name, effectiveTimezone, demoParam).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return Home{}, err
 	}
+	h.TimezoneResolution = timezoneResolution
 	if in.Location != nil {
 		h.Location = *in.Location
 		_, err = tx.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,city,county,precision,source) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, home, h.Version, h.Location.CountryCode, h.Location.PostalCode, h.Location.City, h.Location.County, h.Location.Precision, h.Location.Source)

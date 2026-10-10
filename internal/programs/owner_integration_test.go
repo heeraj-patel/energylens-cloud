@@ -136,9 +136,27 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	if len(got.Programs[0].EligibilityTerms) == 0 || len(got.Programs[0].StackingTerms) == 0 {
 		t.Fatalf("reviewed conditions missing: %+v", got.Programs[0])
 	}
+	// An ineligible assessment remains represented while its source revision
+	// and availability stay attached to the card data.
+	input.Status = "closed"
+	input.SourceBytes = []byte("source terms; fixture benefit text; closed availability")
+	if _, err = ImportReviewed(ctx, pool, input); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := store.List(ctx, owner.String(), home.String(), appliance.String(), now)
+	if err != nil || len(closed.Programs) != 1 || closed.Programs[0].Status != "ineligible" || closed.Programs[0].AvailabilityStatus != "closed" {
+		t.Fatalf("closed matching program must remain in owner feed: %+v %v", closed, err)
+	}
+	input.Status = "open"
+	input.SourceBytes = []byte("source terms; fixture benefit text; restored availability")
+	rev, err = ImportReviewed(ctx, pool, input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// A reviewed, fully modeled non-utility offer can be a potential match.
 	// It remains only a potential match and never an eligibility approval.
 	input.ProgramKey = "washer-general"
+	input.BenefitTerms = json.RawMessage(`{"amount":"200","currency":"USD"}`)
 	input.Applicability = &StructuredApplicability{CountryCode: "US", PostalCodes: []string{"78732"}, Category: "washer", Fuel: "electricity"}
 	input.SourceBytes = []byte("separately recorded source terms; fixture benefit text")
 	if _, err = ImportReviewed(ctx, pool, input); err != nil {
@@ -147,6 +165,10 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	got, err = store.List(ctx, owner.String(), home.String(), appliance.String(), now)
 	if err != nil || len(got.Programs) != 2 {
 		t.Fatalf("reviewed household assessment: %+v %v", got, err)
+	}
+	firstSaving, comparable := fixedOfferSaving(got.Programs[0])
+	if !comparable || firstSaving.RatString() != "200" {
+		t.Fatalf("larger fixed rebate should rank first: %+v", got.Programs)
 	}
 	homeGot, err := store.ListHome(ctx, owner.String(), home.String(), now)
 	if err != nil || len(homeGot.Programs) != 2 {

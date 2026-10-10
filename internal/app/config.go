@@ -51,6 +51,7 @@ type Config struct {
 	KasaRuntimeRetentionEnabled  bool
 	ReportRetentionEnabled       bool
 	ReportDeliveryEnabled        bool
+	ReportDirectSendEnabled      bool
 	ResendAPIKey                 string
 	ResendFrom                   string
 	LocalAuthMailEnabled         bool
@@ -181,6 +182,13 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_DELIVERY_ENABLED %q: %w", raw, err)
 		}
 		c.ReportDeliveryEnabled = enabled
+	}
+	if raw := os.Getenv("ENERGYLENS_CLOUD_REPORT_DIRECT_SEND_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_REPORT_DIRECT_SEND_ENABLED %q: %w", raw, err)
+		}
+		c.ReportDirectSendEnabled = enabled
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_MAIL_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -378,8 +386,8 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.ResendAPIKey != "" || c.ResendFrom != "" {
-		if c.Role != RoleWorker && c.Role != RoleAll {
-			return errors.New("report provider configuration requires worker or all role")
+		if c.Role == RoleAPI && !c.ReportDirectSendEnabled {
+			return errors.New("API report provider configuration requires direct send enabled")
 		}
 		if c.ResendAPIKey == "" || c.ResendFrom == "" || c.DatabaseURL == "" {
 			return errors.New("report provider requires API key, sender and database")
@@ -394,6 +402,14 @@ func (c Config) Validate() error {
 		}
 		if c.DatabaseURL == "" || c.ResendAPIKey == "" || c.ResendFrom == "" {
 			return errors.New("report delivery requires database, Resend API key and sender")
+		}
+	}
+	if c.ReportDirectSendEnabled {
+		if c.Role != RoleAPI && c.Role != RoleAll {
+			return errors.New("direct report send requires API or all role")
+		}
+		if c.DatabaseURL == "" || c.ResendAPIKey == "" || c.ResendFrom == "" {
+			return errors.New("direct report send requires database, Resend API key and sender")
 		}
 	}
 	if c.LocalAuthMailEnabled || c.LocalAuthResendAPIKey != "" || c.LocalAuthResendFrom != "" || c.LocalAuthLinkOrigin != "" {

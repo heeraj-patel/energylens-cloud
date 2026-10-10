@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +24,7 @@ var ErrLocationRequired = errors.New("home location required")
 type OwnerProgram struct {
 	ProgramID          string          `json:"program_id"`
 	RevisionID         string          `json:"revision_id"`
+	Revision           int64           `json:"-"`
 	Title              string          `json:"title"`
 	AdministratorName  string          `json:"administrator_name"`
 	AdministratorKind  string          `json:"administrator_kind"`
@@ -128,7 +132,7 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
  AND device.category=a.category AND coalesce(device.identity->>'fuel','')=a.fuel))`
 		args = []any{country, zip, home}
 	}
-	query := `SELECT p.id::text,r.id::text,r.title,p.administrator_name,r.administrator_kind,r.benefit_kind,r.benefit_display,r.benefit_terms,r.eligibility_terms,r.stacking_terms,r.status,
+	query := `SELECT p.id::text,r.id::text,r.revision,r.title,p.administrator_name,r.administrator_kind,r.benefit_kind,r.benefit_display,r.benefit_terms,r.eligibility_terms,r.stacking_terms,r.status,
  r.reviewed_at,r.review_expires_at,LEAST(r.review_expires_at,s.terms_review_expires_at),
  snap.source_url,snap.content_sha256,a.postal_codes,a.geography_scope,a.category,a.fuel,coalesce(a.provider_key,''),coalesce(a.provider_role,''),
 	 a.requires_income,a.requires_address,a.additional_conditions,r.application_from,r.application_to,
@@ -160,7 +164,7 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 		var income, address, extra bool
 		var otherWindows bool
 		var from, to *time.Time
-		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Title, &o.AdministratorName, &o.AdministratorKind, &o.BenefitKind, &o.BenefitDisplay, &o.BenefitTerms, &o.EligibilityTerms, &o.StackingTerms, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &geographyScope, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
+		if err = rows.Scan(&o.ProgramID, &o.RevisionID, &o.Revision, &o.Title, &o.AdministratorName, &o.AdministratorKind, &o.BenefitKind, &o.BenefitDisplay, &o.BenefitTerms, &o.EligibilityTerms, &o.StackingTerms, &status, &reviewed, &expires, &effectiveExpires, &o.SourceURL, &o.SourceSHA256, &zips, &geographyScope, &pCategory, &pFuel, &provider, &providerRole, &income, &address, &extra, &from, &to, &otherWindows); err != nil {
 			return OwnerProgramResult{}, err
 		}
 		program := Program{ID: o.ProgramID, Status: status, ZIPs: zips, Category: pCategory, Fuel: pFuel, ProviderID: provider, RequiresIncome: income, RequiresAddress: address, ReviewedAt: reviewed, ReviewExpiresAt: effectiveExpires}
@@ -189,16 +193,16 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 			householdCategory, householdFuel = pCategory, pFuel // SQL proved an active device match or household scope.
 		}
 		result := Evaluate(program, Household{ZIP: zip, Category: householdCategory, Fuel: householdFuel, CandidateProvider: map[string]bool{provider: candidate}}, now.In(loc))
-		if result.Status == "ineligible" {
-			continue
-		}
-		if extra {
+		// A source-backed, household-matching program remains part of the feed
+		// when its assessment is ineligible. Unknown inventory facts may soften
+		// a possible match, but must not erase a known mismatch or closed offer.
+		if extra && result.Status != "ineligible" {
 			result.Status = "unknown"
 			result.Reasons = append(result.Reasons, "additional_conditions_unknown")
 		}
 		// Purchase, installation and reservation dates require facts that the
 		// household inventory does not yet contain.
-		if otherWindows {
+		if otherWindows && result.Status != "ineligible" {
 			result.Status = "unknown"
 			result.Reasons = append(result.Reasons, "transaction_windows_unconfirmed")
 		}
@@ -211,6 +215,14 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 		return OwnerProgramResult{}, err
 	}
 	rows.Close()
+	sort.SliceStable(out, func(i, j int) bool {
+		left, leftOK := fixedOfferSaving(out[i])
+		right, rightOK := fixedOfferSaving(out[j])
+		if leftOK != rightOK {
+			return leftOK
+		}
+		return leftOK && left.Cmp(right) > 0
+	})
 	if len(out) > 100 {
 		return OwnerProgramResult{}, fmt.Errorf("too many reviewed programs")
 	}
@@ -218,6 +230,39 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 		return OwnerProgramResult{}, err
 	}
 	return OwnerProgramResult{Programs: out, Coverage: coverage}, nil
+}
+
+// Only source-reviewed fixed US-dollar rebates/discounts have a comparable
+// purchase saving. Caps, ranges, percentages and recurring amounts do not.
+func fixedOfferSaving(program OwnerProgram) (*big.Rat, bool) {
+	if program.BenefitKind != "rebate" && program.BenefitKind != "discount" {
+		return nil, false
+	}
+	var terms map[string]json.RawMessage
+	if json.Unmarshal(program.BenefitTerms, &terms) != nil {
+		return nil, false
+	}
+	for _, field := range []string{"up_to", "maximum", "minimum", "percentage", "per_unit", "annual", "monthly"} {
+		if _, exists := terms[field]; exists {
+			return nil, false
+		}
+	}
+	if raw, exists := terms["currency"]; exists && string(raw) != `"USD"` {
+		return nil, false
+	}
+	if raw, exists := terms["period"]; exists && string(raw) != `"one_time"` {
+		return nil, false
+	}
+	raw, exists := terms["amount"]
+	if !exists {
+		return nil, false
+	}
+	amount := strings.Trim(string(raw), `"`)
+	if amount == "" || strings.HasPrefix(amount, "-") || strings.ContainsAny(amount, "eE") {
+		return nil, false
+	}
+	value, ok := new(big.Rat).SetString(amount)
+	return value, ok && value.Sign() > 0
 }
 
 func readOwnerCoverage(ctx context.Context, tx pgx.Tx, country, zip, category string) (*OwnerCoverage, error) {
