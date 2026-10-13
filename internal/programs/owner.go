@@ -23,23 +23,24 @@ var ErrOwnerHomeNotFound = errors.New("owner home or appliance not found")
 var ErrLocationRequired = errors.New("home location required")
 
 type OwnerProgram struct {
-	ProgramID          string          `json:"program_id"`
-	RevisionID         string          `json:"revision_id"`
-	Revision           int64           `json:"-"`
-	Title              string          `json:"title"`
-	AdministratorName  string          `json:"administrator_name"`
-	AdministratorKind  string          `json:"administrator_kind"`
-	BenefitKind        string          `json:"benefit_kind"`
-	BenefitDisplay     string          `json:"benefit_display"`
-	BenefitTerms       json.RawMessage `json:"benefit_terms"`
-	EligibilityTerms   json.RawMessage `json:"eligibility_terms"`
-	StackingTerms      json.RawMessage `json:"stacking_terms"`
-	AvailabilityStatus string          `json:"availability_status"`
-	Status             string          `json:"status"`
-	Reasons            []string        `json:"reasons"`
-	SourceURL          string          `json:"source_url"`
-	SourceSHA256       string          `json:"source_sha256"`
-	ReviewExpiresAt    string          `json:"review_expires_at"`
+	ProgramID             string          `json:"program_id"`
+	RevisionID            string          `json:"revision_id"`
+	Revision              int64           `json:"-"`
+	Title                 string          `json:"title"`
+	AdministratorName     string          `json:"administrator_name"`
+	AdministratorKind     string          `json:"administrator_kind"`
+	BenefitKind           string          `json:"benefit_kind"`
+	BenefitDisplay        string          `json:"benefit_display"`
+	BenefitTerms          json.RawMessage `json:"benefit_terms"`
+	EligibilityTerms      json.RawMessage `json:"eligibility_terms"`
+	StackingTerms         json.RawMessage `json:"stacking_terms"`
+	AvailabilityStatus    string          `json:"availability_status"`
+	Status                string          `json:"status"`
+	Reasons               []string        `json:"reasons"`
+	SourceURL             string          `json:"source_url"`
+	SourceSHA256          string          `json:"source_sha256"`
+	ReviewExpiresAt       string          `json:"review_expires_at"`
+	AvailabilityExpiresAt *string         `json:"availability_expires_at,omitempty"`
 }
 
 type OwnerCoverageScope struct {
@@ -70,6 +71,11 @@ type OwnerProgramResult struct {
 	Programs      []OwnerProgram
 	Coverage      *OwnerCoverage
 	ResearchFacts []datawizfacts.Fact
+}
+
+// An application-to date includes the full home-local calendar day.
+func applicationDeadline(to time.Time, loc *time.Location) time.Time {
+	return time.Date(to.Year(), to.Month(), to.Day()+1, 0, 0, 0, 0, loc)
 }
 
 type OwnerStore interface {
@@ -211,6 +217,10 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 		o.AvailabilityStatus = status
 		o.Status, o.Reasons = result.Status, result.Reasons
 		o.ReviewExpiresAt = effectiveExpires.UTC().Format(time.RFC3339)
+		if to != nil {
+			deadline := applicationDeadline(*to, loc).UTC().Format(time.RFC3339)
+			o.AvailabilityExpiresAt = &deadline
+		}
 		out = append(out, o)
 	}
 	if err = rows.Err(); err != nil {

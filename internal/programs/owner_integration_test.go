@@ -81,7 +81,10 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	for _, f := range []string{"country_code", "postal_codes", "category", "fuel", "provider_key", "provider_role", "requires_income", "requires_address", "additional_conditions"} {
 		evidence["applicability."+f] = "section 2"
 	}
+	evidence["application_to"] = "section 3"
 	input := ReviewedImport{SourceKey: "utility-a", SourceURL: "https://utility.example/program", SourceBytes: []byte("source terms; fixture benefit text"), ContentType: "text/html", SnapshotRef: "test-source", ParserVersion: "v1", AdministratorKey: "utility-a", ProgramKey: "washer", GeographyKey: "78732", AdministratorName: "Utility A", AdministratorKind: "utility", Status: "open", Title: "Washer rebate", BenefitKind: "rebate", BenefitDisplay: "fixture benefit text", BenefitTerms: json.RawMessage(`{"amount":"100"}`), EligibilityTerms: json.RawMessage(`{"category":"washer"}`), StackingTerms: json.RawMessage(`{"status":"unknown"}`), Evidence: evidence, Reviewer: "reviewer", ReviewNote: "reviewed", ReviewExpiresAt: now.Add(7 * 24 * time.Hour), Applicability: &StructuredApplicability{CountryCode: "US", PostalCodes: []string{"78732"}, Category: "washer", Fuel: "electricity", ProviderKey: "utility-a", ProviderRole: "electric_distributor"}}
+	zone, _ := time.LoadLocation("America/Chicago")
+	input.Dates = map[string]string{"application_to": now.In(zone).Format("2006-01-02")}
 	rev, err := ImportReviewed(ctx, pool, input)
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +138,14 @@ func TestOwnerReviewedProgramBoundaries(t *testing.T) {
 	}
 	if len(got.Programs[0].EligibilityTerms) == 0 || len(got.Programs[0].StackingTerms) == 0 {
 		t.Fatalf("reviewed conditions missing: %+v", got.Programs[0])
+	}
+	deadline := applicationDeadline(now.In(zone), zone)
+	if got.Programs[0].AvailabilityExpiresAt == nil || *got.Programs[0].AvailabilityExpiresAt != deadline.UTC().Format(time.RFC3339) || got.Programs[0].ReviewExpiresAt == *got.Programs[0].AvailabilityExpiresAt {
+		t.Fatalf("application deadline or source review expiry lost: %+v", got.Programs[0])
+	}
+	after, err := store.List(ctx, owner.String(), home.String(), appliance.String(), deadline)
+	if err != nil || len(after.Programs) != 1 || !slices.Contains(after.Programs[0].Reasons, "expired") {
+		t.Fatalf("application-to boundary assessment: %+v %v", after, err)
 	}
 	// An ineligible assessment remains represented while its source revision
 	// and availability stay attached to the card data.

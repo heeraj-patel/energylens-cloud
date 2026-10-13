@@ -241,6 +241,7 @@ func TestTariffListElectricitySourceExpiry(t *testing.T) {
 	freshHome := newHome("Fresh electricity")
 	boundaryHome := newHome("Boundary electricity and gas")
 	futureHome := newHome("Future electricity")
+	effectiveHome := newHome("Effective-to boundary")
 	insert := func(home, fuel string, revision int, sourceExpr string) string {
 		var id string
 		err = pool.QueryRow(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from)
@@ -269,6 +270,21 @@ func TestTariffListElectricitySourceExpiry(t *testing.T) {
 	var retained int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM tariff_revisions WHERE id=$1`, exactID).Scan(&retained); err != nil || retained != 1 {
 		t.Fatalf("expired historical electricity revision not retained: count=%d err=%v", retained, err)
+	}
+
+	// A quarterly refresh need not run for the effective_to cut-off to take
+	// effect. The immutable row remains available as source history.
+	var effectiveID string
+	if err = pool.QueryRow(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from,effective_to)
+		VALUES($1,1,'electricity',0.19,'kWh','USD','official_tariff','isolated source',now()-interval '1 day',false,now()-interval '1 day',now()) RETURNING id`, effectiveHome).Scan(&effectiveID); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = store.List(ctx, owner.ID, effectiveHome)
+	if err != nil || len(listed) != 0 {
+		t.Fatalf("effective_to boundary still selected: %+v %v", listed, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM tariff_revisions WHERE id=$1`, effectiveID).Scan(&retained); err != nil || retained != 1 {
+		t.Fatalf("effective_to history missing: count=%d err=%v", retained, err)
 	}
 
 	// A future-dated source is never listed, even though it is within the
