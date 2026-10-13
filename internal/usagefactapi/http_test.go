@@ -2,8 +2,10 @@ package usagefactapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -124,7 +126,8 @@ func TestThreeKindsIncludingStandbyAreServed(t *testing.T) {
 		var response struct {
 			Facts []Fact `json:"facts"`
 		}
-		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || len(response.Facts) != 3 || response.Facts[2].Unit != "W" || *response.Facts[2].OperationMode != mode {
+		digest := sha256.Sum256(w.Body.Bytes())
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || len(response.Facts) != 3 || response.Facts[2].Unit != "W" || *response.Facts[2].OperationMode != mode || w.Header().Get("X-EnergyLens-Content-SHA256") != hex.EncodeToString(digest[:]) {
 			t.Fatalf("standby API response: %s", w.Body.String())
 		}
 	}

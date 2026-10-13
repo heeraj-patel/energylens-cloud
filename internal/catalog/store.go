@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"strings"
 
@@ -11,6 +12,13 @@ import (
 )
 
 type PGStore struct{ Pool *pgxpool.Pool }
+
+// SearchResearch exposes current model-subject observations even before a legacy
+// catalog product has been imported. It does not create a product link.
+func (s PGStore) SearchResearch(ctx context.Context, q Search) ([]datawizfacts.Fact, error) {
+	return datawizfacts.Device(ctx, s.Pool, q.Brand, q.Model)
+}
+
 type catalogQueries interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
@@ -154,6 +162,7 @@ func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage,
 			return nil, err
 		}
 		candidate["facts"] = json.RawMessage(`[]`)
+		delete(candidate, "research_facts")
 		candidate["query_match"] = json.RawMessage(`"documented_family"`)
 		if q.Variant == nil {
 			candidate["variant_match"] = json.RawMessage(`"unresolved"`)
@@ -197,5 +206,22 @@ func (s catalogReader) Get(ctx context.Context, id string) (json.RawMessage, err
 		return nil, err
 	}
 	result["facts"] = facts
+	var identity struct {
+		Brand     string `json:"brand"`
+		FullModel string `json:"full_model"`
+	}
+	if err = json.Unmarshal(product, &identity); err != nil {
+		return nil, err
+	}
+	if identity.Brand != "" && identity.FullModel != "" {
+		research, lookupErr := datawizfacts.Device(ctx, s.db, identity.Brand, identity.FullModel)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		result["research_facts"], err = json.Marshal(research)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(result)
 }

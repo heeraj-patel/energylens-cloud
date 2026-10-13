@@ -186,6 +186,33 @@ type programRefreshJob interface {
 	RunOnce(context.Context) (bool, error)
 }
 
+type datawizRequestJob interface {
+	RunOnce(context.Context) (int, error)
+}
+
+func runDatawizRequests(ctx context.Context, job datawizRequestJob, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		count, err := job.RunOnce(runCtx)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			slog.Error("Datawiz request pass failed", "error", err)
+		} else if count > 0 {
+			slog.Info("Datawiz requests written", "count", count)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func runProgramRefreshes(ctx context.Context, job programRefreshJob, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

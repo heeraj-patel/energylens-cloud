@@ -6,10 +6,36 @@ import (
 	"errors"
 	"time"
 
+	"energylens.local/cloud/internal/datawizfacts"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PGStore struct{ Pool *pgxpool.Pool }
+
+func (s PGStore) Research(ctx context.Context, scope Scope) ([]datawizfacts.Fact, error) {
+	if scope.Fuel != "electricity" {
+		return []datawizfacts.Fact{}, nil
+	}
+	all, err := datawizfacts.Device(ctx, s.Pool, scope.Manufacturer, scope.Model)
+	if err != nil {
+		return nil, err
+	}
+	out := []datawizfacts.Fact{}
+	for _, f := range all {
+		if f.Field != "energy_rating" {
+			continue
+		}
+		var v struct {
+			Unit   string `json:"unit"`
+			Metric string `json:"metric"`
+		}
+		if json.Unmarshal(f.Value, &v) == nil && (v.Unit == "kWh/cycle" || v.Unit == "kWh/hour" || v.Unit == "kWh/year" || v.Unit == "W" && (v.Metric == "standby_power" || v.Metric == "standby_watts")) {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
 
 // Find is bounded to the three supported measurement kinds. The exact identity
 // and both documented model fields must agree before a fact can leave Cloud.

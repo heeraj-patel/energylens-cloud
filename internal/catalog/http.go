@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"io"
 	"log/slog"
@@ -141,7 +142,18 @@ func (s Service) search(w http.ResponseWriter, r *http.Request) {
 		failure(w, 500, "internal_error", "catalog search failed")
 		return
 	}
-	respondCatalog(w, map[string]any{"products": products}, generation)
+	response := map[string]any{"products": products}
+	if reader, ok := s.Store.(interface {
+		SearchResearch(context.Context, Search) ([]datawizfacts.Fact, error)
+	}); ok {
+		research, readErr := reader.SearchResearch(r.Context(), q)
+		if readErr != nil {
+			failure(w, 500, "internal_error", "catalog search failed")
+			return
+		}
+		response["research_facts"] = research
+	}
+	respondCatalog(w, response, generation)
 }
 
 func (s Service) get(w http.ResponseWriter, r *http.Request) {

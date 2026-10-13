@@ -3,6 +3,7 @@ package programs
 import (
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"fmt"
 	"regexp"
@@ -111,6 +112,24 @@ func (r DiscoveryRunner) Run(ctx context.Context, req DiscoveryRequest) (out Dis
 		resolution.Provenance = nil
 		resolution.Limitations = nil
 	} else {
+		if req.CountryCode == "US" {
+			facts, lookupErr := (datawizfacts.Store{DB: r.DB}).Current(ctx, "zip", "zip:"+req.PostalCode)
+			if lookupErr != nil {
+				return DiscoveryOutcome{}, lookupErr
+			}
+			offerCount := 0
+			for _, fact := range facts {
+				if fact.Field == "government_offer" {
+					offerCount++
+				}
+			}
+			if offerCount > 0 {
+				if resolution.Provenance == nil {
+					resolution.Provenance = map[string]any{}
+				}
+				resolution.Provenance["datawiz_offer_candidate_count"] = offerCount
+			}
+		}
 		registered, lookupErr := registeredSourceScopes(ctx, r.DB, req)
 		if lookupErr != nil {
 			return DiscoveryOutcome{}, lookupErr

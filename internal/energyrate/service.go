@@ -25,6 +25,7 @@ package energyrate
 import (
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -78,6 +79,7 @@ type StaticRate struct {
 
 // Options configures a Service.
 type Options struct {
+	Research     *datawizfacts.Store
 	Fetcher      RateFetcher // nil or keyless → cache-only
 	HasKey       bool        // false: never call Fetcher (no EIA key configured)
 	Cache        Cache
@@ -90,6 +92,7 @@ type Options struct {
 
 // Service resolves rates and serves the HTTP route.
 type Service struct {
+	research     *datawizfacts.Store
 	fetcher      RateFetcher
 	hasKey       bool
 	cache        Cache
@@ -130,6 +133,7 @@ func NewService(o Options) *Service {
 		o.Logger = slog.Default()
 	}
 	return &Service{
+		research:     o.Research,
 		fetcher:      o.Fetcher,
 		hasKey:       o.HasKey && o.Fetcher != nil,
 		cache:        o.Cache,
@@ -158,20 +162,38 @@ var ErrTemporarilyUnavailable = errors.New("energyrate: rate temporarily unavail
 
 // Resolved is the response body (cloud-openapi.yaml EnergyRate).
 type Resolved struct {
-	RateUSDPerKWh float64    `json:"rate_usd_per_kwh"`
-	Source        string     `json:"source"`
-	SourceLabel   string     `json:"source_label"`
-	AsOf          string     `json:"as_of"`
-	Region        *string    `json:"region"`
-	SourceURL     string     `json:"source_url,omitempty"`
-	FetchedAt     *time.Time `json:"fetched_at"`
-	IsStale       bool       `json:"is_stale"`
-	IsStatic      bool       `json:"is_static"`
+	ResearchFacts []datawizfacts.Fact `json:"research_facts,omitempty"`
+	RateUSDPerKWh float64             `json:"rate_usd_per_kwh"`
+	Source        string              `json:"source"`
+	SourceLabel   string              `json:"source_label"`
+	AsOf          string              `json:"as_of"`
+	Region        *string             `json:"region"`
+	SourceURL     string              `json:"source_url,omitempty"`
+	FetchedAt     *time.Time          `json:"fetched_at"`
+	IsStale       bool                `json:"is_stale"`
+	IsStatic      bool                `json:"is_static"`
 }
 
 // Resolve runs the §3.4 fallback chain. country must be an upper-case ISO
 // alpha-2 code and zip a normalized 5-digit ZIP (the handler validates both).
 func (s *Service) Resolve(ctx context.Context, country, zip string) (Resolved, error) {
+	resolved, err := s.resolveBase(ctx, country, zip)
+	if err != nil || s.research == nil || country != "US" {
+		return resolved, err
+	}
+	facts, err := s.research.Current(ctx, "zip", "zip:"+zip)
+	if err != nil {
+		return Resolved{}, err
+	}
+	for _, f := range facts {
+		if f.Field == "rate" || f.Field == "provider_candidate" || f.Field == "jurisdiction" {
+			resolved.ResearchFacts = append(resolved.ResearchFacts, f)
+		}
+	}
+	return resolved, nil
+}
+
+func (s *Service) resolveBase(ctx context.Context, country, zip string) (Resolved, error) {
 	if country != "US" {
 		return Resolved{}, ErrUnavailable
 	}

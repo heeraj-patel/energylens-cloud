@@ -3,6 +3,7 @@ package programs
 import (
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -66,8 +67,9 @@ type OwnerCoverage struct {
 }
 
 type OwnerProgramResult struct {
-	Programs []OwnerProgram
-	Coverage *OwnerCoverage
+	Programs      []OwnerProgram
+	Coverage      *OwnerCoverage
+	ResearchFacts []datawizfacts.Fact
 }
 
 type OwnerStore interface {
@@ -94,14 +96,14 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 		return OwnerProgramResult{}, err
 	}
 	defer tx.Rollback(ctx)
-	var country, zip, zone, category, fuel string
+	var country, zip, zone, category, fuel, manufacturer string
 	if appliance == "" {
 		err = tx.QueryRow(ctx, `SELECT h.timezone FROM homes h
  WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner).Scan(&zone)
 	} else {
-		err = tx.QueryRow(ctx, `SELECT h.timezone,a.category,coalesce(a.identity->>'fuel','')
+		err = tx.QueryRow(ctx, `SELECT h.timezone,a.category,coalesce(a.identity->>'fuel',''),coalesce(a.identity->>'brand','')
  FROM homes h JOIN appliances a ON a.home_id=h.id AND a.id=$3 AND a.archived_at IS NULL
- WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner, appliance).Scan(&zone, &category, &fuel)
+ WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner, appliance).Scan(&zone, &category, &fuel, &manufacturer)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return OwnerProgramResult{}, ErrOwnerHomeNotFound
@@ -226,10 +228,59 @@ func (s PGOwnerStore) list(ctx context.Context, owner, home, appliance string, n
 	if len(out) > 100 {
 		return OwnerProgramResult{}, fmt.Errorf("too many reviewed programs")
 	}
+	research := []datawizfacts.Fact{}
+	if country == "US" {
+		zipFacts, readErr := datawizfacts.Current(ctx, tx, "zip", "zip:"+zip)
+		if readErr != nil {
+			return OwnerProgramResult{}, readErr
+		}
+		for _, fact := range zipFacts {
+			if fact.Field == "government_offer" {
+				research = append(research, fact)
+			}
+		}
+		subjects := map[string]bool{}
+		if appliance != "" && manufacturer != "" && category != "" {
+			subjects[datawizfacts.SavingsSubject(manufacturer, category)] = true
+		}
+		if appliance == "" {
+			deviceRows, readErr := tx.Query(ctx, `SELECT coalesce(identity->>'brand',''),category FROM appliances WHERE home_id=$1 AND archived_at IS NULL`, home)
+			if readErr != nil {
+				return OwnerProgramResult{}, readErr
+			}
+			for deviceRows.Next() {
+				var brand, cat string
+				if readErr = deviceRows.Scan(&brand, &cat); readErr != nil {
+					break
+				}
+				if brand != "" && cat != "" {
+					subjects[datawizfacts.SavingsSubject(brand, cat)] = true
+				}
+			}
+			if readErr == nil {
+				readErr = deviceRows.Err()
+			}
+			deviceRows.Close()
+			if readErr != nil {
+				return OwnerProgramResult{}, readErr
+			}
+		}
+		for subject := range subjects {
+			facts, readErr := datawizfacts.Current(ctx, tx, "savings", subject)
+			if readErr != nil {
+				return OwnerProgramResult{}, readErr
+			}
+			for _, fact := range facts {
+				if fact.Field == "government_offer" || fact.Field == "manufacturer_offer" {
+					research = append(research, fact)
+				}
+			}
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return OwnerProgramResult{}, err
 	}
-	return OwnerProgramResult{Programs: out, Coverage: coverage}, nil
+	return OwnerProgramResult{Programs: out, Coverage: coverage, ResearchFacts: research}, nil
 }
 
 // Only source-reviewed fixed US-dollar rebates/discounts have a comparable
@@ -366,10 +417,11 @@ func (s OwnerService) list(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
-		Programs []OwnerProgram `json:"programs"`
-		AsOf     string         `json:"as_of"`
-		Coverage *OwnerCoverage `json:"coverage"`
-	}{result.Programs, now.Format(time.RFC3339), result.Coverage})
+		Programs      []OwnerProgram      `json:"programs"`
+		AsOf          string              `json:"as_of"`
+		Coverage      *OwnerCoverage      `json:"coverage"`
+		ResearchFacts []datawizfacts.Fact `json:"research_facts,omitempty"`
+	}{result.Programs, now.Format(time.RFC3339), result.Coverage, result.ResearchFacts})
 }
 func ownerFail(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")

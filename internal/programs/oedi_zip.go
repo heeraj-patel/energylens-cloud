@@ -6,8 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
 	"os"
 	"path/filepath"
@@ -26,6 +29,7 @@ var oediStatePattern = regexp.MustCompile(`^[A-Z]{2}$`)
 var oediHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type OEDIZIPResolver struct {
+	DB                      *pgxpool.Pool
 	IOUPath, NonIOUPath     string
 	IOUSHA256, NonIOUSHA256 string // operator-recorded full-file digests
 	RetrievedAt             time.Time
@@ -51,6 +55,18 @@ func (r OEDIZIPResolver) ResolveZIP(ctx context.Context, country, zip string) ([
 func (r OEDIZIPResolver) ResolveZIPDetailed(ctx context.Context, country, zip string) (ZIPResolution, error) {
 	if country != "US" || !oediZIPPattern.MatchString(zip) {
 		return ZIPResolution{}, errors.New("OEDI resolver requires US five-digit ZIP")
+	}
+	if r.DB != nil {
+		facts, err := (datawizfacts.Store{DB: r.DB}).Current(ctx, "zip", "zip:"+zip)
+		if err != nil {
+			return ZIPResolution{}, err
+		}
+		if len(facts) > 0 {
+			resolution := datawizZIPResolution(facts)
+			if len(resolution.Scopes) > 0 {
+				return resolution, nil
+			}
+		}
 	}
 	if r.RetrievedAt.IsZero() || r.RetrievedAt.Location() != time.UTC || r.RetrievedAt.After(time.Now().UTC()) {
 		return ZIPResolution{}, errors.New("OEDI retrieval time must be a past UTC timestamp")
@@ -92,6 +108,53 @@ func (r OEDIZIPResolver) ResolveZIPDetailed(ctx context.Context, country, zip st
 		},
 		Limitations: []string{"electricity_only", "gas_unresolved", "provider_unconfirmed", "other_jurisdictions_unresolved", "likely_zip_assignments_not_address_coverage"},
 	}, nil
+}
+
+func datawizZIPResolution(facts []datawizfacts.Fact) ZIPResolution {
+	result := ZIPResolution{Scopes: []Scope{}, Provenance: map[string]any{"datawiz_current": true}, Limitations: []string{"provider_unconfirmed", "zcta_intersection_not_address_coverage"}}
+	seen := map[string]bool{}
+	for _, fact := range facts {
+		var value struct {
+			Name          string `json:"name"`
+			GeographyType string `json:"geography_type"`
+			State         string `json:"state"`
+			ProviderID    string `json:"provider_id"`
+			ServiceType   string `json:"service_type"`
+		}
+		if json.Unmarshal(fact.Value, &value) != nil || value.Name == "" {
+			continue
+		}
+		scope := Scope{Name: value.Name}
+		switch fact.Field {
+		case "jurisdiction":
+			switch value.GeographyType {
+			case "county":
+				scope.Kind = "county"
+			case "place":
+				scope.Kind = "city"
+			default:
+				continue
+			}
+			scope.Key = fact.RecordKey
+		case "provider_candidate":
+			scope.Kind = "utility"
+			if value.ProviderID != "" {
+				scope.Key = "eia:" + value.ProviderID
+				scope.ProviderRole = "electric_service_candidate"
+			} else {
+				scope.Key = fact.RecordKey
+				scope.ProviderRole = "gas_distributor"
+			}
+		default:
+			continue
+		}
+		key := scope.Kind + "\x00" + scope.Key + "\x00" + scope.ProviderRole
+		if !seen[key] {
+			seen[key] = true
+			result.Scopes = append(result.Scopes, scope)
+		}
+	}
+	return result
 }
 
 func readOEDICSV(ctx context.Context, file oediFile, zip string, candidates map[string]*oediCandidate) error {

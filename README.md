@@ -2,6 +2,14 @@
 
 One Go binary serves path-routed API modules on a single TLS listener. `GET /v1/energy/rates` remains public. With Postgres and OIDC configured, the API serves authenticated account and home routes. Hub enrollment and owner claim routes use their existing proof and ownership checks; Hub-only ownership, sync, telemetry, attachment, runtime, catalog and usage-fact routes additionally require a verified client certificate. `GET /healthz` and `GET /readyz` are probes.
 
+## Datawiz JSON request and fact operations
+
+Apply migration 0072 with the dedicated Cloud migration role before enabling this flow. Set `ENERGYLENS_CLOUD_DATAWIZ_REQUESTS_DIR` to an absolute, private directory on a `worker` role (or development `all`) with `ENERGYLENS_CLOUD_DATABASE_URL`. A pass runs at startup and every five seconds. It writes fresh UUID-named JSON files atomically under `device/`, `zip/`, `savings/`, and `efficiency/`. Saved appliance `identity.brand` and `identity.full_model` supply device research; brand and `category` supply savings research. The current US home ZIP supplies ZIP research. Seven supported efficiency contexts are emitted once. Appliance identity/version and location revision changes produce new files. The marker table prevents repeated files for an unchanged saved record.
+
+For a one-pass export without starting a server or worker, set `ENERGYLENS_CLOUD_DATABASE_URL` and run `energylens-cloud export-datawiz-requests -output /private/path/requests`. The command uses the same producer and prints `requests_written`; a repeated pass with unchanged saved records prints zero. It requires migration 0072 and writes to the route subdirectories described above.
+
+The Cloud worker only creates request files. Transfer or process them with the separate Datawiz CLI according to its operational guide; do not point its result directory at this request tree. To inspect published approved observations, run `energylens-cloud read-datawiz-current -route device -subject 'device:<manufacturer-key>:<model-key>'` with the Cloud database URL configured. The command returns current values and their source metadata as JSON. A missing subject returns `[]`; a database or migration error exits nonzero. Keep request files and database credentials private.
+
 ## Roles and listeners
 
 `go run ./cmd/energylens-cloud --role=api` serves API routes. `--role=worker` serves probes and can run the opt-in metered rollup job. `--role=all` combines them for development. The default role is `all`, or `ENERGYLENS_CLOUD_ROLE` when set. Production refuses `all`. `ENERGYLENS_CLOUD_ENV` is `dev` by default; set `staging` or `production` explicitly in deployment.
@@ -18,7 +26,7 @@ Owner API deployments also require `ENERGYLENS_CLOUD_METERED_EXPORT_CURSOR_KEY_F
 
 ## Migrations
 
-Run `ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL=... energylens-cloud migrate` with a separate DDL-capable migration role before starting API or worker processes. The binary embeds migrations through 0064, including the original rate-cache and reviewed-rating migrations, account, inventory, telemetry, rollup and program-registry schema, reviewed annual and usage-fact revision lifecycles, catalog generations, and the nullable imported demo cost snapshot on homes. Apply 0064 before starting a binary that reads `homes.demo_cost_snapshot`, including for homes without an imported snapshot. It serializes migration runs, records SQL checksums in `energylens_schema_migrations`, and rejects changed files. It never runs DDL during serving. A preexisting database without a ledger is safely baselined by reapplying the idempotent 0016/0017 migrations and recording them.
+Run `ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL=... energylens-cloud migrate` with a separate DDL-capable migration role before starting API or worker processes. The binary embeds migrations through 0070, including reviewed annual, usage-fact and rated-input revision lifecycles, catalog generations, and account/demo schema. It serializes migration runs, records SQL checksums in `energylens_schema_migrations`, and rejects changed files. It never runs DDL during serving. A preexisting database without a ledger is safely baselined by reapplying the idempotent 0016/0017 migrations and recording them.
 
 `go test ./...` covers rate behavior, OIDC and account routes, role policy, same-listener TLS access, header stripping, signed annual and usage-fact import lifecycles, active owner/Hub usage-fact reads, catalog response generation and digests, and migration file IDs. PostgreSQL integration tests use `ENERGYLENS_CLOUD_TEST_DATABASE_URL` where configured and otherwise skip; set it to run database-backed migration, import, and API tests. No production deployment or production RDS validation is documented here.
 

@@ -3,7 +3,13 @@
 // savings from a nameplate, annual test figure, or unsupported usage pattern.
 package recommendation
 
-import "sort"
+import (
+	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
+	"math/big"
+	"sort"
+	"strings"
+)
 
 type Evidence struct {
 	ID       string `json:"id"`
@@ -12,6 +18,7 @@ type Evidence struct {
 }
 
 type Appliance struct {
+	ResearchTips   []datawizfacts.Fact
 	ID             string
 	Category       string
 	Fuel           string
@@ -21,23 +28,46 @@ type Appliance struct {
 	Tariff         *Evidence           // current marginal electricity rate; never used for a savings claim
 	GasUsage       *Evidence           // exact reviewed dryer therm/cycle fact
 	GasTariff      *Evidence           // fresh USD/therm marginal rate
-	UsageFrequency int64               // confirmed current hours/cycles per week; ordering only
+	UsageFrequency int64               // legacy frequency for callers supplying one answer kind
+	HoursPerWeek   *int64              // confirmed current hours per week, including zero
+	CyclesPerWeek  *int64              // confirmed current cycles per week, including zero
+	Scenarios      []BenefitScenario   // explicit current action alternatives
+}
+
+func (a Appliance) frequencyFor(kind string) int64 {
+	switch kind {
+	case "hours_per_week":
+		if a.HoursPerWeek != nil {
+			return *a.HoursPerWeek
+		}
+	case "cycles_per_week":
+		if a.CyclesPerWeek != nil {
+			return *a.CyclesPerWeek
+		}
+	}
+	return a.UsageFrequency
 }
 
 type Action struct {
-	RuleID         string      `json:"rule_id"`
-	RuleVersion    int         `json:"rule_version"`
-	ApplianceID    string      `json:"appliance_id"`
-	State          string      `json:"state"` // candidate or active
-	Title          string      `json:"title"`
-	Explanation    string      `json:"explanation"`
-	NextQuestion   string      `json:"next_question,omitempty"`
-	BenefitGroup   string      `json:"benefit_group"`
-	TipCategory    TipCategory `json:"tip_category"`
-	EvidenceRefs   []Evidence  `json:"evidence_refs"`
-	SavingsAmount  *string     `json:"savings_amount"` // absent until a comparable scenario exists
-	usageFrequency int64
-	usageUnit      string
+	ResearchEvidence []datawizfacts.Fact `json:"research_evidence,omitempty"`
+	RuleID           string              `json:"rule_id"`
+	RuleVersion      int                 `json:"rule_version"`
+	ApplianceID      string              `json:"appliance_id"`
+	State            string              `json:"state"` // candidate or active
+	Title            string              `json:"title"`
+	Explanation      string              `json:"explanation"`
+	NextQuestion     string              `json:"next_question,omitempty"`
+	BenefitGroup     string              `json:"benefit_group"`
+	TipCategory      TipCategory         `json:"tip_category"`
+	EvidenceRefs     []Evidence          `json:"evidence_refs"`
+	SavingsAmount    *string             `json:"savings_amount"` // absent until a comparable scenario exists
+	SavingsPeriod    string              `json:"savings_period,omitempty"`
+	SavingsCurrency  string              `json:"savings_currency,omitempty"`
+	SavingsBasis     string              `json:"savings_basis,omitempty"`
+	ScenarioRefs     []Evidence          `json:"scenario_refs,omitempty"`
+	SourceURL        string              `json:"source_url,omitempty"`
+	usageFrequency   int64
+	usageUnit        string
 }
 
 // TipCategory identifies the kind of action at its source. BenefitGroup is
@@ -85,10 +115,10 @@ var initial = []rule{
 	{"pool_pump.operating_guidance", "pool_pump", "electricity", "Review pool-pump operating guidance", "Check the equipment manual and water-care requirements before considering supported operating settings.", "", "pool_service", "", "annual_energy"},
 }
 
-// Evaluate returns at most one action per rule and leaves all savings amounts
-// unknown. Source facts and current confirmed answers make an action active;
-// otherwise it remains a candidate with an explicit next question. A reviewed
-// annual fact supports only the appliance identity, never a usage-based saving.
+// Evaluate returns at most one action per rule. Source facts and current
+// confirmed answers make an action active; otherwise it remains a candidate
+// with an explicit next question. Savings require a separate reviewed action
+// scenario. An annual fact alone never establishes a usage-based saving.
 func Evaluate(a Appliance) []Action {
 	return evaluate(a, false)
 }
@@ -123,7 +153,7 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 		out = append(out, Action{RuleID: "dryer.gas_cycle_options", RuleVersion: 1, ApplianceID: a.ID,
 			State: state, Title: "Review gas dryer cycle options",
 			Explanation:  "Check manufacturer-supported sensor-dry and suitable load settings. Gas and electrical use need separate evidence; this action does not identify waste or establish savings.",
-			NextQuestion: next, BenefitGroup: "laundry_cycle", TipCategory: TipGeneral, EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: "cycles_per_week"})
+			NextQuestion: next, BenefitGroup: "laundry_cycle", TipCategory: TipGeneral, EvidenceRefs: refs, usageFrequency: a.frequencyFor("cycles_per_week"), usageUnit: "cycles_per_week"})
 	}
 	for _, r := range initial {
 		if a.Category != r.category || a.Fuel != r.fuel {
@@ -159,7 +189,7 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 		}
 		out = append(out, Action{RuleID: r.id, RuleVersion: 1, ApplianceID: a.ID, State: state,
 			Title: r.title, Explanation: r.explanation, NextQuestion: next,
-			BenefitGroup: r.group, TipCategory: tipCategory(r.id), EvidenceRefs: refs, usageFrequency: a.UsageFrequency, usageUnit: r.answerKind})
+			BenefitGroup: r.group, TipCategory: tipCategory(r.id), EvidenceRefs: refs, usageFrequency: a.frequencyFor(r.answerKind), usageUnit: r.answerKind})
 	}
 	if len(out) == 0 {
 		out = append(out, Action{RuleID: "general.gather_information", RuleVersion: 1, ApplianceID: a.ID,
@@ -167,18 +197,77 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 			Explanation:  "Add the appliance model and reviewed guidance to see whether a specific action applies.",
 			NextQuestion: "confirm_model", BenefitGroup: "information", TipCategory: TipGeneral, EvidenceRefs: []Evidence{}})
 	}
-	return rankActions(out)
+	for i := range out {
+		for _, tip := range a.ResearchTips {
+			if tip.Field != "efficiency_tip" {
+				continue
+			}
+			var value struct {
+				Context    string   `json:"context"`
+				Applicable []string `json:"applicable_categories"`
+				Excluded   []string `json:"excluded_categories"`
+			}
+			if json.Unmarshal(tip.Value, &value) != nil || !tipApplies(value.Context, a.Category, out[i].RuleID, value.Applicable, value.Excluded) {
+				continue
+			}
+			out[i].ResearchEvidence = append(out[i].ResearchEvidence, tip)
+			out[i].EvidenceRefs = append(out[i].EvidenceRefs, Evidence{ID: tip.ID, Kind: "datawiz_efficiency_tip", Revision: 1})
+		}
+	}
+	return rankActions(ApplyBenefitScenarios(out, a.Scenarios))
 }
 
-// rankActions keeps the strongest action in each appliance's benefit group and
-// limits a single appliance to three actions. A benefit group is scoped to an
-// appliance: two different appliances may each have an annual-energy action.
-// With no comparable scenario or user goals, this order reflects evidence
-// readiness only, never expected savings or a claimed financial benefit.
+// Source guidance can support an existing action without asserting that its
+// prerequisites, household applicability, or numeric benefit are established.
+func tipApplies(context, category, ruleID string, applicable, excluded []string) bool {
+	aliases := map[string][]string{"hvac": {"heat_pump", "air_conditioner", "space_heater"}, "smart_home_devices": {"smart_home_devices", "smart_plug", "thermostat"}}
+	matches := func(name string) bool {
+		if name == category {
+			return true
+		}
+		for _, alias := range aliases[name] {
+			if alias == category {
+				return true
+			}
+		}
+		return false
+	}
+	for _, name := range excluded {
+		if matches(name) {
+			return false
+		}
+	}
+	matched := false
+	for _, name := range applicable {
+		if matches(name) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return false
+	}
+	switch context {
+	case "night", "away":
+		return strings.Contains(ruleID, "schedule") || strings.Contains(ruleID, "operating_guidance") || ruleID == "general.gather_information"
+	case "peak_usage":
+		return ruleID == "general.gather_information" || strings.Contains(ruleID, "settings")
+	case "maintenance":
+		return strings.Contains(ruleID, "maintenance") || strings.Contains(ruleID, "operating_guidance") || ruleID == "general.gather_information"
+	case "habits", "appliance_type", "upgrades":
+		return true
+	default:
+		return false
+	}
+}
+
+// rankActions keeps every action. It first applies the evidence/activity order,
+// then sorts only supplied savings values that share an explicit comparison
+// period, currency, and benefit basis. Actions without comparable values keep
+// their position and remain visible.
 func rankActions(actions []Action) []Action {
-	const maxPerAppliance = 3
 	ranked := append([]Action(nil), actions...)
-	sort.Slice(ranked, func(i, j int) bool {
+	sort.SliceStable(ranked, func(i, j int) bool {
 		a, b := ranked[i], ranked[j]
 		if a.State != b.State {
 			return a.State == "active"
@@ -204,22 +293,42 @@ func rankActions(actions []Action) []Action {
 		}
 		return a.BenefitGroup < b.BenefitGroup
 	})
-	seen := make(map[string]bool, len(ranked))
-	count := make(map[string]int)
-	out := make([]Action, 0, len(ranked))
-	for _, action := range ranked {
-		if count[action.ApplianceID] >= maxPerAppliance {
+	return rankComparableBenefits(ranked)
+}
+
+func rankComparableBenefits(actions []Action) []Action {
+	groups := make(map[string][]int)
+	for i, action := range actions {
+		if _, ok := comparableSaving(action); !ok {
 			continue
 		}
-		key := action.ApplianceID + "\x00" + action.BenefitGroup
-		if action.BenefitGroup != "" && seen[key] {
-			continue
-		}
-		seen[key] = true
-		count[action.ApplianceID]++
-		out = append(out, action)
+		key := action.State + "\x00" + action.SavingsPeriod + "\x00" + action.SavingsCurrency + "\x00" + action.SavingsBasis
+		groups[key] = append(groups[key], i)
 	}
-	return out
+	for _, positions := range groups {
+		values := make([]Action, len(positions))
+		for i, position := range positions {
+			values[i] = actions[position]
+		}
+		sort.SliceStable(values, func(i, j int) bool {
+			left, _ := comparableSaving(values[i])
+			right, _ := comparableSaving(values[j])
+			return left.Cmp(right) > 0
+		})
+		for i, position := range positions {
+			actions[position] = values[i]
+		}
+	}
+	return actions
+}
+
+func comparableSaving(action Action) (*big.Rat, bool) {
+	if action.SavingsAmount == nil || strings.TrimSpace(*action.SavingsAmount) != *action.SavingsAmount ||
+		action.SavingsPeriod == "" || action.SavingsCurrency == "" || action.SavingsBasis == "" || len(action.ScenarioRefs) == 0 {
+		return nil, false
+	}
+	value, ok := new(big.Rat).SetString(*action.SavingsAmount)
+	return value, ok && value.Sign() >= 0
 }
 
 func readiness(action Action) int {

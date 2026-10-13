@@ -2,8 +2,10 @@ package tariff
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"io"
 	"log/slog"
@@ -65,7 +67,18 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	respond(w, 200, map[string]any{"tariffs": tariffs})
+	response := map[string]any{"tariffs": tariffs}
+	if reader, ok := s.Store.(interface {
+		Research(context.Context, string, string) ([]datawizfacts.Fact, error)
+	}); ok {
+		research, err := reader.Research(r.Context(), s.UserID(r), home)
+		if err != nil {
+			storeError(w, err)
+			return
+		}
+		response["research_facts"] = research
+	}
+	respond(w, 200, response)
 }
 func (s Service) create(w http.ResponseWriter, r *http.Request) {
 	home, ok := homeID(w, r)

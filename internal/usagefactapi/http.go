@@ -4,7 +4,10 @@ package usagefactapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -117,13 +120,32 @@ func (s Service) get(w http.ResponseWriter, r *http.Request) {
 	if facts == nil {
 		facts = []Fact{}
 	}
+	var research []datawizfacts.Fact
+	if reader, ok := s.Store.(interface {
+		Research(context.Context, Scope) ([]datawizfacts.Fact, error)
+	}); ok {
+		research, err = reader.Research(r.Context(), scope)
+		if err != nil {
+			fail(w, 500, "internal_error")
+			return
+		}
+	}
+	response := struct {
+		Schema        string              `json:"schema"`
+		SchemaVersion int                 `json:"schema_version"`
+		Scope         Scope               `json:"scope"`
+		Facts         []Fact              `json:"facts"`
+		ResearchFacts []datawizfacts.Fact `json:"research_facts,omitempty"`
+	}{"energylens.reviewed-usage-facts", 1, scope, facts, research}
+	body, err := json.Marshal(response)
+	if err != nil {
+		fail(w, 500, "internal_error")
+		return
+	}
+	digest := sha256.Sum256(body)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(struct {
-		Schema        string `json:"schema"`
-		SchemaVersion int    `json:"schema_version"`
-		Scope         Scope  `json:"scope"`
-		Facts         []Fact `json:"facts"`
-	}{"energylens.reviewed-usage-facts", 1, scope, facts})
+	w.Header().Set("X-EnergyLens-Content-SHA256", hex.EncodeToString(digest[:]))
+	_, _ = w.Write(body)
 }
 
 // HubAuthentication verifies the TLS peer against current durable hub state.

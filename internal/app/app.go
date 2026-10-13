@@ -19,7 +19,10 @@ import (
 	"energylens.local/cloud/internal/attachments"
 	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/cyclecomparison"
+	"energylens.local/cloud/internal/datawizfacts"
+	"energylens.local/cloud/internal/datawizrequests"
 	"energylens.local/cloud/internal/designfixture"
+	"energylens.local/cloud/internal/devicestate"
 	"energylens.local/cloud/internal/energyrate"
 	"energylens.local/cloud/internal/estimation"
 	"energylens.local/cloud/internal/faq"
@@ -35,6 +38,7 @@ import (
 	"energylens.local/cloud/internal/outcomes"
 	"energylens.local/cloud/internal/programs"
 	"energylens.local/cloud/internal/questions"
+	"energylens.local/cloud/internal/ratedinputapi"
 	"energylens.local/cloud/internal/recommendation"
 	"energylens.local/cloud/internal/reports"
 	"energylens.local/cloud/internal/sensors"
@@ -117,8 +121,13 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		if c.EIAAPIKey != "" {
 			fetcher = energyrate.NewEIAClient("", c.EIAAPIKey)
 		}
+		var rateResearch *datawizfacts.Store
+		if rt.Pool != nil {
+			rateResearch = &datawizfacts.Store{DB: rt.Pool}
+		}
 		rates := energyrate.NewService(energyrate.Options{
-			Fetcher: fetcher, HasKey: c.EIAAPIKey != "", Cache: cache,
+			Research: rateResearch,
+			Fetcher:  fetcher, HasKey: c.EIAAPIKey != "", Cache: cache,
 			StaticStates: map[string]energyrate.StaticRate{"TX": {
 				USDPerKWh: 0.1588,
 				AsOf:      time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
@@ -156,6 +165,8 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
 			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "live-household-energy", Mount: liveEnergy.Routes})
+			deviceStates := devicestate.Service{Store: devicestate.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			modules = append(modules, Module{Name: "home-device-states", Mount: deviceStates.Routes})
 			if c.SampleFixturesEnabled {
 				allowed, err := designfixture.ParseUserIDs(c.SampleFixtureUserIDs)
 				if err != nil {
@@ -301,6 +312,7 @@ func cloudRouter(modules []Module, ready func(context.Context) error, hub *hubtr
 				if pool != nil {
 					(catalog.Service{Store: catalog.PGStore{Pool: pool}, HubAuth: catalog.HubAuthentication(hubtrust.Store{Pool: pool})}).HubRoutes(h)
 					(usagefactapi.Service{Store: usagefactapi.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
+					(ratedinputapi.Service{Store: ratedinputapi.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
 					(sensors.Service{Store: sensors.Store{Pool: pool}}).HubRoutes(h)
 					(attachments.Service{Store: attachments.Store{Pool: pool}}).HubRoutes(h)
 					(telemetry.Service{Store: telemetry.Store{Pool: pool}}).HubRoutes(h)
@@ -366,7 +378,7 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
-	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.KBScanPython != "" {
+	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.KBScanPython != "" || c.DatawizRequestsDir != "" {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -411,7 +423,7 @@ func Serve(ctx context.Context, c Config) error {
 				jobs = append(jobs, finished)
 				go func() {
 					defer close(finished)
-					worker := programs.RefreshWorker{DB: rt.Pool, Resolver: programs.OEDIZIPResolver{IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}}
+					worker := programs.RefreshWorker{DB: rt.Pool, Resolver: programs.OEDIZIPResolver{DB: rt.Pool, IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}}
 					if c.ProgramSourceProbeEnabled {
 						worker.Probe = programs.HTTPSPageProbe{}
 					}
@@ -424,6 +436,14 @@ func Serve(ctx context.Context, c Config) error {
 				go func() {
 					defer close(finished)
 					runIdentityScans(workerCtx, identityscan.Store{Pool: rt.Pool}, identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA, GoogleSearch: c.KBScanGoogleSearch, GoogleSite: c.KBScanGoogleSite, GoogleExistingCustomer: c.KBScanGoogleExistingCustomer}, 10*time.Second, c.KBHelpOutputPath)
+				}()
+			}
+			if c.DatawizRequestsDir != "" {
+				finished := make(chan struct{})
+				jobs = append(jobs, finished)
+				go func() {
+					defer close(finished)
+					runDatawizRequests(workerCtx, datawizrequests.Producer{DB: rt.Pool, Dir: c.DatawizRequestsDir}, 5*time.Second)
 				}()
 			}
 			for _, finished := range jobs {

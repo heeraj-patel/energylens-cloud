@@ -3,6 +3,7 @@ package recommendation
 import (
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"fmt"
 	"time"
@@ -18,6 +19,28 @@ type EvidenceStore interface {
 }
 
 type PGStore struct{ Pool *pgxpool.Pool }
+
+// Research reads current source guidance independently of appliance rule
+// eligibility. The HTTP layer calls it only after Current authorizes the home.
+func (s PGStore) Research(ctx context.Context) ([]datawizfacts.Fact, error) {
+	return currentEfficiencyTips(ctx, s.Pool)
+}
+
+func currentEfficiencyTips(ctx context.Context, db datawizfacts.Querier) ([]datawizfacts.Fact, error) {
+	tips := []datawizfacts.Fact{}
+	for _, contextName := range []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"} {
+		facts, err := datawizfacts.Current(ctx, db, "efficiency", "efficiency:"+contextName)
+		if err != nil {
+			return nil, err
+		}
+		for _, fact := range facts {
+			if fact.Field == "efficiency_tip" {
+				tips = append(tips, fact)
+			}
+		}
+	}
+	return tips, nil
+}
 
 type storedIdentity struct {
 	Brand        string  `json:"brand"`
@@ -46,10 +69,12 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	var tariff *Evidence
 	var tariffID string
 	var tariffRevision int64
-	err = tx.QueryRow(ctx, `SELECT id,revision FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity'
+	var tariffRate string
+	err = tx.QueryRow(ctx, `SELECT id,revision,rate::text FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity'
+	 AND rate_unit='kWh' AND currency='USD'
 	 AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2)
 	 AND source_as_of <= $2 AND source_as_of > $2::timestamptz - interval '1440 hours'
-	 ORDER BY is_fallback ASC,revision DESC LIMIT 1`, home, now).Scan(&tariffID, &tariffRevision)
+	 ORDER BY is_fallback ASC,revision DESC LIMIT 1`, home, now).Scan(&tariffID, &tariffRevision, &tariffRate)
 	if err == nil {
 		tariff = &Evidence{ID: tariffID, Kind: "tariff", Revision: tariffRevision}
 	}
@@ -104,8 +129,13 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	if len(items) > 100 {
 		return nil, fmt.Errorf("too many active appliances")
 	}
+	researchTips, err := currentEfficiencyTips(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 	for i := range items {
 		item := &items[i]
+		item.ResearchTips = researchTips
 		if item.Fuel == "electricity" && item.Identity == "confirmed_exact" &&
 			(item.Category == "washer" || item.Category == "dryer" || item.Category == "dishwasher") &&
 			item.Details.Brand != "" && item.Details.FullModel != "" && item.Details.Variant != nil && *item.Details.Variant != "" {
@@ -219,18 +249,18 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			if status != "confirmed" || questionVersion != 1 {
 				continue
 			}
-			if item.Category == "dryer" && item.Fuel == "natural_gas" && questionID == "dryer.cycles_per_week" {
-				var cycles int64
-				if json.Unmarshal(answerValue, &cycles) != nil || cycles < 0 || cycles > 100 {
-					continue
-				}
-			}
 			for _, kind := range []string{"hours_per_week", "cycles_per_week"} {
 				if questionID == item.Category+"."+kind {
-					item.Answers[kind] = Evidence{ID: answerID, Kind: "confirmed_answer", Revision: revision}
 					var frequency int64
-					if json.Unmarshal(answerValue, &frequency) == nil && frequency >= 0 && ((kind == "hours_per_week" && frequency <= 168) || (kind == "cycles_per_week" && frequency <= 100)) {
-						item.UsageFrequency = frequency
+					if json.Unmarshal(answerValue, &frequency) != nil || frequency < 0 ||
+						(kind == "hours_per_week" && frequency > 168) || (kind == "cycles_per_week" && frequency > 100) {
+						continue
+					}
+					item.Answers[kind] = Evidence{ID: answerID, Kind: "confirmed_answer", Revision: revision}
+					if kind == "hours_per_week" {
+						item.HoursPerWeek = &frequency
+					} else {
+						item.CyclesPerWeek = &frequency
 					}
 				}
 			}
@@ -241,6 +271,77 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		answerRows.Close()
 		if queryErr != nil {
 			return nil, queryErr
+		}
+		if item.Identity == "confirmed_exact" && item.Fuel == "electricity" && item.Tariff != nil &&
+			item.Details.Brand != "" && item.Details.FullModel != "" && item.Details.Variant != nil && *item.Details.Variant != "" {
+			// A scenario must match the current reviewed baseline, exact device,
+			// confirmed usage and tariff in this transaction. Ambiguous revisions
+			// or overlapping alternatives suppress the amount.
+			scenarioRows, scenarioErr := tx.Query(ctx, `SELECT s.id::text,s.revision,s.rule_id,
+			 f.id::text,f.value::text,s.alternative_kwh::text,s.usage_unit,s.exclusion_group,s.source_url
+			 FROM active_reviewed_action_benefit_scenarios s
+			 JOIN active_reviewed_usage_facts f ON f.id=s.baseline_fact_id
+			 WHERE s.category=$1 AND s.manufacturer=$2 AND s.model=$3 AND s.variant=$4
+			 AND s.fuel='electricity' AND f.category=s.category AND f.manufacturer=s.manufacturer
+			 AND f.model=s.model AND f.variant=s.variant AND f.fuel=s.fuel
+			 AND f.match_quality='confirmed_exact' AND f.documented_scope=f.model AND f.matched_model=f.model
+			 AND f.value>=s.alternative_kwh AND f.source_kind IN ('oem_pdf','epa_row')
+			 AND f.included_energy->>'status'='documented'
+			 AND f.included_energy->'components'='["appliance_electricity"]'::jsonb
+			 AND ((s.usage_unit='kWh/use' AND f.measurement_kind='cycle_energy' AND f.unit='kWh/cycle'
+			       AND f.cycle_definition=s.service_definition AND f.operation_mode IS NULL)
+			   OR (s.usage_unit='kWh/hour' AND f.measurement_kind='hourly_energy' AND f.unit='kWh/hour'
+			       AND f.operation_mode=s.service_definition AND f.cycle_definition IS NULL))`,
+				item.Category, item.Details.Brand, item.Details.FullModel, *item.Details.Variant)
+			if scenarioErr != nil {
+				return nil, scenarioErr
+			}
+			type candidate struct {
+				scenario BenefitScenario
+				group    string
+			}
+			candidates := []candidate{}
+			for scenarioRows.Next() {
+				var c candidate
+				var scenarioID, baselineID, unit string
+				var revision int64
+				if scenarioErr = scenarioRows.Scan(&scenarioID, &revision, &c.scenario.RuleID,
+					&baselineID, &c.scenario.BaselineEnergy, &c.scenario.AlternativeEnergy, &unit, &c.group, &c.scenario.SourceURL); scenarioErr != nil {
+					break
+				}
+				c.scenario.ApplianceID = item.ID
+				c.scenario.EnergyUnit = unit
+				c.scenario.RateUSDPerKWh = tariffRate
+				c.scenario.BaselineRef = Evidence{ID: baselineID, Kind: "reviewed_usage_fact", Revision: 1}
+				c.scenario.AlternativeRef = Evidence{ID: scenarioID, Kind: "reviewed_action_scenario", Revision: revision}
+				c.scenario.TariffRef = *item.Tariff
+				usageKind := "cycles_per_week"
+				if unit == "kWh/hour" {
+					usageKind = "hours_per_week"
+				}
+				if ref, ok := item.Answers[usageKind]; ok {
+					c.scenario.UsageRef = ref
+					c.scenario.UsagePerWeek = item.frequencyFor(usageKind)
+					candidates = append(candidates, c)
+				}
+			}
+			if scenarioErr == nil {
+				scenarioErr = scenarioRows.Err()
+			}
+			scenarioRows.Close()
+			if scenarioErr != nil {
+				return nil, scenarioErr
+			}
+			ruleCount, groupCount := map[string]int{}, map[string]int{}
+			for _, c := range candidates {
+				ruleCount[c.scenario.RuleID]++
+				groupCount[c.group]++
+			}
+			for _, c := range candidates {
+				if ruleCount[c.scenario.RuleID] == 1 && groupCount[c.group] == 1 {
+					item.Scenarios = append(item.Scenarios, c.scenario)
+				}
+			}
 		}
 	}
 	if err = tx.Commit(ctx); err != nil {

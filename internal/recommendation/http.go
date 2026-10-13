@@ -1,7 +1,9 @@
 package recommendation
 
 import (
+	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 	"io"
 	"log/slog"
@@ -50,6 +52,17 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	actions = rankActions(actions)
+	var research []datawizfacts.Fact
+	if reader, ok := s.Store.(interface {
+		Research(context.Context) ([]datawizfacts.Fact, error)
+	}); ok {
+		research, err = reader.Research(r.Context())
+		if err != nil {
+			slog.Error("recommendation research read failed", "error", err)
+			fail(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
 	if lifecycle, ok := s.Store.(LifecycleStore); ok {
 		events, err := lifecycle.Latest(r.Context(), s.UserID(r), home)
 		if err != nil {
@@ -62,9 +75,10 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
-		Actions []Action `json:"actions"`
-		AsOf    string   `json:"as_of"`
-	}{actions, now.Format(time.RFC3339)})
+		Actions       []Action            `json:"actions"`
+		AsOf          string              `json:"as_of"`
+		ResearchFacts []datawizfacts.Fact `json:"research_facts,omitempty"`
+	}{actions, now.Format(time.RFC3339), research})
 }
 
 func (s Service) record(w http.ResponseWriter, r *http.Request) {

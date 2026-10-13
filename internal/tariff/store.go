@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
 	"errors"
 
 	"github.com/jackc/pgx/v5"
@@ -16,6 +17,33 @@ type Store interface {
 }
 
 type PGStore struct{ Pool *pgxpool.Pool }
+
+func (s PGStore) Research(ctx context.Context, owner, home string) ([]datawizfacts.Fact, error) {
+	var country, zip string
+	err := s.Pool.QueryRow(ctx, `SELECT l.country_code,l.postal_code FROM homes h JOIN LATERAL
+ (SELECT country_code,postal_code FROM home_location_revisions WHERE home_id=h.id ORDER BY revision DESC LIMIT 1) l ON true
+ WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL`, home, owner).Scan(&country, &zip)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []datawizfacts.Fact{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if country != "US" {
+		return []datawizfacts.Fact{}, nil
+	}
+	facts, err := (datawizfacts.Store{DB: s.Pool}).Current(ctx, "zip", "zip:"+zip)
+	if err != nil {
+		return nil, err
+	}
+	out := []datawizfacts.Fact{}
+	for _, f := range facts {
+		if f.Field == "provider_candidate" || f.Field == "rate" {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
 
 const selectTariff = `SELECT id,home_id,revision,fuel,rate::text,rate_unit,currency,rate_kind,source_ref,
   to_char(source_as_of AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),is_fallback,fixed_charge::text,

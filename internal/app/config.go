@@ -84,6 +84,7 @@ type Config struct {
 	KBScanGoogleCSEAPIKey        string
 	KBScanGoogleCSEID            string
 	KBHelpOutputPath             string
+	DatawizRequestsDir           string
 	ProgramRefreshEnabled        bool
 	ProgramSourceProbeEnabled    bool
 	OEDIIOUPath                  string
@@ -111,7 +112,8 @@ func LoadConfig(role string) (Config, error) {
 		SampleFixtureHomeIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_HOME_IDS"),
 		OEDIIOUPath:          os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"), KBHelpOutputPath: os.Getenv("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH"),
-		KBScanGoogleSite: os.Getenv("ENERGYLENS_CLOUD_KB_GOOGLE_SITE"), KBScanGoogleCSEAPIKey: os.Getenv("ENERGYLENS_GOOGLE_CSE_API_KEY"), KBScanGoogleCSEID: os.Getenv("ENERGYLENS_GOOGLE_CSE_ID"),
+		DatawizRequestsDir: os.Getenv("ENERGYLENS_CLOUD_DATAWIZ_REQUESTS_DIR"),
+		KBScanGoogleSite:   os.Getenv("ENERGYLENS_CLOUD_KB_GOOGLE_SITE"), KBScanGoogleCSEAPIKey: os.Getenv("ENERGYLENS_GOOGLE_CSE_API_KEY"), KBScanGoogleCSEID: os.Getenv("ENERGYLENS_GOOGLE_CSE_ID"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -246,6 +248,11 @@ func LoadConfig(role string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.DatawizRequestsDir != "" {
+		if c.DatabaseURL == "" || c.Role == RoleAPI || !filepath.IsAbs(c.DatawizRequestsDir) {
+			return errors.New("Datawiz requests require worker/all role, database, and absolute requests directory")
+		}
+	}
 	if c.SampleFixturesEnabled {
 		if c.Environment != "dev" && c.Environment != "test" {
 			return errors.New("sample fixtures require dev or test environment")

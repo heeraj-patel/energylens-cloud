@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/catalogimport"
+	"energylens.local/cloud/internal/datawizfacts"
+	"energylens.local/cloud/internal/datawizrequests"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
+	"energylens.local/cloud/internal/ratedinputimport"
+	"energylens.local/cloud/internal/scenarioimport"
 	"energylens.local/cloud/internal/usagefactimport"
 	"errors"
 	"flag"
@@ -15,6 +19,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -60,6 +65,34 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "export-unresolved-device-help" {
 		return identityHelpExport(ctx, args[1:])
 	}
+	if len(args) > 0 && args[0] == "export-datawiz-requests" {
+		return exportDatawizRequests(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "read-datawiz-current" {
+		fs := flag.NewFlagSet("read-datawiz-current", flag.ContinueOnError)
+		route := fs.String("route", "", "device, zip, savings, or efficiency")
+		subject := fs.String("subject", "", "normalized Datawiz subject key")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 || *subject == "" || (*route != "device" && *route != "zip" && *route != "savings" && *route != "efficiency") {
+			return errors.New("usage: energylens-cloud read-datawiz-current -route device|zip|savings|efficiency -subject <key>")
+		}
+		dsn := os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL")
+		if dsn == "" {
+			return errors.New("ENERGYLENS_CLOUD_DATABASE_URL required")
+		}
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		facts, err := (datawizfacts.Store{DB: pool}).Current(ctx, *route, *subject)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(facts)
+	}
 	if len(args) > 0 && args[0] == "check-local-auth-keys" {
 		fs := flag.NewFlagSet("check-local-auth-keys", flag.ContinueOnError)
 		previousID := fs.String("retain-key-id", "", "previous key ID that must remain trusted")
@@ -79,7 +112,7 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "deletion-journal" {
 		return deletionJournalOperator(ctx, args[1:])
 	}
-	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
+	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-reviewed-rated-input" || args[0] == "import-reviewed-action-scenarios" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
 		return operator(ctx, args)
 	}
 	if len(args) > 0 && args[0] == "migrate" {
@@ -111,6 +144,31 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("deletion journal pre-serve replay: %w", err)
 	}
 	return app.Serve(ctx, cfg)
+}
+
+func exportDatawizRequests(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("export-datawiz-requests", flag.ContinueOnError)
+	output := fs.String("output", "", "absolute private requests directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || *output == "" || !filepath.IsAbs(*output) {
+		return errors.New("usage: energylens-cloud export-datawiz-requests -output <absolute-directory>")
+	}
+	dsn := os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL")
+	if dsn == "" {
+		return errors.New("ENERGYLENS_CLOUD_DATABASE_URL required")
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	count, err := (datawizrequests.Producer{DB: pool, Dir: *output}).RunOnce(ctx)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]int{"requests_written": count})
 }
 
 // Operational provisioning is intentionally outside the public HTTP surface.
@@ -189,6 +247,50 @@ func operator(ctx context.Context, args []string) error {
 			return err
 		}
 		result, err = usagefactimport.Import(ctx, pool, verified, *actor)
+		if err != nil {
+			return err
+		}
+	}
+	if args[0] == "import-reviewed-rated-input" {
+		artifact := fs.String("artifact", "", "signed reviewed rated-input publication JSON")
+		actor := fs.String("imported-by", "", "administrator identifier")
+		if e = fs.Parse(args[1:]); e != nil {
+			return e
+		}
+		if fs.NArg() != 0 || *artifact == "" || strings.TrimSpace(*actor) == "" {
+			return errors.New("artifact and imported-by required")
+		}
+		keyPath := os.Getenv("ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE")
+		if keyPath == "" {
+			return errors.New("pinned ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE required")
+		}
+		verified, err := ratedinputimport.ReadAndVerify(*artifact, keyPath)
+		if err != nil {
+			return err
+		}
+		result, err = ratedinputimport.Import(ctx, pool, verified, *actor)
+		if err != nil {
+			return err
+		}
+	}
+	if args[0] == "import-reviewed-action-scenarios" {
+		artifact := fs.String("artifact", "", "signed reviewed action-scenario publication JSON")
+		actor := fs.String("imported-by", "", "administrator identifier")
+		if e = fs.Parse(args[1:]); e != nil {
+			return e
+		}
+		if fs.NArg() != 0 || *artifact == "" || strings.TrimSpace(*actor) == "" {
+			return errors.New("artifact and imported-by required")
+		}
+		keyPath := os.Getenv("ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE")
+		if keyPath == "" {
+			return errors.New("pinned ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE required")
+		}
+		verified, err := scenarioimport.ReadAndVerify(*artifact, keyPath)
+		if err != nil {
+			return err
+		}
+		result, err = scenarioimport.Import(ctx, pool, verified, *actor)
 		if err != nil {
 			return err
 		}

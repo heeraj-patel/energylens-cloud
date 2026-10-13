@@ -164,7 +164,7 @@ func TestRankActionsEvidenceReadinessAndApplianceScopedExclusivity(t *testing.T)
 		{ApplianceID: "a", RuleID: "a.ready", State: "active", BenefitGroup: "annual_energy"},
 		{ApplianceID: "a", RuleID: "a.source", State: "candidate", NextQuestion: "find_reviewed_energy_source", BenefitGroup: "other"},
 	}
-	want := []string{"a.ready", "b.ready", "a.rate", "a.source"}
+	want := []string{"a.ready", "b.ready", "a.rate", "a.usage", "a.source", "b.review"}
 	assert := func(actions []Action) {
 		t.Helper()
 		got := rankActions(actions)
@@ -186,7 +186,7 @@ func TestRankActionsEvidenceReadinessAndApplianceScopedExclusivity(t *testing.T)
 	assert(input)
 }
 
-func TestRankActionsBoundsOneApplianceWithoutDroppingAnother(t *testing.T) {
+func TestRankActionsKeepsEveryActionVisible(t *testing.T) {
 	input := []Action{
 		{ApplianceID: "a", RuleID: "a.first", State: "active", BenefitGroup: "first"},
 		{ApplianceID: "a", RuleID: "a.second", State: "active", BenefitGroup: "second"},
@@ -195,12 +195,41 @@ func TestRankActionsBoundsOneApplianceWithoutDroppingAnother(t *testing.T) {
 		{ApplianceID: "b", RuleID: "b.first", State: "active", BenefitGroup: "first"},
 	}
 	got := rankActions(input)
-	want := []string{"a.first", "a.fourth", "a.second", "b.first"}
+	want := []string{"a.first", "a.fourth", "a.second", "a.third", "b.first"}
 	ids := make([]string, 0, len(got))
 	for _, action := range got {
 		ids = append(ids, action.RuleID)
 	}
 	if !reflect.DeepEqual(ids, want) {
 		t.Fatalf("ranked IDs %v; want %v", ids, want)
+	}
+}
+
+func TestRankActionsOnlyComparesMatchingSuppliedBenefits(t *testing.T) {
+	amount := func(value string) *string { return &value }
+	ref := []Evidence{{ID: "scenario", Kind: "baseline_alternative", Revision: 2}}
+	input := []Action{
+		{RuleID: "unknown-first", ApplianceID: "a", State: "active"},
+		{RuleID: "low", ApplianceID: "a", State: "active", SavingsAmount: amount("4.00"), SavingsPeriod: "month", SavingsCurrency: "USD", SavingsBasis: "bill_cost", ScenarioRefs: ref},
+		{RuleID: "other-period", ApplianceID: "a", State: "active", SavingsAmount: amount("90"), SavingsPeriod: "year", SavingsCurrency: "USD", SavingsBasis: "bill_cost", ScenarioRefs: ref},
+		{RuleID: "high", ApplianceID: "b", State: "active", SavingsAmount: amount("12.50"), SavingsPeriod: "month", SavingsCurrency: "USD", SavingsBasis: "bill_cost", ScenarioRefs: ref},
+		{RuleID: "unknown-last", ApplianceID: "b", State: "active"},
+	}
+	got := rankActions(input)
+	ids := make([]string, len(got))
+	for i, action := range got {
+		ids[i] = action.RuleID
+	}
+	want := []string{"high", "other-period", "unknown-first", "low", "unknown-last"}
+	if !reflect.DeepEqual(ids, want) {
+		t.Fatalf("ranked IDs %v; want %v", ids, want)
+	}
+	if got[1].ScenarioRefs[0].ID != "scenario" || got[1].SavingsAmount == nil {
+		t.Fatalf("scenario provenance lost: %+v", got[1])
+	}
+	input[3].ScenarioRefs = nil
+	got = rankActions(input)
+	if got[0].RuleID != "low" || got[3].RuleID != "high" {
+		t.Fatalf("benefit without provenance was compared: %+v", got)
 	}
 }
