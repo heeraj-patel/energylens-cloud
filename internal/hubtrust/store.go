@@ -93,6 +93,29 @@ type Ownership struct {
 	Version    int64  `json:"version"`
 }
 
+// AuthorizeOwner derives the complete Hub/home tuple from current database
+// rows. A prior-epoch certificate is valid for renewal only, never for owner
+// authorization. Foreign and missing homes deliberately share one result.
+func (s Store) AuthorizeOwner(ctx context.Context, hubID, serial string, peerEpoch int64, ownerID, homeID string) (Ownership, error) {
+	var result Ownership
+	err := s.Pool.QueryRow(ctx, `SELECT b.id,b.local_hub_id,b.home_id,b.ownership_epoch,b.version
+		FROM hubs b
+		JOIN homes h ON h.id=b.home_id AND h.owner_user_id=$5 AND h.deleted_at IS NULL
+		JOIN users u ON u.id=h.owner_user_id AND u.deleted_at IS NULL
+		JOIN hub_certificates c ON c.hub_id=b.id AND c.serial=$2 AND c.ownership_epoch=b.ownership_epoch
+			AND c.revoked_at IS NULL AND c.expires_at>now()
+		WHERE b.id=$1 AND b.home_id=$4 AND b.ownership_epoch=$3 AND b.revoked_at IS NULL`,
+		hubID, serial, peerEpoch, homeID, ownerID,
+	).Scan(&result.HubID, &result.LocalHubID, &result.HomeID, &result.Epoch, &result.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Ownership{}, ErrNotFound
+	}
+	if err != nil {
+		return Ownership{}, err
+	}
+	return result, nil
+}
+
 // ListOwner returns only the current bindings for an owned, active home.
 // A missing or foreign home has the same result to avoid exposing hub IDs.
 func (s Store) ListOwner(ctx context.Context, owner, home string) ([]Ownership, error) {

@@ -22,10 +22,11 @@ import (
 )
 
 type Service struct {
-	Store  Store
-	Signer tls.Certificate
-	Auth   func(http.Handler) http.Handler
-	UserID func(*http.Request) string
+	Store     Store
+	Signer    tls.Certificate
+	Auth      func(http.Handler) http.Handler
+	UserID    func(*http.Request) string
+	SessionID func(*http.Request) string
 }
 type apiError struct {
 	Code      string         `json:"code"`
@@ -96,6 +97,64 @@ func (s Service) EnrollmentRoutes(r chi.Router) { r.Post("/hubs/{hub}/enroll", s
 func (s Service) HubRoutes(r chi.Router) {
 	r.Post("/hubs/{hub}/certificate", s.renew)
 	r.Get("/hubs/{hub}/ownership", s.ownership)
+	if s.Auth != nil {
+		r.With(s.Auth).Post("/hubs/{hub}/owner-authorizations", s.ownerAuthorization)
+	}
+}
+
+// ownerAuthorization intersects the current, revocable account session with
+// the Hub certificate and active home ownership. Every response is no-store;
+// the Hub must call again for each claimed customer request.
+func (s Service) ownerAuthorization(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	hubID := chi.URLParam(r, "hub")
+	if !uuidOK(hubID) {
+		fail(w, 404, "not_found")
+		return
+	}
+	var in struct {
+		HomeID string `json:"home_id"`
+	}
+	if !read(w, r, &in) {
+		return
+	}
+	if !uuidOK(in.HomeID) {
+		fail(w, 400, "invalid_request")
+		return
+	}
+	if s.UserID == nil || s.SessionID == nil {
+		fail(w, 503, "authorization_unavailable")
+		return
+	}
+	sessionID := s.SessionID(r)
+	// Unsupported email/OIDC profiles have no family-bound sid. They cannot
+	// truthfully promise immediate revocation and therefore fail closed here.
+	if !uuidOK(sessionID) {
+		fail(w, 401, "unauthorized")
+		return
+	}
+	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
+		fail(w, 403, "forbidden")
+		return
+	}
+	peer := r.TLS.PeerCertificates[0]
+	peerHub, peerEpoch, ok := peerIdentity(peer)
+	if !ok || peerHub != hubID {
+		fail(w, 403, "forbidden")
+		return
+	}
+	auth, err := s.Store.AuthorizeOwner(r.Context(), hubID, peer.SerialNumber.Text(16), peerEpoch, s.UserID(r), in.HomeID)
+	switch {
+	case errors.Is(err, ErrDenied):
+		fail(w, 403, "forbidden")
+	case errors.Is(err, ErrNotFound):
+		fail(w, 404, "not_found")
+	case err != nil:
+		slog.Error("hub owner authorization failed", "error", err)
+		fail(w, 503, "authorization_unavailable")
+	default:
+		out(w, 200, map[string]any{"user_id": s.UserID(r), "home_id": auth.HomeID, "hub_id": auth.HubID, "local_hub_id": auth.LocalHubID, "ownership_epoch": auth.Epoch, "session_id": sessionID})
+	}
 }
 
 // ownership provides a fresh, cloud-authenticated home binding to the hub.

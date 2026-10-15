@@ -199,6 +199,35 @@ func TestLocalAuthRuntimeGate(t *testing.T) {
 	if rec.Code != http.StatusUnsupportedMediaType || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("enabled route missing or cacheable: %d %q", rec.Code, rec.Header().Get("Cache-Control"))
 	}
+	usernameRuntime := localOnly
+	usernameRuntime.RuntimeEnvironment = "local"
+	usernameRuntime.Environment = "dev"
+	usernameRuntime.LocalAuthMailEnabled = false
+	usernameRuntime.LocalAuthResendAPIKey, usernameRuntime.LocalAuthResendFrom, usernameRuntime.LocalAuthLinkOrigin = "", "", ""
+	usernameRuntime.LocalAuthRecoveryKey = ""
+	usernameRuntime.LocalAuthAudience = "energylens-runtime-local-integration"
+	usernameRuntime.HubCertFile, usernameRuntime.HubKeyFile, usernameRuntime.HubCAFile = "/private/server.crt", "/private/server.key", "/private/hub-ca.crt"
+	if err := CheckLocalAuthKeys(usernameRuntime, "", ""); err != nil {
+		t.Fatalf("mail-free local key preflight rejected: %v", err)
+	}
+	usernameRT, err := Build(ctx, usernameRuntime)
+	if err != nil {
+		t.Fatalf("mail-free local API startup: %v", err)
+	}
+	defer usernameRT.Close()
+	checkMe(usernameRT, localToken, http.StatusUnauthorized)
+	for _, route := range []string{"/v1/auth/local/recovery", "/v1/auth/local/verify-email", "/v1/auth/local/change-email"} {
+		rec := httptest.NewRecorder()
+		usernameRT.API.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, route, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("email route %s mounted in username profile: %d", route, rec.Code)
+		}
+	}
+	config := httptest.NewRecorder()
+	usernameRT.API.ServeHTTP(config, httptest.NewRequest(http.MethodGet, "/v1/auth/config", nil))
+	if config.Code != http.StatusOK || config.Header().Get("Cache-Control") != "no-store" || !strings.Contains(config.Body.String(), `"username_password"`) {
+		t.Fatalf("local capability response: %d %s", config.Code, config.Body.String())
+	}
 	if err := os.WriteFile(keys[2], mustRead(t, keys[1]), 0600); err != nil {
 		t.Fatal(err)
 	}

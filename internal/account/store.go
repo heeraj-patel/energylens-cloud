@@ -23,6 +23,8 @@ type User struct {
 	ID             string    `json:"id"`
 	Email          *string   `json:"email"`
 	EmailVerified  bool      `json:"email_verified"`
+	Username       *string   `json:"username"`
+	AuthMethod     string    `json:"auth_method"`
 	DisplayName    *string   `json:"display_name"`
 	ProfileVersion int64     `json:"profile_version"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -75,6 +77,10 @@ func (s PGStore) Resolve(ctx context.Context, id Identity) (User, error) {
 	q := `SELECT u.id,u.email,u.email_verified,u.display_name,u.profile_version,u.created_at,u.deleted_at FROM users u JOIN auth_identities i ON i.user_id=u.id WHERE i.issuer=$1 AND i.subject=$2`
 	err := s.Pool.QueryRow(ctx, q, id.Issuer, id.Subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.DisplayName, &u.ProfileVersion, &u.CreatedAt, &deletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
+		// First-party identities are created only by the credential transaction.
+		if id.Issuer == LocalIssuer || id.Issuer == LocalUsernameIssuer {
+			return User{}, ErrNotFound
+		}
 		tx, e := s.Pool.Begin(ctx)
 		if e != nil {
 			return User{}, e
@@ -100,6 +106,18 @@ func (s PGStore) Resolve(ctx context.Context, id Identity) (User, error) {
 	}
 	if deletedAt != nil {
 		return User{}, ErrDeleted
+	}
+	switch id.Issuer {
+	case LocalUsernameIssuer:
+		u.AuthMethod = "username_password"
+		if err = s.Pool.QueryRow(ctx, `SELECT username_normalized FROM auth_password_credentials
+			WHERE user_id=$1 AND credential_kind='username_local' AND activated_at IS NOT NULL`, u.ID).Scan(&u.Username); err != nil {
+			return User{}, fmt.Errorf("resolve username identity: %w", err)
+		}
+	case LocalIssuer:
+		u.AuthMethod = "email_password"
+	default:
+		u.AuthMethod = "oidc"
 	}
 	// A verified email may change without changing the user's primary identity.
 	if id.EmailVerified && id.Email != "" {

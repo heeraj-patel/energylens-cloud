@@ -22,10 +22,17 @@ type LocalAuthHTTP struct {
 }
 
 func (h LocalAuthHTTP) ready() bool {
-	return h.Enabled && h.Registration.configured() && h.Login.configured() && h.Refresh.configured() && h.Recovery.configured() &&
-		h.Registration.DB == h.Login.DB && h.Login.DB == h.Refresh.DB && h.Refresh.DB == h.Recovery.DB &&
-		h.Login.Codec.ActiveKeyID == h.Refresh.Codec.ActiveKeyID && h.Login.Codec.Audience == h.Refresh.Codec.Audience &&
-		bytes.Equal(h.Login.Codec.Private, h.Refresh.Codec.Private)
+	if !h.Enabled || !h.Registration.configured() || !h.Login.configured() || !h.Refresh.configured() ||
+		h.Registration.Profile != h.Login.Codec.Profile || h.Login.Codec.Profile != h.Refresh.Codec.Profile ||
+		h.Registration.DB != h.Login.DB || h.Login.DB != h.Refresh.DB ||
+		h.Login.Codec.ActiveKeyID != h.Refresh.Codec.ActiveKeyID || h.Login.Codec.Audience != h.Refresh.Codec.Audience ||
+		!bytes.Equal(h.Login.Codec.Private, h.Refresh.Codec.Private) {
+		return false
+	}
+	if h.Login.Codec.Profile == LocalUsernameProfile {
+		return true
+	}
+	return h.Recovery.configured() && h.Refresh.DB == h.Recovery.DB
 }
 
 func (h LocalAuthHTTP) Routes(r chi.Router) {
@@ -35,14 +42,18 @@ func (h LocalAuthHTTP) Routes(r chi.Router) {
 	r.Route("/auth/local", func(r chi.Router) {
 		r.Use(localAuthNoStore)
 		r.Post("/registration", h.registration)
-		r.Post("/verify-email", h.verify)
+		if h.Login.Codec.Profile != LocalUsernameProfile {
+			r.Post("/verify-email", h.verify)
+		}
 		r.Post("/login", h.login)
 		r.Post("/refresh", h.refresh)
 		r.Post("/logout", h.logout)
-		r.Post("/recovery", h.recovery)
-		r.Post("/reset-password", h.reset)
+		if h.Login.Codec.Profile != LocalUsernameProfile {
+			r.Post("/recovery", h.recovery)
+			r.Post("/reset-password", h.reset)
+			r.Post("/change-email", h.changeEmail)
+		}
 		r.Post("/change-password", h.changePassword)
-		r.Post("/change-email", h.changeEmail)
 	})
 }
 
@@ -80,6 +91,14 @@ func localAuthDecode(w http.ResponseWriter, r *http.Request, out any) bool {
 }
 
 func localAuthError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrRegistrationRateLimited) {
+		fail(w, http.StatusTooManyRequests, "rate_limited", "too many registration requests")
+		return
+	}
+	if errors.Is(err, ErrUsernameInUse) {
+		fail(w, http.StatusConflict, "username_in_use", "username is already in use")
+		return
+	}
 	if errors.Is(err, ErrEmailInUse) {
 		fail(w, http.StatusConflict, "email_in_use", "email address is already in use")
 		return
@@ -93,6 +112,35 @@ func localAuthError(w http.ResponseWriter, err error) {
 }
 
 func (h LocalAuthHTTP) registration(w http.ResponseWriter, r *http.Request) {
+	if h.Login.Codec.Profile == LocalUsernameProfile {
+		var in struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if !localAuthDecode(w, r, &in) {
+			return
+		}
+		if _, err := NormalizeLocalUsername(in.Username); err != nil || !validPassword(in.Password) {
+			fail(w, 400, "invalid_request", "invalid username or password")
+			return
+		}
+		source, err := h.SourcePolicy.Source(r)
+		if err != nil {
+			localAuthError(w, err)
+			return
+		}
+		out, err := h.Registration.RegisterUsername(r.Context(), in.Username, in.Password, source, time.Now().UTC())
+		if errors.Is(err, ErrInvalidCredential) {
+			fail(w, 400, "invalid_request", "invalid username or password")
+			return
+		}
+		if err != nil {
+			localAuthError(w, err)
+			return
+		}
+		jsonOut(w, 201, out)
+		return
+	}
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -126,6 +174,31 @@ func (h LocalAuthHTTP) verify(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (h LocalAuthHTTP) login(w http.ResponseWriter, r *http.Request) {
+	if h.Login.Codec.Profile == LocalUsernameProfile {
+		var in struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if !localAuthDecode(w, r, &in) {
+			return
+		}
+		if _, err := NormalizeLocalUsername(in.Username); err != nil || !validPassword(in.Password) {
+			fail(w, 400, "invalid_request", "invalid username or password")
+			return
+		}
+		source, err := h.SourcePolicy.Source(r)
+		if err != nil {
+			localAuthError(w, err)
+			return
+		}
+		tokens, err := h.Login.Login(r.Context(), in.Username, in.Password, source, time.Now().UTC())
+		if err != nil {
+			localAuthError(w, err)
+			return
+		}
+		localAuthTokensOut(w, tokens)
+		return
+	}
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`

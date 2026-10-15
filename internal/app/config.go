@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +32,7 @@ const (
 
 type Config struct {
 	Role                         Role
+	RuntimeEnvironment           string
 	Environment                  string
 	APIListen                    string
 	HubListen                    string
@@ -71,6 +74,7 @@ type Config struct {
 	LocalAuthPrivateKey          string
 	LocalAuthPublicKeys          string
 	LocalAuthAudience            string
+	LocalAuthEmailAudience       string
 	LocalAuthRegisterKey         string
 	LocalAuthLoginKey            string
 	LocalAuthRecoveryKey         string
@@ -227,7 +231,32 @@ func LoadConfig(role string) (Config, error) {
 		}
 		c.SampleFixturesEnabled = enabled
 	}
-	if c.DevAuthEnabled && c.Environment == "" {
+	if raw, set := os.LookupEnv("RUNTIME_ENV"); set {
+		if raw == "" || raw != strings.TrimSpace(raw) {
+			return Config{}, errors.New("invalid RUNTIME_ENV")
+		}
+		c.RuntimeEnvironment = raw
+		switch raw {
+		case "local":
+			if c.Environment != "" && c.Environment != "dev" {
+				return Config{}, errors.New("RUNTIME_ENV conflicts with ENERGYLENS_CLOUD_ENV")
+			}
+			if _, set := os.LookupEnv("ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED"); set && !c.LocalAuthEnabled {
+				return Config{}, errors.New("RUNTIME_ENV conflicts with ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED")
+			}
+			c.LocalAuthEnabled = true
+			c.LocalAuthEmailAudience = c.LocalAuthAudience
+			c.LocalAuthAudience = os.Getenv("ENERGYLENS_CLOUD_RUNTIME_LOCAL_AUTH_AUDIENCE")
+		case "dev", "test", "staging", "production":
+			if c.Environment != "" && c.Environment != raw {
+				return Config{}, errors.New("RUNTIME_ENV conflicts with ENERGYLENS_CLOUD_ENV")
+			}
+			c.Environment = raw
+		default:
+			return Config{}, errors.New("invalid RUNTIME_ENV")
+		}
+	}
+	if c.DevAuthEnabled && c.Environment == "" && c.RuntimeEnvironment != "local" {
 		return Config{}, errors.New("development auth requires explicit ENERGYLENS_CLOUD_ENV=dev")
 	}
 	if c.Environment == "" {
@@ -248,6 +277,27 @@ func LoadConfig(role string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	switch c.RuntimeEnvironment {
+	case "", "local", "dev", "test", "staging", "production":
+	default:
+		return errors.New("invalid RUNTIME_ENV")
+	}
+	if c.RuntimeEnvironment == "local" {
+		if c.Role != RoleWorker && (c.LocalAuthAudience == "" || c.LocalAuthAudience == c.LocalAuthEmailAudience) {
+			return errors.New("RUNTIME_ENV=local requires distinct ENERGYLENS_CLOUD_RUNTIME_LOCAL_AUTH_AUDIENCE")
+		}
+		if c.Environment != "dev" || !c.LocalAuthEnabled || c.DevAuthEnabled || c.DevAuthEmail != "" || c.DevAuthPassword != "" || c.OIDCIssuer != "" || c.OIDCAudience != "" || c.OIDCJWKSURL != "" || c.LocalAuthMailEnabled || c.LocalAuthResendAPIKey != "" || c.LocalAuthResendFrom != "" || c.LocalAuthLinkOrigin != "" {
+			return errors.New("RUNTIME_ENV=local conflicts with Cloud environment or auth provider settings")
+		}
+		if c.DatabaseURL == "" {
+			return errors.New("RUNTIME_ENV=local requires ENERGYLENS_CLOUD_DATABASE_URL")
+		}
+		if c.Role != RoleWorker && (c.HubCertFile == "" || c.HubKeyFile == "" || c.HubCAFile == "") {
+			return errors.New("RUNTIME_ENV=local requires ENERGYLENS_CLOUD_TLS_CERT, ENERGYLENS_CLOUD_TLS_KEY and ENERGYLENS_CLOUD_HUB_CLIENT_CA")
+		}
+	} else if c.RuntimeEnvironment != "" && c.Environment != c.RuntimeEnvironment {
+		return errors.New("RUNTIME_ENV conflicts with ENERGYLENS_CLOUD_ENV")
+	}
 	if c.DatawizRequestsDir != "" {
 		if c.DatabaseURL == "" || c.Role == RoleAPI || !filepath.IsAbs(c.DatawizRequestsDir) {
 			return errors.New("Datawiz requests require worker/all role, database, and absolute requests directory")
@@ -328,11 +378,11 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
-	if c.LocalAuthEnabled {
-		if c.Role != RoleAPI && c.Role != RoleAll || c.DatabaseURL == "" || !c.LocalAuthMailEnabled {
-			return errors.New("local auth requires API role, database and enabled local mail")
+	if c.LocalAuthEnabled && (c.Role == RoleAPI || c.Role == RoleAll) {
+		if c.DatabaseURL == "" || c.RuntimeEnvironment != "local" && !c.LocalAuthMailEnabled {
+			return errors.New("local auth requires database and enabled local mail outside RUNTIME_ENV=local")
 		}
-		if c.LocalAuthAudience == "" || c.LocalAuthAudience != strings.TrimSpace(c.LocalAuthAudience) || len(c.LocalAuthAudience) > 256 || c.LocalAuthActiveKeyID == "" || c.LocalAuthPrivateKey == "" || c.LocalAuthRegisterKey == "" || c.LocalAuthLoginKey == "" || c.LocalAuthRecoveryKey == "" {
+		if c.LocalAuthAudience == "" || c.LocalAuthAudience != strings.TrimSpace(c.LocalAuthAudience) || len(c.LocalAuthAudience) > 256 || c.LocalAuthActiveKeyID == "" || c.LocalAuthPrivateKey == "" || c.LocalAuthRegisterKey == "" || c.LocalAuthLoginKey == "" || c.RuntimeEnvironment != "local" && c.LocalAuthRecoveryKey == "" {
 			return errors.New("local auth signing and rate key configuration incomplete")
 		}
 		paths, err := c.localAuthKeyFiles()
@@ -340,13 +390,18 @@ func (c Config) Validate() error {
 			return errors.New("invalid local auth public key configuration")
 		}
 		for _, path := range []string{c.LocalAuthPrivateKey, c.LocalAuthRegisterKey, c.LocalAuthLoginKey, c.LocalAuthRecoveryKey} {
+			if path == "" {
+				continue
+			}
 			if !filepath.IsAbs(path) {
 				return errors.New("local auth key paths must be absolute")
 			}
 		}
-		if c.LocalAuthRegisterKey == c.LocalAuthLoginKey || c.LocalAuthRegisterKey == c.LocalAuthRecoveryKey || c.LocalAuthLoginKey == c.LocalAuthRecoveryKey {
+		if c.LocalAuthRegisterKey == c.LocalAuthLoginKey || c.LocalAuthRecoveryKey != "" && (c.LocalAuthRegisterKey == c.LocalAuthRecoveryKey || c.LocalAuthLoginKey == c.LocalAuthRecoveryKey) {
 			return errors.New("local auth rate keys must use separate files")
 		}
+	} else if c.LocalAuthEnabled && c.RuntimeEnvironment != "local" {
+		return errors.New("local auth requires API role")
 	}
 	if c.ProgramSourceProbeEnabled && !c.ProgramRefreshEnabled {
 		return errors.New("program source probe requires program refresh")
@@ -453,7 +508,7 @@ func (c Config) Validate() error {
 	if configured && (c.OIDCIssuer == "" || c.OIDCAudience == "" || c.OIDCJWKSURL == "") {
 		return errors.New("OIDC issuer, audience, and JWKS URL must be configured together")
 	}
-	if configured && (c.OIDCIssuer == account.LocalIssuer || c.OIDCIssuer != strings.TrimSpace(c.OIDCIssuer) || c.OIDCAudience != strings.TrimSpace(c.OIDCAudience) || c.OIDCAudience == "") {
+	if configured && (c.OIDCIssuer == account.LocalIssuer || c.OIDCIssuer == account.LocalUsernameIssuer || c.OIDCIssuer != strings.TrimSpace(c.OIDCIssuer) || c.OIDCAudience != strings.TrimSpace(c.OIDCAudience) || c.OIDCAudience == "") {
 		return errors.New("OIDC issuer and audience must be distinct and canonical")
 	}
 	if configured && c.LocalAuthEnabled && c.OIDCAudience == c.LocalAuthAudience {
@@ -470,7 +525,15 @@ func (c Config) Validate() error {
 	if c.DatabaseURL != "" {
 		cfg, err := pgxpool.ParseConfig(c.DatabaseURL)
 		if err != nil {
+			if c.RuntimeEnvironment == "local" {
+				return errors.New("invalid ENERGYLENS_CLOUD_DATABASE_URL")
+			}
 			return fmt.Errorf("invalid database configuration: %w", err)
+		}
+		if c.RuntimeEnvironment == "local" {
+			if err := validateLocalDatabaseEndpoint(c.DatabaseURL, cfg); err != nil {
+				return err
+			}
 		}
 		if c.Environment != "dev" && c.Environment != "test" {
 			if cfg.ConnConfig.TLSConfig == nil || cfg.ConnConfig.TLSConfig.ServerName == "" || cfg.ConnConfig.TLSConfig.InsecureSkipVerify {
@@ -535,7 +598,82 @@ func (c Config) localAuthKeyFiles() (account.LocalKeyFiles, error) {
 			return account.LocalKeyFiles{}, errors.New("local auth public key paths must be absolute")
 		}
 	}
-	return account.LocalKeyFiles{ActiveKeyID: c.LocalAuthActiveKeyID, PrivatePath: c.LocalAuthPrivateKey, PublicPaths: paths, Audience: c.LocalAuthAudience}, nil
+	profile := account.LocalEmailProfile
+	if c.RuntimeEnvironment == "local" {
+		profile = account.LocalUsernameProfile
+	}
+	return account.LocalKeyFiles{ActiveKeyID: c.LocalAuthActiveKeyID, PrivatePath: c.LocalAuthPrivateKey, PublicPaths: paths, Audience: c.LocalAuthAudience, Profile: profile}, nil
+}
+
+// ValidateLocalDatabaseURL applies the same endpoint boundary to a separately
+// configured migration credential without loading API keys or connecting.
+func ValidateLocalDatabaseURL(raw string) error {
+	cfg, err := pgxpool.ParseConfig(raw)
+	if err != nil {
+		return errors.New("invalid local PostgreSQL configuration")
+	}
+	return validateLocalDatabaseEndpoint(raw, cfg)
+}
+
+func validateLocalDatabaseEndpoint(raw string, cfg *pgxpool.Config) error {
+	if !explicitLocalDatabaseHost(raw) || !privateLocalDatabaseHost(cfg.ConnConfig.Host) {
+		return errors.New("RUNTIME_ENV=local requires an explicitly configured local/private PostgreSQL host or Unix socket")
+	}
+	for _, fallback := range cfg.ConnConfig.Fallbacks {
+		if !privateLocalDatabaseHost(fallback.Host) {
+			return errors.New("RUNTIME_ENV=local requires all PostgreSQL fallback hosts to be local/private")
+		}
+	}
+	return nil
+}
+
+func privateLocalDatabaseHost(host string) bool {
+	if strings.HasPrefix(host, "/") || host == "localhost" || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
+func explicitLocalDatabaseHost(raw string) bool {
+	if strings.HasPrefix(raw, "postgres://") || strings.HasPrefix(raw, "postgresql://") {
+		parsed, err := url.Parse(raw)
+		return err == nil && (parsed.Hostname() != "" || parsed.Query().Get("host") != "")
+	}
+	for _, field := range strings.Fields(raw) {
+		if strings.HasPrefix(field, "host=") && len(field) > len("host=") {
+			return true
+		}
+	}
+	return false
+}
+
+// MigrationEnvironment maps explicit runtime selection onto the existing
+// migration role policy without requiring API-only settings or keys.
+func MigrationEnvironment() (string, error) {
+	legacy := strings.TrimSpace(os.Getenv("ENERGYLENS_CLOUD_ENV"))
+	runtime, set := os.LookupEnv("RUNTIME_ENV")
+	if !set {
+		return legacy, nil
+	}
+	if runtime == "" || runtime != strings.TrimSpace(runtime) {
+		return "", errors.New("invalid RUNTIME_ENV")
+	}
+	if runtime == "local" {
+		if legacy != "" && legacy != "dev" {
+			return "", errors.New("RUNTIME_ENV conflicts with ENERGYLENS_CLOUD_ENV")
+		}
+		return "dev", nil
+	}
+	switch runtime {
+	case "dev", "test", "staging", "production":
+		if legacy != "" && legacy != runtime {
+			return "", errors.New("RUNTIME_ENV conflicts with ENERGYLENS_CLOUD_ENV")
+		}
+		return runtime, nil
+	default:
+		return "", errors.New("invalid RUNTIME_ENV")
+	}
 }
 
 func (c Config) hubTLSConfig() (*tls.Config, error) {

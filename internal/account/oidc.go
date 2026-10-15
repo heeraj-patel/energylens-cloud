@@ -19,6 +19,7 @@ import (
 
 type Identity struct {
 	Issuer, Subject, Email string
+	SessionID              string
 	EmailVerified          bool
 	AuthTime               time.Time
 }

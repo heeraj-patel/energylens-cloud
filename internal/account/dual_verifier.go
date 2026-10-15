@@ -16,7 +16,7 @@ type DualVerifier struct {
 }
 
 func (v DualVerifier) Verify(ctx context.Context, raw string) (Identity, error) {
-	if v.OIDCIssuer == "" || v.OIDCIssuer == LocalIssuer || v.OIDC == nil || v.Local == nil || len(raw) > 4096 {
+	if v.OIDCIssuer == "" || v.OIDCIssuer == LocalIssuer || v.OIDCIssuer == LocalUsernameIssuer || v.OIDC == nil || v.Local == nil || len(raw) > 4096 {
 		return Identity{}, ErrInvalidCredential
 	}
 	claims := &jwt.RegisteredClaims{}

@@ -50,4 +50,8 @@ func TestDualVerifierSelectsOneIssuerWithoutFallback(t *testing.T) {
 	if _, err := v.Verify(ctx, sign(LocalIssuer)); err == nil {
 		t.Fatal("verifier identity mismatch accepted")
 	}
+	v.OIDCIssuer = LocalUsernameIssuer
+	if _, err := v.Verify(ctx, sign(LocalUsernameIssuer)); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("local username issuer accepted as OIDC issuer: %v", err)
+	}
 }

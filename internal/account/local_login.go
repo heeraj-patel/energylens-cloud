@@ -70,11 +70,17 @@ func loginRate(ctx context.Context, tx pgx.Tx, scope string, key []byte, now tim
 // Login is not mounted on an HTTP route. Every denied attempt yields the same
 // error, including unknown, wrong-password, unverified, deleted and throttled
 // accounts. The future HTTP edge must supply a trusted client source.
-func (s LocalLoginService) Login(ctx context.Context, email, password, source string, now time.Time) (LocalLoginTokens, error) {
+func (s LocalLoginService) Login(ctx context.Context, identifier, password, source string, now time.Time) (LocalLoginTokens, error) {
 	if !s.configured() {
 		return LocalLoginTokens{}, errors.New("local login is not configured")
 	}
-	normalized, err := NormalizeLocalEmail(email)
+	var normalized string
+	var err error
+	if s.Codec.Profile == LocalUsernameProfile {
+		normalized, err = NormalizeLocalUsername(identifier)
+	} else {
+		normalized, err = NormalizeLocalEmail(identifier)
+	}
 	if err != nil || !validLocalAuthSource(source) || now.IsZero() {
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
@@ -93,7 +99,11 @@ func (s LocalLoginService) Login(ctx context.Context, email, password, source st
 		}
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
-	allowed, err = loginRate(ctx, tx, "account_hour", s.rateHash("account", normalized), now, 5)
+	rateIdentity := normalized
+	if s.Codec.Profile == LocalUsernameProfile {
+		rateIdentity = s.Codec.Profile.kind() + ":" + normalized
+	}
+	allowed, err = loginRate(ctx, tx, "account_hour", s.rateHash("account", rateIdentity), now, 5)
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}
@@ -105,13 +115,14 @@ func (s LocalLoginService) Login(ctx context.Context, email, password, source st
 	}
 	var userID, stored string
 	var accessVersion int64
-	var credentialVerified, deleted *time.Time
+	var credentialVerified, activated, deleted *time.Time
 	var profileVerified bool
-	err = tx.QueryRow(ctx, `SELECT c.user_id,c.password_hash,c.verified_at,u.email_verified,u.deleted_at,c.access_version
+	err = tx.QueryRow(ctx, `SELECT c.user_id,c.password_hash,c.verified_at,c.activated_at,u.email_verified,u.deleted_at,c.access_version
 		FROM auth_password_credentials c
 		JOIN users u ON u.id=c.user_id
 		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
-		WHERE c.email_normalized=$1 FOR UPDATE OF c,u`, normalized, LocalIssuer).Scan(&userID, &stored, &credentialVerified, &profileVerified, &deleted, &accessVersion)
+		WHERE (($3='email' AND c.email_normalized=$1) OR ($3='username_local' AND c.username_normalized=$1))
+		AND c.credential_kind=$3 FOR UPDATE OF c,u`, normalized, s.Codec.Profile.issuer(), s.Codec.Profile.kind()).Scan(&userID, &stored, &credentialVerified, &activated, &profileVerified, &deleted, &accessVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		stored = unknownAccountHash()
 	} else if err != nil {
@@ -122,23 +133,29 @@ func (s LocalLoginService) Login(ctx context.Context, email, password, source st
 	if !validPassword(password) {
 		_ = VerifyLocalPassword(unknownAccountHash(), "invalid padded credential")
 	}
-	if !valid || userID == "" || credentialVerified == nil || !profileVerified || deleted != nil {
+	if !valid || userID == "" || !s.Codec.Profile.eligible(credentialVerified, activated, profileVerified) || deleted != nil {
 		if err := tx.Commit(ctx); err != nil {
 			return LocalLoginTokens{}, err
 		}
 		return LocalLoginTokens{}, ErrInvalidCredential
-	}
-	access, err := s.Codec.signVerified(userID, accessVersion, now)
-	if err != nil {
-		return LocalLoginTokens{}, err
 	}
 	refresh, refreshHash, err := NewLocalOpaqueToken("refresh")
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}
 	refreshExpiry := now.UTC().Add(localRefreshLifetime)
+	familyID := uuid.NewString()
+	access, err := s.Codec.signVerifiedSessionAt(userID, accessVersion, func() string {
+		if s.Codec.Profile == LocalUsernameProfile {
+			return familyID
+		}
+		return ""
+	}(), now, now)
+	if err != nil {
+		return LocalLoginTokens{}, err
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO auth_refresh_sessions(user_id,family_id,token_hash,created_at,expires_at)
-		VALUES($1,$2,$3,$4,$5)`, userID, uuid.NewString(), refreshHash[:], now.UTC(), refreshExpiry); err != nil {
+		VALUES($1,$2,$3,$4,$5)`, userID, familyID, refreshHash[:], now.UTC(), refreshExpiry); err != nil {
 		return LocalLoginTokens{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {

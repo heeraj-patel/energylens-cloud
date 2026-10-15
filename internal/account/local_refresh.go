@@ -85,6 +85,10 @@ func (s LocalRefreshService) Rotate(ctx context.Context, raw string, now time.Ti
 	if row.FamilyID != family {
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
+	accessVersion, err := s.activeCredentialVersion(ctx, tx, row.UserID)
+	if err != nil {
+		return LocalLoginTokens{}, err
+	}
 	if row.RotatedTo != nil {
 		if err := revokeRefreshFamily(ctx, tx, family, now); err != nil {
 			return LocalLoginTokens{}, err
@@ -97,22 +101,6 @@ func (s LocalRefreshService) Rotate(ctx context.Context, raw string, now time.Ti
 	if row.Revoked != nil || !now.Before(row.Expires) {
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
-	var deleted, verified *time.Time
-	var profileVerified bool
-	var accessVersion int64
-	err = tx.QueryRow(ctx, `SELECT u.deleted_at,c.verified_at,u.email_verified,c.access_version
-		FROM users u JOIN auth_password_credentials c ON c.user_id=u.id
-		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
-		WHERE u.id=$1 FOR UPDATE OF u,c`, row.UserID, LocalIssuer).Scan(&deleted, &verified, &profileVerified, &accessVersion)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return LocalLoginTokens{}, ErrInvalidCredential
-	}
-	if err != nil {
-		return LocalLoginTokens{}, err
-	}
-	if deleted != nil || verified == nil || !profileVerified {
-		return LocalLoginTokens{}, ErrInvalidCredential
-	}
 	var firstCreated time.Time
 	if err = tx.QueryRow(ctx, `SELECT min(created_at) FROM auth_refresh_sessions WHERE family_id=$1`, family).Scan(&firstCreated); err != nil {
 		return LocalLoginTokens{}, err
@@ -122,7 +110,11 @@ func (s LocalRefreshService) Rotate(ctx context.Context, raw string, now time.Ti
 		return LocalLoginTokens{}, ErrInvalidCredential
 	}
 	// A refresh rotates credentials but does not establish a new sign-in.
-	access, err := s.Codec.signVerifiedAt(row.UserID, accessVersion, now, firstCreated)
+	sessionID := ""
+	if s.Codec.Profile == LocalUsernameProfile {
+		sessionID = family
+	}
+	access, err := s.Codec.signVerifiedSessionAt(row.UserID, accessVersion, sessionID, now, firstCreated)
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}
@@ -165,8 +157,62 @@ func (s LocalRefreshService) Logout(ctx context.Context, raw string, now time.Ti
 	if err != nil {
 		return err
 	}
+	row, err := readRefresh(ctx, tx, hash[:])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if row.FamilyID != family {
+		return ErrInvalidCredential
+	}
+	if err = s.matchCredentialProfile(ctx, tx, row.UserID); err != nil {
+		return err
+	}
 	if err = revokeRefreshFamily(ctx, tx, family, now); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// Logout remains idempotent after password change or soft deletion. It checks
+// immutable profile ownership, but does not require an active credential.
+func (s LocalRefreshService) matchCredentialProfile(ctx context.Context, tx pgx.Tx, userID string) error {
+	var matched bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM auth_password_credentials c
+		JOIN auth_identities i ON i.user_id=c.user_id AND i.issuer=$2 AND i.subject=c.user_id::text
+		WHERE c.user_id=$1 AND c.credential_kind=$3
+	)`, userID, s.Codec.Profile.issuer(), s.Codec.Profile.kind()).Scan(&matched)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return ErrInvalidCredential
+	}
+	return nil
+}
+
+// Every family mutation checks the owning credential after the family lock.
+// This prevents a token issued by another auth profile from logging out or
+// replay-revoking a family when key material and storage are shared.
+func (s LocalRefreshService) activeCredentialVersion(ctx context.Context, tx pgx.Tx, userID string) (int64, error) {
+	var deleted, verified, activated *time.Time
+	var emailVerified bool
+	var version int64
+	err := tx.QueryRow(ctx, `SELECT u.deleted_at,c.verified_at,c.activated_at,u.email_verified,c.access_version
+		FROM users u JOIN auth_password_credentials c ON c.user_id=u.id
+		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
+		WHERE u.id=$1 AND c.credential_kind=$3 FOR UPDATE OF u,c`, userID, s.Codec.Profile.issuer(), s.Codec.Profile.kind()).Scan(&deleted, &verified, &activated, &emailVerified, &version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrInvalidCredential
+	}
+	if err != nil {
+		return 0, err
+	}
+	if deleted != nil || !s.Codec.Profile.eligible(verified, activated, emailVerified) {
+		return 0, ErrInvalidCredential
+	}
+	return version, nil
 }

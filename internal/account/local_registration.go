@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,10 +29,11 @@ type LocalRegistrationService struct {
 	DB      *pgxpool.Pool
 	Sender  VerificationSender
 	RateKey []byte // independently provisioned 32+ byte HMAC key
+	Profile LocalAuthProfile
 }
 
 func (s LocalRegistrationService) configured() bool {
-	return s.DB != nil && s.Sender != nil && len(s.RateKey) >= 32
+	return s.DB != nil && len(s.RateKey) >= 32 && s.Profile.valid() && (s.Profile == LocalUsernameProfile || s.Sender != nil)
 }
 
 func (s LocalRegistrationService) rateHash(scope, value string) []byte {
@@ -57,7 +59,7 @@ func registrationRate(ctx context.Context, tx pgx.Tx, scope string, key []byte, 
 // source must be the trusted client address selected by the future HTTP edge.
 func (s LocalRegistrationService) RequestRegistration(ctx context.Context, email, password, source string, now time.Time) (RegistrationAccepted, error) {
 	accepted := RegistrationAccepted{Status: "accepted"}
-	if !s.configured() {
+	if !s.configured() || s.Profile == LocalUsernameProfile {
 		return RegistrationAccepted{}, errors.New("local registration is not configured")
 	}
 	normalized, err := NormalizeLocalEmail(email)
@@ -135,7 +137,7 @@ func (s LocalRegistrationService) RequestRegistration(ctx context.Context, email
 // VerifyEmail consumes a single challenge and marks the same active user as
 // verified. The user row lock serializes this with account deletion.
 func (s LocalRegistrationService) VerifyEmail(ctx context.Context, raw string, now time.Time) error {
-	if !s.configured() || now.IsZero() {
+	if !s.configured() || s.Profile == LocalUsernameProfile || now.IsZero() {
 		return ErrInvalidCredential
 	}
 	tokenHash, err := HashLocalOpaqueToken("verify_email", raw)
@@ -189,4 +191,75 @@ func (s LocalRegistrationService) VerifyEmail(ctx context.Context, raw string, n
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+var ErrUsernameInUse = errors.New("username in use")
+var ErrRegistrationRateLimited = errors.New("registration rate limited")
+
+// RegisterUsername uses the same account and identity tables as email signup.
+// The unique index makes concurrent registration atomic; a failed insert rolls
+// back the user row and never creates a partial identity or credential.
+func (s LocalRegistrationService) RegisterUsername(ctx context.Context, username, password, source string, now time.Time) (RegistrationAccepted, error) {
+	if !s.configured() || s.Profile != LocalUsernameProfile {
+		return RegistrationAccepted{}, errors.New("local username registration is not configured")
+	}
+	normalized, err := NormalizeLocalUsername(username)
+	if err != nil || !validPassword(password) || !validLocalAuthSource(source) || now.IsZero() {
+		return RegistrationAccepted{}, ErrInvalidCredential
+	}
+	// Commit the rate attempt before password hashing or account insertion. A
+	// collision and an aborted account transaction still consume the budget.
+	rateTx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return RegistrationAccepted{}, err
+	}
+	defer rateTx.Rollback(ctx)
+	allowed, err := registrationRate(ctx, rateTx, "source_hour", s.rateHash("source", source), now, time.Hour, 10)
+	if err != nil {
+		return RegistrationAccepted{}, err
+	}
+	if !allowed {
+		if err := rateTx.Commit(ctx); err != nil {
+			return RegistrationAccepted{}, err
+		}
+		return RegistrationAccepted{}, ErrRegistrationRateLimited
+	}
+	allowed, err = registrationRate(ctx, rateTx, "username_day", s.rateHash("username", normalized), now, 24*time.Hour, 10)
+	if err != nil {
+		return RegistrationAccepted{}, err
+	}
+	if err := rateTx.Commit(ctx); err != nil {
+		return RegistrationAccepted{}, err
+	}
+	if !allowed {
+		return RegistrationAccepted{}, ErrRegistrationRateLimited
+	}
+	hash, err := HashLocalPassword(password)
+	if err != nil {
+		return RegistrationAccepted{}, err
+	}
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return RegistrationAccepted{}, err
+	}
+	defer tx.Rollback(ctx)
+	userID := uuid.NewString()
+	if _, err = tx.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, userID); err != nil {
+		return RegistrationAccepted{}, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO auth_password_credentials(user_id,credential_kind,username_normalized,password_hash,activated_at)
+		VALUES($1,'username_local',$2,$3,$4)`, userID, normalized, hash, now.UTC()); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "auth_password_credentials_username_local_unique" {
+			return RegistrationAccepted{}, ErrUsernameInUse
+		}
+		return RegistrationAccepted{}, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO auth_identities(user_id,issuer,subject) VALUES($1,$2,$3)`, userID, LocalUsernameIssuer, userID); err != nil {
+		return RegistrationAccepted{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return RegistrationAccepted{}, err
+	}
+	return RegistrationAccepted{Status: "account_created"}, nil
 }

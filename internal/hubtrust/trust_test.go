@@ -167,6 +167,31 @@ func TestHubTrustTransaction(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	ownerAuthorization := func(user, sid string, serial int64, certEpoch int64, requestedHome string) *httptest.ResponseRecorder {
+		u, _ := url.Parse("spiffe://energylens.local/hubs/" + id + "/epochs/" + strconv.FormatInt(certEpoch, 10))
+		cert := &x509.Certificate{SerialNumber: big.NewInt(serial), URIs: []*url.URL{u}}
+		req := httptest.NewRequest(http.MethodPost, "/v1/hubs/"+id+"/owner-authorizations", strings.NewReader(`{"home_id":"`+requestedHome+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert}}}
+		rec := httptest.NewRecorder()
+		router := chi.NewRouter()
+		router.Route("/v1", (Service{Store: s, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return user }, SessionID: func(*http.Request) string { return sid }}).HubRoutes)
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+	sid := uuid.NewString()
+	if rec := ownerAuthorization(owner, sid, 0xa11, 2, home); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"session_id":"`+sid+`"`) || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("owner authorization: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ownerAuthorization(other, sid, 0xa11, 2, home); rec.Code != 404 {
+		t.Fatalf("cross-account owner authorization: %d", rec.Code)
+	}
+	if rec := ownerAuthorization(owner, sid, 0xa12, 1, home); rec.Code != 404 {
+		t.Fatalf("stale certificate owner authorization: %d", rec.Code)
+	}
+	if rec := ownerAuthorization(owner, "", 0xa11, 2, home); rec.Code != 401 {
+		t.Fatalf("sessionless profile owner authorization: %d", rec.Code)
+	}
 	ownershipRequest := func(serial int64, certEpoch int64) *httptest.ResponseRecorder {
 		u, _ := url.Parse("spiffe://energylens.local/hubs/" + id + "/epochs/" + strconv.FormatInt(certEpoch, 10))
 		cert := &x509.Certificate{SerialNumber: big.NewInt(serial), URIs: []*url.URL{u}}

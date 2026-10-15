@@ -20,7 +20,7 @@ func TestLocalPasswordHashAndBounds(t *testing.T) {
 	if err != nil || second == stored {
 		t.Fatal("password salt was reused")
 	}
-	for _, value := range []string{"short", strings.Repeat("a", 1025), "contains\x00nul"} {
+	for _, value := range []string{"short", strings.Repeat("a", 1025), "contains\x00nul", "invalid utf8 \xff password"} {
 		if _, err := HashLocalPassword(value); err == nil || VerifyLocalPassword(stored, value) {
 			t.Fatal("invalid password accepted")
 		}
@@ -37,6 +37,17 @@ func TestLocalEmailNormalization(t *testing.T) {
 	for _, raw := range []string{" person@example.com", "person@example.com ", "person@-example.com", "person@example", "person@example.com\nBCC:other@example.com"} {
 		if _, err := NormalizeLocalEmail(raw); err == nil {
 			t.Fatalf("invalid email accepted: %q", raw)
+		}
+	}
+}
+
+func TestLocalUsernameNormalizationTrimsOnlyOuterASCIISpaces(t *testing.T) {
+	if got, err := NormalizeLocalUsername("     Owner.Home     "); err != nil || got != "owner.home" {
+		t.Fatalf("normalized username: %q %v", got, err)
+	}
+	for _, raw := range []string{"  ", "  ab  ", "a b c", "\towner", "owner\n", "ownér", strings.Repeat("a", 65)} {
+		if _, err := NormalizeLocalUsername(raw); err == nil {
+			t.Fatalf("invalid username accepted: %q", raw)
 		}
 	}
 }

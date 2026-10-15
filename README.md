@@ -32,6 +32,10 @@ Run `ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL=... energylens-cloud migrate` with 
 
 First-party auth remains disabled by default. The [local auth foundation](internal/account/LOCAL_AUTH_FOUNDATION.md) documents the file-backed key gate, a database-free `energylens-cloud check-local-auth-keys` operator check, and the signing key rotation sequence. The check validates proposed material; it does not enable routes or change a deployment.
 
+For persistent local username accounts, use the [local Cloud templates and launcher guide](../energylens-dev-bash-scripts/README.md) with `RUNTIME_ENV=local`. Prepare a persistent private PostgreSQL database, a dedicated application role, a separate DDL migration role, and a separate disposable test database. Configure an HTTPS certificate trusted by the intended client, Hub client CA, persistent Ed25519 signing files, distinct local audience, registration/login rate keys, and metered-export cursor key. Keep these files and the PostgreSQL data volume across restarts and back them up together; startup does not generate or replace keys. The local worker requires its database settings without API signing, OIDC, or mail settings.
+
+Run `./run-energylens-cloud.sh migrate --check`, `api --check`, and `worker --check` from the scripts checkout with the corresponding private role env files. The API check validates the key snapshot offline through `check-local-auth-keys`; none of these checks connects to the database or starts a listener. Once the migration check accepts a local/private PostgreSQL endpoint, run the existing `migrate` command with the DDL role, then start API and worker separately. A configuration check failure requires correcting the private env file or persistent key material before retrying. Never use the application credential for migrations or a production database for local tests.
+
 ## Hub device trust and ownership
 
 Hub keys are registered only through an operator action using the dedicated migration/provisioning PostgreSQL role. There is no HTTP key-registration endpoint. After applying migrations, run:
@@ -46,6 +50,15 @@ The command returns the cloud hub UUID and a one-use enrollment nonce. Deliver b
 The Cloud listener accepts signed enrollment requests only for registered keys and issued nonces. It signs a 24-hour client certificate using `ENERGYLENS_CLOUD_HUB_SIGN_CERT` and `ENERGYLENS_CLOUD_HUB_SIGN_KEY`; the signing CA must chain to `ENERGYLENS_CLOUD_HUB_CLIENT_CA`. The same listener accepts certificate renewal and `GET /v1/hubs/{hub}/ownership`, with verified-client-certificate middleware on Hub-only handlers. The renewal route checks the stored serial, revocation, expiry, hub identity SAN and ownership epoch, then revokes the prior certificate when issuing the new one. The ownership route returns the claimed home only to a certificate at the current epoch; an old certificate may renew once but cannot read the new home binding. After a verified hub peer is identified, a revoked or stale certificate yields `403 ownership_revoked`, while an unbound or tombstoned home/account yields `404 ownership_unbound`. The hub uses only these explicit codes to purge old-owner staging. A TLS rejection has no HTTP body, so the hub retains its bounded local lease until expiry.
 
 An authenticated account owner begins a claim for one of their homes. The hub's authenticated local pairing channel issues a random possession proof and signs the challenge with its registered Ed25519 key. Cloud verifies the signature, proof hash, owner and expiry before atomically consuming the challenge and assigning the hub. The first claim advances epoch 1 to 2; unclaim advances the epoch again and revokes certificates. A newly claimed hub can use its still valid preclaim certificate once to renew at the new epoch. Claim, finish and unclaim mutations require UUID `Idempotency-Key` headers, and unclaim requires the current strong version `If-Match` value.
+
+Claimed-Hub customer access also uses `POST /v1/hubs/{hub}/owner-authorizations`:
+the Hub presents its current mTLS certificate and forwards the owner's bearer
+session with `{home_id}`. This exchange currently requires a live local username
+session family; unsupported session profiles are denied. The response is
+`no-store` and validates the account, home, Hub, certificate and ownership epoch
+on each check. If access fails after a claim, verify certificate renewal and
+ownership sync, then explicitly re-pair Mobile at the current epoch. A pairing
+token alone cannot authorize a claimed home's customer routes.
 
 ## Reviewed KB import
 

@@ -84,11 +84,14 @@ func loadLocalAuthMaterial(c Config) (localAuthMaterial, error) {
 	if err != nil {
 		return localAuthMaterial{}, fmt.Errorf("load local auth login rate key: %w", err)
 	}
-	recoveryKey, err := account.LoadLocalRateKey(c.LocalAuthRecoveryKey)
-	if err != nil {
-		return localAuthMaterial{}, fmt.Errorf("load local auth recovery rate key: %w", err)
+	var recoveryKey []byte
+	if c.RuntimeEnvironment != "local" {
+		recoveryKey, err = account.LoadLocalRateKey(c.LocalAuthRecoveryKey)
+		if err != nil {
+			return localAuthMaterial{}, fmt.Errorf("load local auth recovery rate key: %w", err)
+		}
 	}
-	if bytes.Equal(registerKey, loginKey) || bytes.Equal(registerKey, recoveryKey) || bytes.Equal(loginKey, recoveryKey) {
+	if bytes.Equal(registerKey, loginKey) || recoveryKey != nil && (bytes.Equal(registerKey, recoveryKey) || bytes.Equal(loginKey, recoveryKey)) {
 		return localAuthMaterial{}, errors.New("local auth rate keys must be independent")
 	}
 	return localAuthMaterial{codec: codec, registerKey: registerKey, loginKey: loginKey, recoveryKey: recoveryKey}, nil
@@ -107,17 +110,25 @@ func buildLocalAuth(c Config, db *pgxpool.Pool) (account.LocalAuthHTTP, account.
 	if err != nil {
 		return account.LocalAuthHTTP{}, nil, err
 	}
-	sender, err := c.BuildLocalAuthSender()
-	if err != nil || sender == nil {
-		return account.LocalAuthHTTP{}, nil, errors.New("local auth mail unavailable")
+	var sender *account.ResendLocalSender
+	if c.RuntimeEnvironment != "local" {
+		configured, err := c.BuildLocalAuthSender()
+		if err != nil || configured == nil {
+			return account.LocalAuthHTTP{}, nil, errors.New("local auth mail unavailable")
+		}
+		sender = configured
 	}
 	source, err := c.LocalAuthSourcePolicy()
 	if err != nil {
 		return account.LocalAuthHTTP{}, nil, err
 	}
+	profile := account.LocalEmailProfile
+	if c.RuntimeEnvironment == "local" {
+		profile = account.LocalUsernameProfile
+	}
 	http := account.LocalAuthHTTP{
 		Enabled:      true,
-		Registration: account.LocalRegistrationService{DB: db, Sender: sender, RateKey: material.registerKey},
+		Registration: account.LocalRegistrationService{DB: db, Sender: sender, RateKey: material.registerKey, Profile: profile},
 		Login:        account.LocalLoginService{DB: db, Codec: material.codec, RateKey: material.loginKey},
 		Refresh:      account.LocalRefreshService{DB: db, Codec: material.codec},
 		Recovery:     account.LocalRecoveryService{DB: db, Sender: sender, RateKey: material.recoveryKey},

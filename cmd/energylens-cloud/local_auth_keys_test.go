@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +79,65 @@ func TestCheckLocalAuthKeysCommandDoesNotContactDatabase(t *testing.T) {
 	}
 	if err := run(context.Background(), []string{"check-local-auth-keys", "--retain-key-id", "missing", "--retain-public-key-file", pinnedPath}); err == nil {
 		t.Fatal("command accepted missing retained key")
+	}
+	t.Setenv("RUNTIME_ENV", "local")
+	t.Setenv("ENERGYLENS_CLOUD_ENV", "dev")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_ISSUER", "")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE", "")
+	t.Setenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_MAIL_ENABLED", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_API_KEY", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RESEND_FROM", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_RECOVERY_RATE_KEY_FILE", "")
+	t.Setenv("ENERGYLENS_CLOUD_RUNTIME_LOCAL_AUTH_AUDIENCE", "energylens-local-cli-test")
+	t.Setenv("ENERGYLENS_CLOUD_TLS_CERT", "/private/server.crt")
+	t.Setenv("ENERGYLENS_CLOUD_TLS_KEY", "/private/server.key")
+	t.Setenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA", "/private/hub-ca.crt")
+	if err := run(context.Background(), []string{"check-local-auth-keys"}); err != nil {
+		t.Fatalf("username-local preflight required recovery/mail or contacted database: %v", err)
+	}
+	t.Setenv("ENERGYLENS_CLOUD_TLS_CERT", "")
+	t.Setenv("ENERGYLENS_CLOUD_TLS_KEY", "")
+	t.Setenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_ACTIVE_KEY_ID", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PRIVATE_KEY_FILE", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_PUBLIC_KEY_FILES", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_REGISTER_RATE_KEY_FILE", "")
+	t.Setenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LOGIN_RATE_KEY_FILE", "")
+	if err := run(context.Background(), []string{"check-config", "worker"}); err != nil {
+		t.Fatalf("local worker required API signing or TLS material: %v", err)
+	}
+	t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", "postgres://migrator:pass@127.0.0.1:1/unreachable?sslmode=disable")
+	if err := run(context.Background(), []string{"check-config", "migrate"}); err != nil {
+		t.Fatalf("local migration configuration rejected: %v", err)
+	}
+}
+
+func TestLocalMigrationEndpointBoundary(t *testing.T) {
+	t.Setenv("RUNTIME_ENV", "local")
+	t.Setenv("ENERGYLENS_CLOUD_ENV", "")
+	for _, dsn := range []string{
+		"postgres://migrator:never-print-this@db.rds.amazonaws.com/energylens?sslmode=verify-full",
+		"host=127.0.0.1,db.example.com user=migrator password=never-print-this dbname=energylens sslmode=disable",
+		"postgres:///energylens?sslmode=disable",
+		"postgres://never-print-this:%zz@localhost/db",
+	} {
+		t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", dsn)
+		for _, args := range [][]string{{"check-config", "migrate"}, {"migrate"}, {"provision-hub"}, {"import-reviewed-catalog"}} {
+			err := run(context.Background(), args)
+			if err == nil || strings.Contains(err.Error(), "never-print-this") || strings.Contains(err.Error(), "connect migration database") {
+				t.Fatalf("migration boundary did not reject safely before connecting: %v", err)
+			}
+		}
+	}
+	for _, dsn := range []string{
+		"postgres://migrator:pass@127.0.0.1:1/unreachable?sslmode=disable",
+		"postgres:///unreachable?host=/tmp/energylens-unreachable&sslmode=disable",
+	} {
+		t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", dsn)
+		if err := run(context.Background(), []string{"check-config", "migrate"}); err != nil {
+			t.Fatalf("offline local migration preflight rejected explicit local endpoint: %v", err)
+		}
 	}
 }

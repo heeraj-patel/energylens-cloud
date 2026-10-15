@@ -20,6 +20,7 @@ type LocalKeyFiles struct {
 	PrivatePath string
 	PublicPaths map[string]string
 	Audience    string
+	Profile     LocalAuthProfile
 }
 
 // LoadLocalAccessCodec reads only absolute, regular, same-owner files without
@@ -52,7 +53,7 @@ func LoadLocalAccessCodec(files LocalKeyFiles) (LocalAccessCodec, error) {
 		}
 		keys[id] = key
 	}
-	codec := LocalAccessCodec{Private: private, ActiveKeyID: files.ActiveKeyID, Keys: keys, Audience: files.Audience}
+	codec := LocalAccessCodec{Private: private, ActiveKeyID: files.ActiveKeyID, Keys: keys, Audience: files.Audience, Profile: files.Profile}
 	if !codec.valid() {
 		return LocalAccessCodec{}, errors.New("local active signing key does not match trusted public key")
 	}

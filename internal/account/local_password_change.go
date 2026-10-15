@@ -81,13 +81,13 @@ func (s LocalLoginService) changePasswordAttempt(ctx context.Context, userID, cu
 		}
 	}
 	var stored string
-	var verified, deleted *time.Time
+	var verified, activated, deleted *time.Time
 	var profileVerified bool
-	err = tx.QueryRow(ctx, `SELECT c.password_hash,c.verified_at,u.deleted_at,u.email_verified
+	err = tx.QueryRow(ctx, `SELECT c.password_hash,c.verified_at,c.activated_at,u.deleted_at,u.email_verified
 		FROM auth_password_credentials c JOIN users u ON u.id=c.user_id
 		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
-		WHERE c.user_id=$1 FOR UPDATE OF c,u`, userID, LocalIssuer).
-		Scan(&stored, &verified, &deleted, &profileVerified)
+		WHERE c.user_id=$1 AND c.credential_kind=$3 FOR UPDATE OF c,u`, userID, s.Codec.Profile.issuer(), s.Codec.Profile.kind()).
+		Scan(&stored, &verified, &activated, &deleted, &profileVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrInvalidCredential
 	}
@@ -119,7 +119,7 @@ func (s LocalLoginService) changePasswordAttempt(ctx context.Context, userID, cu
 	if newFamily {
 		return errNewRefreshFamily
 	}
-	if verified == nil || deleted != nil || !profileVerified || !VerifyLocalPassword(stored, currentPassword) || !validPassword(newPassword) {
+	if !s.Codec.Profile.eligible(verified, activated, profileVerified) || deleted != nil || !VerifyLocalPassword(stored, currentPassword) || !validPassword(newPassword) {
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}

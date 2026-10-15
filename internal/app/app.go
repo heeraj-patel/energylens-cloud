@@ -108,6 +108,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		modules = append(modules, Module{Name: "hub-enrollment", Mount: hubModule.EnrollmentRoutes})
 	}
 	if c.Role == RoleAPI || c.Role == RoleAll {
+		modules = append(modules, Module{Name: "auth-capabilities", Mount: c.authCapabilitiesRoutes})
 		var cache energyrate.Cache
 		if rt.Pool != nil {
 			var err error
@@ -230,6 +231,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "home-questions", Mount: answers.Routes})
 			hubModule.Auth = accounts.Auth
 			hubModule.UserID = account.UserID
+			hubModule.SessionID = account.SessionID
 			modules = append(modules, Module{Name: "hub-claims", Mount: hubModule.AccountRoutes})
 			sensorModule := sensors.Service{Store: sensors.Store{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "sensors", Mount: sensorModule.AccountRoutes})

@@ -42,7 +42,11 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("usage: energylens-cloud check-config api|worker|migrate")
 		}
 		if args[1] == "migrate" {
-			_, err := migrate.ValidateConfig(os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL"), os.Getenv("ENERGYLENS_CLOUD_ENV"))
+			environment, err := migrationEnvironment()
+			if err != nil {
+				return errors.New("migration configuration rejected")
+			}
+			_, err = migrate.ValidateConfig(os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL"), environment)
 			if err != nil {
 				return errors.New("migration configuration rejected")
 			}
@@ -55,7 +59,7 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return errors.New("Cloud configuration rejected")
 		}
-		if cfg.LocalAuthEnabled {
+		if cfg.LocalAuthEnabled && cfg.Role != app.RoleWorker {
 			if err := app.CheckLocalAuthKeys(cfg, "", ""); err != nil {
 				return errors.New("Cloud local auth key configuration rejected")
 			}
@@ -119,7 +123,11 @@ func run(ctx context.Context, args []string) error {
 		if len(args) != 1 {
 			return errors.New("usage: energylens-cloud migrate")
 		}
-		return migrate.Run(ctx, os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL"), os.Getenv("ENERGYLENS_CLOUD_ENV"))
+		environment, err := migrationEnvironment()
+		if err != nil {
+			return err
+		}
+		return migrate.Run(ctx, os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL"), environment)
 	}
 	fs := flag.NewFlagSet("energylens-cloud", flag.ContinueOnError)
 	roleFlag := fs.String("role", "", "api, worker, or all")
@@ -144,6 +152,19 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("deletion journal pre-serve replay: %w", err)
 	}
 	return app.Serve(ctx, cfg)
+}
+
+func migrationEnvironment() (string, error) {
+	environment, err := app.MigrationEnvironment()
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("RUNTIME_ENV") == "local" {
+		if err := app.ValidateLocalDatabaseURL(os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL")); err != nil {
+			return "", fmt.Errorf("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL: %w", err)
+		}
+	}
+	return environment, nil
 }
 
 func exportDatawizRequests(ctx context.Context, args []string) error {
@@ -178,11 +199,14 @@ func operator(ctx context.Context, args []string) error {
 	if dsn == "" {
 		return errors.New("migration/provisioning database URL required")
 	}
+	env, e := migrationEnvironment()
+	if e != nil {
+		return e
+	}
 	cfg, e := pgxpool.ParseConfig(dsn)
 	if e != nil {
 		return e
 	}
-	env := os.Getenv("ENERGYLENS_CLOUD_ENV")
 	if env != "dev" && env != "test" {
 		if cfg.ConnConfig.TLSConfig == nil || cfg.ConnConfig.TLSConfig.ServerName == "" || cfg.ConnConfig.TLSConfig.InsecureSkipVerify {
 			return errors.New("provisioning database requires sslmode=verify-full")
