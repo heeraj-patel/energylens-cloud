@@ -51,7 +51,10 @@ func (p LocalAuthProfile) kind() string {
 }
 func (p LocalAuthProfile) eligible(verified, activated *time.Time, emailVerified bool) bool {
 	if p == LocalUsernameProfile {
-		return activated != nil && verified == nil && !emailVerified
+		// A runtime-local username may be adopted by an already verified
+		// development account; email verification is separate from this
+		// credential's activation and session-family checks.
+		return activated != nil && verified == nil
 	}
 	return verified != nil && emailVerified && activated == nil
 }

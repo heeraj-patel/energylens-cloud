@@ -22,3 +22,41 @@ func TestLocalOperatorDatabaseBoundary(t *testing.T) {
 		t.Fatalf("public operator database accepted: %v", err)
 	}
 }
+
+func TestDevAccountAdoptionOperatorRequiresLocalRuntimeAndSeparateRole(t *testing.T) {
+	t.Setenv("RUNTIME_ENV", "production")
+	if err := operator(context.Background(), []string{"adopt-dev-account-username"}); err == nil || !strings.Contains(err.Error(), "RUNTIME_ENV=local") {
+		t.Fatalf("nonlocal adoption accepted: %v", err)
+	}
+	t.Setenv("RUNTIME_ENV", "local")
+	t.Setenv("ENERGYLENS_CLOUD_ENV", "")
+	local := "postgres://customer:secret@127.0.0.1:1/energylens?sslmode=disable"
+	t.Setenv("ENERGYLENS_CLOUD_DATABASE_URL", local)
+	t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", local)
+	if err := operator(context.Background(), []string{"adopt-dev-account-username"}); err == nil || !strings.Contains(err.Error(), "distinct database role") {
+		t.Fatalf("customer role adopted account: %v", err)
+	}
+	t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", "postgres://operator:secret@db.example.com/energylens?sslmode=disable")
+	if err := operator(context.Background(), []string{"adopt-dev-account-username"}); err == nil || !strings.Contains(err.Error(), "ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL") {
+		t.Fatalf("public database accepted: %v", err)
+	}
+}
+
+func TestDevLoginUnlockOperatorRequiresLocalRuntimeAndSeparateRole(t *testing.T) {
+	t.Setenv("RUNTIME_ENV", "production")
+	if err := operator(context.Background(), []string{"unlock-dev-username-login"}); err == nil || !strings.Contains(err.Error(), "RUNTIME_ENV=local") {
+		t.Fatalf("nonlocal unlock accepted: %v", err)
+	}
+	t.Setenv("RUNTIME_ENV", "local")
+	t.Setenv("ENERGYLENS_CLOUD_ENV", "")
+	local := "postgres://customer:secret@127.0.0.1:1/energylens?sslmode=disable"
+	t.Setenv("ENERGYLENS_CLOUD_DATABASE_URL", local)
+	t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", local)
+	if err := operator(context.Background(), []string{"unlock-dev-username-login"}); err == nil || !strings.Contains(err.Error(), "distinct database role") {
+		t.Fatalf("customer role unlocked account: %v", err)
+	}
+	t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", "postgres://operator:secret@db.example.com/energylens?sslmode=disable")
+	if err := operator(context.Background(), []string{"unlock-dev-username-login"}); err == nil || !strings.Contains(err.Error(), "ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL") {
+		t.Fatalf("public database unlock accepted: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/account"
 	"energylens.local/cloud/internal/catalogimport"
 	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/datawizrequests"
@@ -22,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"energylens.local/cloud/internal/app"
 	"energylens.local/cloud/internal/migrate"
@@ -116,7 +118,7 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "deletion-journal" {
 		return deletionJournalOperator(ctx, args[1:])
 	}
-	if len(args) > 0 && (args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-reviewed-rated-input" || args[0] == "import-reviewed-action-scenarios" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
+	if len(args) > 0 && (args[0] == "adopt-dev-account-username" || args[0] == "unlock-dev-username-login" || args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-reviewed-rated-input" || args[0] == "import-reviewed-action-scenarios" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
 		return operator(ctx, args)
 	}
 	if len(args) > 0 && args[0] == "migrate" {
@@ -195,6 +197,9 @@ func exportDatawizRequests(ctx context.Context, args []string) error {
 // Operational provisioning is intentionally outside the public HTTP surface.
 // Access requires the dedicated migration/provisioning database credential.
 func operator(ctx context.Context, args []string) error {
+	if (args[0] == "adopt-dev-account-username" || args[0] == "unlock-dev-username-login") && os.Getenv("RUNTIME_ENV") != "local" {
+		return errors.New("development account operator requires RUNTIME_ENV=local")
+	}
 	dsn := os.Getenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL")
 	if dsn == "" {
 		return errors.New("migration/provisioning database URL required")
@@ -231,6 +236,44 @@ func operator(ctx context.Context, args []string) error {
 	s := hubtrust.Store{Pool: pool}
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	var result any
+	if args[0] == "adopt-dev-account-username" {
+		userID := fs.String("user-id", "", "existing verified development user UUID")
+		username := fs.String("username", "", "new runtime-local username")
+		passwordStdin := fs.Bool("password-stdin", false, "read the private password from standard input")
+		if e = fs.Parse(args[1:]); e != nil {
+			return e
+		}
+		if fs.NArg() != 0 || *userID == "" || *username == "" || !*passwordStdin {
+			return errors.New("usage: adopt-dev-account-username --user-id UUID --username NAME --password-stdin")
+		}
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 1026))
+		if err != nil || len(raw) > 1025 {
+			return errors.New("invalid private password input")
+		}
+		password := strings.TrimSuffix(string(raw), "\n")
+		if err := account.AdoptDevAccountUsername(ctx, pool, *userID, *username, password, time.Now().UTC()); err != nil {
+			return err
+		}
+		result = map[string]string{"user_id": *userID, "status": "adopted"}
+	}
+	if args[0] == "unlock-dev-username-login" {
+		userID := fs.String("user-id", "", "approved development user UUID")
+		username := fs.String("username", "", "approved development username")
+		if e = fs.Parse(args[1:]); e != nil {
+			return e
+		}
+		if fs.NArg() != 0 || *userID != account.DevLocalUserID || *username != "dev" {
+			return errors.New("usage: unlock-dev-username-login --user-id APPROVED_DEV_UUID --username dev")
+		}
+		key, err := account.LoadLocalRateKey(os.Getenv("ENERGYLENS_CLOUD_LOCAL_AUTH_LOGIN_RATE_KEY_FILE"))
+		if err != nil {
+			return fmt.Errorf("load local login rate key: %w", err)
+		}
+		if err := account.UnlockDevUsernameLogin(ctx, pool, key, *userID, *username); err != nil {
+			return err
+		}
+		result = map[string]string{"user_id": *userID, "status": "unlocked"}
+	}
 	if args[0] == "import-reviewed-catalog" {
 		artifact := fs.String("artifact", "", "signed reviewed fact publication JSON")
 		actor := fs.String("imported-by", "", "administrator identifier")
