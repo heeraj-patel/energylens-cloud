@@ -86,11 +86,12 @@ type Challenge struct {
 	ExpiresAt  time.Time `json:"expires_at"`
 }
 type Ownership struct {
-	HubID      string `json:"hub_id"`
-	LocalHubID string `json:"local_hub_id"`
-	HomeID     string `json:"home_id"`
-	Epoch      int64  `json:"ownership_epoch"`
-	Version    int64  `json:"version"`
+	HubID      string      `json:"hub_id"`
+	LocalHubID string      `json:"local_hub_id"`
+	HomeID     string      `json:"home_id"`
+	Epoch      int64       `json:"ownership_epoch"`
+	Version    int64       `json:"version"`
+	Connection *Connection `json:"connection,omitempty"`
 }
 
 // AuthorizeOwner derives the complete Hub/home tuple from current database
@@ -126,7 +127,16 @@ func (s Store) ListOwner(ctx context.Context, owner, home string) ([]Ownership, 
 	if !owned {
 		return nil, ErrDenied
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT b.id,b.local_hub_id,b.home_id,b.ownership_epoch,b.version FROM hubs b JOIN homes h ON h.id=b.home_id AND h.owner_user_id=$2 AND h.deleted_at IS NULL WHERE b.home_id=$1 AND b.revoked_at IS NULL ORDER BY b.id`, home, owner)
+	rows, err := s.Pool.Query(ctx, `SELECT b.id,b.local_hub_id,b.home_id,b.ownership_epoch,b.version,
+		x.https_origin,x.certificate_sha256,x.expires_at
+		FROM hubs b JOIN homes h ON h.id=b.home_id AND h.owner_user_id=$2 AND h.deleted_at IS NULL
+		JOIN users u ON u.id=h.owner_user_id AND u.deleted_at IS NULL
+		LEFT JOIN hub_connections x ON x.hub_id=b.id AND x.home_id=b.home_id
+			AND x.ownership_epoch=b.ownership_epoch AND x.expires_at>now()
+			AND EXISTS(SELECT 1 FROM hub_certificates c WHERE c.serial=x.publisher_cert_serial
+				AND c.hub_id=b.id AND c.ownership_epoch=b.ownership_epoch
+				AND c.revoked_at IS NULL AND c.expires_at>now())
+		WHERE b.home_id=$1 AND b.revoked_at IS NULL ORDER BY b.id`, home, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +144,13 @@ func (s Store) ListOwner(ctx context.Context, owner, home string) ([]Ownership, 
 	out := []Ownership{}
 	for rows.Next() {
 		var binding Ownership
-		if err := rows.Scan(&binding.HubID, &binding.LocalHubID, &binding.HomeID, &binding.Epoch, &binding.Version); err != nil {
+		var origin, pin *string
+		var expires *time.Time
+		if err := rows.Scan(&binding.HubID, &binding.LocalHubID, &binding.HomeID, &binding.Epoch, &binding.Version, &origin, &pin, &expires); err != nil {
 			return nil, err
+		}
+		if origin != nil && pin != nil && expires != nil {
+			binding.Connection = &Connection{HTTPSOrigin: *origin, CertificateSHA256: *pin, ExpiresAt: *expires}
 		}
 		out = append(out, binding)
 	}

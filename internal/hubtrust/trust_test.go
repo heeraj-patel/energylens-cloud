@@ -167,6 +167,77 @@ func TestHubTrustTransaction(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	pin := strings.Repeat("a", 64)
+	origin := "https://192.168.68.136:18787"
+	if e = s.PublishConnection(ctx, id, "a12", 1, origin, pin); !errorsIs(e, ErrDenied) {
+		t.Fatalf("prior epoch published connection: %v", e)
+	}
+	if e = s.PublishConnection(ctx, id, "other", 2, origin, pin); !errorsIs(e, ErrDenied) {
+		t.Fatalf("unknown certificate published connection: %v", e)
+	}
+	if e = s.PublishConnection(ctx, id, "a11", 2, origin, pin); e != nil {
+		t.Fatal(e)
+	}
+	ownerHubs, e = s.ListOwner(ctx, owner, home)
+	if e != nil || len(ownerHubs) != 1 || ownerHubs[0].Connection == nil || ownerHubs[0].Connection.HTTPSOrigin != origin || ownerHubs[0].Connection.CertificateSHA256 != pin || !ownerHubs[0].Connection.ExpiresAt.After(time.Now()) {
+		t.Fatalf("published connection unavailable: %+v %v", ownerHubs, e)
+	}
+	if rec := ownerRoute(owner); rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" || !strings.Contains(rec.Body.String(), `"connection":`) {
+		t.Fatalf("owner connection route: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ownerRoute(other); rec.Code != 404 || strings.Contains(rec.Body.String(), origin) {
+		t.Fatalf("foreign owner learned connection: %d", rec.Code)
+	}
+	if _, e = pool.Exec(ctx, `UPDATE hub_connections SET published_at=now()-interval '20 minutes',expires_at=now()-interval '1 second' WHERE hub_id=$1`, id); e != nil {
+		t.Fatal(e)
+	}
+	ownerHubs, e = s.ListOwner(ctx, owner, home)
+	if e != nil || ownerHubs[0].Connection != nil {
+		t.Fatalf("expired connection exposed: %+v %v", ownerHubs, e)
+	}
+	if e = s.PublishConnection(ctx, id, "a11", 2, origin, pin); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(ctx, `UPDATE hub_certificates SET revoked_at=now() WHERE serial='a11'`); e != nil {
+		t.Fatal(e)
+	}
+	ownerHubs, e = s.ListOwner(ctx, owner, home)
+	if e != nil || ownerHubs[0].Connection != nil {
+		t.Fatalf("revoked publisher exposed: %+v %v", ownerHubs, e)
+	}
+	if _, e = pool.Exec(ctx, `UPDATE hub_certificates SET revoked_at=NULL WHERE serial='a11'`); e != nil {
+		t.Fatal(e)
+	}
+	connectionRequest := func(hub string, serial int64, epoch int64, body string, withTLS bool) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPut, "/v1/hubs/"+hub+"/connection", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		if withTLS {
+			u, _ := url.Parse("spiffe://energylens.local/hubs/" + id + "/epochs/" + strconv.FormatInt(epoch, 10))
+			cert := &x509.Certificate{SerialNumber: big.NewInt(serial), URIs: []*url.URL{u}}
+			request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert}}}
+		}
+		rec := httptest.NewRecorder()
+		router := chi.NewRouter()
+		router.Route("/v1", (Service{Store: s}).HubRoutes)
+		router.ServeHTTP(rec, request)
+		return rec
+	}
+	validBody := `{"https_origin":"https://192.168.68.136:18787","certificate_sha256":"` + pin + `"}`
+	if rec := connectionRequest(id, 0xa11, 2, validBody, false); rec.Code != 403 {
+		t.Fatalf("no TLS published: %d", rec.Code)
+	}
+	if rec := connectionRequest(id, 0xa12, 1, validBody, true); rec.Code != 403 {
+		t.Fatalf("old cert published: %d", rec.Code)
+	}
+	if rec := connectionRequest(uuid.NewString(), 0xa11, 2, validBody, true); rec.Code != 403 {
+		t.Fatalf("wrong Hub published: %d", rec.Code)
+	}
+	if rec := connectionRequest(id, 0xa11, 2, `{"https_origin":"http://192.168.68.136:18787","certificate_sha256":"`+pin+`"}`, true); rec.Code != 400 {
+		t.Fatalf("invalid origin published: %d", rec.Code)
+	}
+	if rec := connectionRequest(id, 0xa11, 2, validBody, true); rec.Code != 204 || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("current cert publish failed: %d", rec.Code)
+	}
 	ownerAuthorization := func(user, sid string, serial int64, certEpoch int64, requestedHome string) *httptest.ResponseRecorder {
 		u, _ := url.Parse("spiffe://energylens.local/hubs/" + id + "/epochs/" + strconv.FormatInt(certEpoch, 10))
 		cert := &x509.Certificate{SerialNumber: big.NewInt(serial), URIs: []*url.URL{u}}
@@ -254,6 +325,9 @@ func TestHubTrustTransaction(t *testing.T) {
 	if e = s.Unclaim(ctx, owner, home, id, got.Version, unclaimKey); e != nil {
 		t.Fatal(e)
 	}
+	if e = s.PublishConnection(ctx, id, "a11", 2, origin, pin); !errorsIs(e, ErrDenied) {
+		t.Fatalf("unclaimed Hub published connection: %v", e)
+	}
 	ownerHubs, e = s.ListOwner(ctx, owner, home)
 	if e != nil || len(ownerHubs) != 0 {
 		t.Fatalf("unclaimed hub remained in owner list: %+v %v", ownerHubs, e)
@@ -315,6 +389,10 @@ func TestHubTrustTransaction(t *testing.T) {
 	newOwnerHome := home
 	if _, e = pool.Exec(ctx, `UPDATE hubs SET ownership_epoch=ownership_epoch+1,home_id=$2 WHERE id=$1`, id, newOwnerHome); e != nil {
 		t.Fatal(e)
+	}
+	ownerHubs, e = s.ListOwner(ctx, owner, home)
+	if e != nil || len(ownerHubs) != 1 || ownerHubs[0].Connection != nil {
+		t.Fatalf("prior epoch connection exposed after transfer: %+v %v", ownerHubs, e)
 	}
 	if _, found, e = s.RenewalReplay(ctx, id, "testserial", 3, 4, hash[:]); !found || !errorsIs(e, ErrDenied) {
 		t.Fatalf("stale epoch replay: found=%v err=%v", found, e)

@@ -78,6 +78,7 @@ func (s Service) AccountRoutes(r chi.Router) {
 }
 
 func (s Service) listOwner(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	home := chi.URLParam(r, "home")
 	if !uuidOK(home) {
 		fail(w, 404, "not_found")
@@ -97,9 +98,50 @@ func (s Service) EnrollmentRoutes(r chi.Router) { r.Post("/hubs/{hub}/enroll", s
 func (s Service) HubRoutes(r chi.Router) {
 	r.Post("/hubs/{hub}/certificate", s.renew)
 	r.Get("/hubs/{hub}/ownership", s.ownership)
+	r.Put("/hubs/{hub}/connection", s.publishConnection)
 	if s.Auth != nil {
 		r.With(s.Auth).Post("/hubs/{hub}/owner-authorizations", s.ownerAuthorization)
 	}
+}
+
+func (s Service) publishConnection(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	hubID := chi.URLParam(r, "hub")
+	if !uuidOK(hubID) {
+		fail(w, 404, "not_found")
+		return
+	}
+	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
+		fail(w, 403, "forbidden")
+		return
+	}
+	peer := r.TLS.PeerCertificates[0]
+	peerHub, peerEpoch, ok := peerIdentity(peer)
+	if !ok || peerHub != hubID {
+		fail(w, 403, "forbidden")
+		return
+	}
+	var in struct {
+		HTTPSOrigin       string `json:"https_origin"`
+		CertificateSHA256 string `json:"certificate_sha256"`
+	}
+	if !read(w, r, &in) {
+		return
+	}
+	if !validConnection(in.HTTPSOrigin, in.CertificateSHA256) {
+		fail(w, 400, "invalid_request")
+		return
+	}
+	err := s.Store.PublishConnection(r.Context(), hubID, peer.SerialNumber.Text(16), peerEpoch, in.HTTPSOrigin, in.CertificateSHA256)
+	if errors.Is(err, ErrDenied) || errors.Is(err, ErrNotFound) {
+		fail(w, 403, "ownership_revoked")
+		return
+	}
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ownerAuthorization intersects the current, revocable account session with
