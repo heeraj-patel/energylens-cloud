@@ -129,10 +129,7 @@ func (s Service) search(w http.ResponseWriter, r *http.Request) {
 		variant := strings.TrimSpace(*q.Variant)
 		q.Variant = &variant
 	}
-	if q.Fuel == "" {
-		q.Fuel = "electricity"
-	}
-	if len(q.Brand) < 1 || len(q.Brand) > 120 || len(q.Model) < 2 || len(q.Model) > 120 || q.Region != nil && len(*q.Region) > 40 || q.Variant != nil && (len(*q.Variant) < 1 || len(*q.Variant) > 100) || q.Fuel != "electricity" && q.Fuel != "natural_gas" && q.Fuel != "propane" && q.Fuel != "fuel_oil" {
+	if len(q.Brand) > 120 || len(q.Model) < 2 || len(q.Model) > 120 || q.Region != nil && len(*q.Region) > 40 || q.Variant != nil && (len(*q.Variant) < 1 || len(*q.Variant) > 100) || q.Fuel != "" && q.Fuel != "electricity" && q.Fuel != "natural_gas" && q.Fuel != "propane" && q.Fuel != "fuel_oil" {
 		failure(w, 400, "invalid_request", "invalid model search")
 		return
 	}

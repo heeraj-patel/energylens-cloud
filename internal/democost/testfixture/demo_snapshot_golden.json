@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "fixture_revision": "mobile_demo_cost_v1",
+  "timezone": "America/Chicago",
+  "reference_local_date": "2026-09-30",
+  "adjustment_local_date": "2026-09-29",
+  "currency": "USD",
+  "provenance": "synthetic",
+  "devices": [
+    {
+      "id": "demo-device-01",
+      "name": "Study Desktop & Rig",
+      "reference": {
+        "useful_cost_micros": 680000,
+        "waste_cost_micros": 350000
+      },
+      "default": {
+        "useful_cost_micros": 650000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-02",
+      "name": "Living Room 65\" TV",
+      "reference": {
+        "useful_cost_micros": 200000,
+        "waste_cost_micros": 220000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-03",
+      "name": "Phone & Tablet Chargers",
+      "reference": {
+        "useful_cost_micros": 0,
+        "waste_cost_micros": 90000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-04",
+      "name": "Kitchen Refrigerator",
+      "reference": {
+        "useful_cost_micros": 840000,
+        "waste_cost_micros": 0
+      },
+      "default": {
+        "useful_cost_micros": 1050000,
+        "waste_cost_micros": 40000
+      }
+    },
+    {
+      "id": "demo-device-05",
+      "name": "Hallway Central AC",
+      "reference": {
+        "useful_cost_micros": 2450000,
+        "waste_cost_micros": 40000
+      },
+      "default": {
+        "useful_cost_micros": 1550000,
+        "waste_cost_micros": 40000
+      }
+    },
+    {
+      "id": "demo-device-06",
+      "name": "Living Room Soundbar",
+      "reference": {
+        "useful_cost_micros": 150000,
+        "waste_cost_micros": 180000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-07",
+      "name": "Home Office Monitors",
+      "reference": {
+        "useful_cost_micros": 220000,
+        "waste_cost_micros": 140000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-08",
+      "name": "Mesh Wi-Fi Gateway & Router",
+      "reference": {
+        "useful_cost_micros": 180000,
+        "waste_cost_micros": 0
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-09",
+      "name": "Subwoofer & Amp Rack",
+      "reference": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 120000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-10",
+      "name": "Central Heat Pump",
+      "reference": {
+        "useful_cost_micros": 1900000,
+        "waste_cost_micros": 20000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-11",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-12",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-13",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-14",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-15",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-16",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-17",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    },
+    {
+      "id": "demo-device-18",
+      "name": null,
+      "reference": {
+        "useful_cost_micros": 20000,
+        "waste_cost_micros": 100000
+      },
+      "default": {
+        "useful_cost_micros": 50000,
+        "waste_cost_micros": 20000
+      }
+    }
+  ],
+  "unattributed": {
+    "reference": {
+      "useful_cost_micros": 130000,
+      "waste_cost_micros": 920000
+    },
+    "default": {
+      "useful_cost_micros": 0,
+      "waste_cost_micros": 160000
+    },
+    "adjustment": {
+      "useful_cost_micros": 0,
+      "waste_cost_micros": 380000
+    }
+  }
+}

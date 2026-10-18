@@ -342,6 +342,15 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 			}
 		}
 	}
+	resolvedBuckets, resolvedPeriod, err := resolutionDeviceRows(r.Context(), tx, home, buckets, now)
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	for i := range buckets {
+		buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, resolvedBuckets[i]...)
+	}
+	sampleDeviceRows = append(sampleDeviceRows, resolvedPeriod...)
 	b := base{SchemaRevision: "household_energy_v1", ContentRevision: "household_energy_backend_v1", HomeID: home, DataMode: "household", GeneratedAt: now, AsOf: asOf, Timezone: tz, Period: p, Scope: "attributed_devices", Availability: a.Availability, EvidenceBasis: a.EvidenceBasis}
 	if sample {
 		b.DataMode = "sample"
@@ -373,10 +382,8 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		state, _ := json.Marshal(efficiency)
 		allocationState += "|" + string(state)
 	}
-	if demoSnapshot != nil {
-		deviceState, _ := json.Marshal(sampleDeviceRows)
-		allocationState += "|" + string(deviceState)
-	}
+	deviceState, _ := json.Marshal(sampleDeviceRows)
+	allocationState += "|" + string(deviceState)
 	for _, row := range buckets {
 		deviceState, _ := json.Marshal(row.DeviceAllocations)
 		allocationState += "|" + string(deviceState)

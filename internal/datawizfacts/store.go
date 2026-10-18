@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -79,4 +80,38 @@ func SavingsSubject(manufacturer, category string) string {
 // manual source can provide a rating without a separate identity observation.
 func Device(ctx context.Context, db Querier, manufacturer, model string) ([]Fact, error) {
 	return Current(ctx, db, "device", DeviceSubject(manufacturer, model))
+}
+
+// DeviceByModel returns approved current research across manufacturers when a
+// scan has not identified a brand yet.
+func DeviceByModel(ctx context.Context, db Querier, model string) ([]Fact, error) {
+	suffix := ":" + strings.ToLower(nonAlphanumeric.ReplaceAllString(strings.ToUpper(model), ""))
+	rows, err := db.Query(ctx, `SELECT o.id::text,c.route,c.subject_key,c.field,c.record_key,o.value,o.source,to_char(o.collected_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') FROM datawiz_current c JOIN datawiz_observations o ON o.id=c.observation_id WHERE c.route='device' AND right(c.subject_key,length($1))=$1 AND o.approval_status='approved' ORDER BY c.subject_key,c.field,c.record_key LIMIT 100`, suffix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Fact{}
+	for rows.Next() {
+		var f Fact
+		if err = rows.Scan(&f.ID, &f.Route, &f.SubjectKey, &f.Field, &f.RecordKey, &f.Value, &f.Source, &f.CollectedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+var ErrNoResolution = errors.New("datawiz resolution not found")
+
+func Resolution(ctx context.Context, db interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, applianceRef string, applianceVersion int64) (json.RawMessage, time.Time, error) {
+	var body json.RawMessage
+	var at time.Time
+	err := db.QueryRow(ctx, `SELECT record,resolved_at FROM datawiz_energy_resolutions WHERE appliance_ref=$1 AND record->'appliance_version'=to_jsonb($2::bigint)`, applianceRef, applianceVersion).Scan(&body, &at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, time.Time{}, ErrNoResolution
+	}
+	return body, at, err
 }

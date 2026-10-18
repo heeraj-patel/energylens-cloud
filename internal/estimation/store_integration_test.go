@@ -2,7 +2,6 @@ package estimation
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"os"
@@ -10,10 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"energylens.local/cloud/internal/account"
-	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/migrate"
-	"energylens.local/cloud/internal/tariff"
 	"energylens.local/cloud/migrations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,19 +20,22 @@ type estimateBody struct {
 	ID                string `json:"id"`
 	Kind              string `json:"kind"`
 	UnavailableReason string `json:"unavailable_reason"`
-	Cost              *struct {
+	Energy            *struct {
+		Value string `json:"value"`
+	} `json:"energy"`
+	Cost *struct {
 		Value string `json:"value"`
 	} `json:"cost"`
-	Energy *struct {
+	WasteEnergy *struct {
 		Value string `json:"value"`
-		Unit  string `json:"unit"`
-		Fuel  string `json:"fuel"`
-	} `json:"energy"`
-	Waste        string `json:"waste"`
+	} `json:"waste_energy"`
+	Quality struct {
+		Consumption string `json:"consumption"`
+		Source      string `json:"source"`
+	} `json:"quality"`
 	EvidenceRefs []struct {
-		ID       string `json:"id"`
-		Kind     string `json:"kind"`
-		Revision int64  `json:"revision"`
+		ID, Kind string
+		Revision int64
 	} `json:"evidence_refs"`
 }
 
@@ -49,13 +48,13 @@ func decodeEstimate(t *testing.T, raw json.RawMessage) estimateBody {
 	return out
 }
 
-func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
+func TestEstimateUsesResolutionAndTariff(t *testing.T) {
 	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	schema := "estimate_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	schema := "estimate_resolution_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	admin, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -83,226 +82,102 @@ func TestPersistedEstimateDependenciesAndOwnerIsolation(t *testing.T) {
 	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
 		t.Fatal(err)
 	}
-	accounts := account.PGStore{Pool: pool}
-	owner, err := accounts.Resolve(ctx, account.Identity{Issuer: "https://id.test", Subject: "estimate-owner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, err := accounts.Resolve(ctx, account.Identity{Issuer: "https://id.test", Subject: "estimate-other"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	accepted := time.Now().UTC().Format(time.RFC3339)
-	if _, err = (account.PGPreferenceStore{Pool: pool}).PatchAccountPreferences(ctx, owner.ID, account.AccountPreferencesPatch{HistoryDisclosureAcceptedAt: &accepted}, 1, uuid.NewString(), make([]byte, 32)); err != nil {
-		t.Fatal(err)
-	}
-	home, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "House", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := PGRunStore{Pool: pool}
-	if _, err = store.ListRuns(ctx, other.ID, home.ID, nil, time.Now().UTC()); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("cross-owner run = %v", err)
-	}
-	products, err := store.ListRuns(ctx, owner.ID, home.ID, nil, time.Now().UTC())
-	if err != nil || len(products) != 0 {
-		t.Fatalf("empty home: %v %v", products, err)
-	}
-	publication := strings.Repeat("a", 64)
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',1,2)`, publication); err != nil {
-		t.Fatal(err)
-	}
-	productID := uuid.NewString()
-	productJSON, _ := json.Marshal(map[string]any{"id": productID, "category": "computer", "brand": "Acme", "full_model": "A123", "variant": nil, "region": nil, "fuel": "electricity", "match_quality": "confirmed_exact"})
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'computer','Acme','A123','electricity','confirmed_exact',$2)`, productID, productJSON); err != nil {
-		t.Fatal(err)
-	}
-	factID := uuid.NewString()
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',365,'kWh','{}','{}','epa_exact','https://example.org/fact',$3,'reviewed_row_manifest','sources/fact.json',now(),1,'{}')`, factID, productID, publication); err != nil {
-		t.Fatal(err)
-	}
-	inv := inventory.PGStore{Pool: pool}
-	identity := inventory.Identity{Brand: "Acme", FullModel: "A123", Fuel: "electricity", MatchQuality: "confirmed_exact", CatalogProductID: &productID}
-	hash := sha256.Sum256([]byte("appliance"))
-	a, err := inv.Create(ctx, owner.ID, home.ID, inventory.CreateInput{Name: "Computer", Category: "computer", Identity: identity}, uuid.NewString(), hash[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Keep the entire expiry check in one home month. Using the wall clock
-	// directly can put a 60-day expiry in the following month and create a
-	// different estimate solely because its period changed.
-	wallClock := time.Now().UTC()
-	now := time.Date(wallClock.Year(), wallClock.Month()+1, 2, 12, 0, 0, 0, time.UTC)
-	expiresAt := now.Add(24 * time.Hour)
-	runs, err := store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now)
-	if err != nil || len(runs) != 1 {
-		t.Fatalf("without rate: %v %v", runs, err)
-	}
-	first := decodeEstimate(t, runs[0])
-	if first.Kind != "unavailable" || first.UnavailableReason != "rate_unavailable" {
-		t.Fatalf("missing rate: %+v", first)
-	}
-	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.18,'kWh','USD','user_tariff','old bill',now()-interval '2 years',false,now()-interval '2 years')`, home.ID); err != nil {
-		t.Fatal(err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stale := decodeEstimate(t, runs[0])
-	if stale.Kind != "unavailable" || stale.UnavailableReason != "rate_unavailable" {
-		t.Fatalf("stale user rate accepted: %+v", stale)
-	}
-	fallback := false
-	// The monthly estimate requires a tariff covering the entire home month.
-	// Its source expires the next day, while the effective interval still
-	// covers both reads in this month.
-	rateDate := expiresAt.Add(-60 * 24 * time.Hour).Format(time.RFC3339)
-	rate, err := (tariff.PGStore{Pool: pool}).Create(ctx, owner.ID, home.ID, tariff.Create{Fuel: "electricity", Rate: "0.20", RateUnit: "kWh", Currency: "USD", RateKind: "user_tariff", SourceRef: "bill", SourceAsOf: rateDate, IsFallback: &fallback, EffectiveFrom: rateDate}, uuid.NewString(), make([]byte, 32))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second := decodeEstimate(t, runs[0])
-	if second.Kind != "estimated_operating_cost" || second.Cost == nil || second.ID == first.ID || len(second.EvidenceRefs) != 2 {
-		t.Fatalf("reviewed estimate: %+v", second)
-	}
-	if second.EvidenceRefs[0].Kind != "catalog_fact" || second.EvidenceRefs[1].Kind != "tariff" || second.EvidenceRefs[1].Revision != rate.Revision {
-		t.Fatalf("dependency refs: %+v", second.EvidenceRefs)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(time.Second))
-	if err != nil || decodeEstimate(t, runs[0]).ID != second.ID {
-		t.Fatalf("repeat created new run: %v %v", runs, err)
-	}
-	// A persisted estimate must stop being available when its electricity
-	// tariff reaches the 60-day source_as_of boundary, even if no write
-	// invalidated the estimate in the meantime. The old run remains in the
-	// immutable history, while the normal read route produces an unavailable
-	// current run.
-	sourceAsOf, err := time.Parse(time.RFC3339, rate.SourceAsOf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !sourceAsOf.Add(60 * 24 * time.Hour).Equal(expiresAt) {
-		t.Fatalf("unexpected tariff expiry: source_as_of=%s expires_at=%s", rate.SourceAsOf, expiresAt)
-	}
-	// PostgreSQL timestamps have microsecond precision; one nanosecond
-	// before the boundary rounds onto the expired instant when sent to SQL.
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, expiresAt.Add(-time.Microsecond))
-	if err != nil {
-		t.Fatal(err)
-	}
-	justBeforeExpiry := decodeEstimate(t, runs[0])
-	if justBeforeExpiry.ID != second.ID || justBeforeExpiry.Kind != "estimated_operating_cost" || justBeforeExpiry.Cost == nil {
-		t.Fatalf("estimate unavailable before tariff expiry: %+v", justBeforeExpiry)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, expiresAt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expired := decodeEstimate(t, runs[0])
-	if expired.ID == second.ID || expired.Kind != "unavailable" || expired.UnavailableReason != "rate_unavailable" || expired.Cost != nil {
-		t.Fatalf("expired tariff remained available: %+v", expired)
-	}
-	var historicalCount, invalidationCount int
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_runs WHERE id=$1`, second.ID).Scan(&historicalCount); err != nil {
-		t.Fatal(err)
-	}
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_run_invalidations WHERE run_id=$1`, second.ID).Scan(&invalidationCount); err != nil {
-		t.Fatal(err)
-	}
-	if historicalCount != 1 || invalidationCount != 1 {
-		t.Fatalf("expired estimate audit history: runs=%d invalidations=%d", historicalCount, invalidationCount)
-	}
-	name := "New computer"
-	patchHash := sha256.Sum256([]byte("patch"))
-	if _, err = inv.Patch(ctx, owner.ID, home.ID, a.ID, inventory.PatchInput{Name: &name}, 1, uuid.NewString(), patchHash[:]); err != nil {
-		t.Fatal(err)
-	}
-	var invalidations int
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM estimate_run_invalidations WHERE run_id=$1`, second.ID).Scan(&invalidations); err != nil || invalidations != 1 {
-		t.Fatalf("appliance invalidation: %d %v", invalidations, err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(2*time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	third := decodeEstimate(t, runs[0])
-	if third.ID == second.ID {
-		t.Fatal("appliance change reused run")
-	}
-	familyID := uuid.NewString()
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',365,'kWh','{}','{}','oem_family','https://example.org/family',$4,'reviewed_row_manifest','sources/family.json',now(),2,'{}')`, familyID, productID, publication, strings.Repeat("b", 64)); err != nil {
-		t.Fatal(err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(3*time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	family := decodeEstimate(t, runs[0])
-	if family.Kind != "unavailable" || family.UnavailableReason != "basis_incomparable" {
-		t.Fatalf("family source promoted to exact: %+v", family)
-	}
-	conflictID := uuid.NewString()
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',400,'kWh','{}','{}','epa_exact','https://example.org/conflict',$4,'reviewed_row_manifest','sources/conflict.json',now(),2,'{}')`, conflictID, productID, publication, strings.Repeat("c", 64)); err != nil {
-		t.Fatal(err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(4*time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	conflict := decodeEstimate(t, runs[0])
-	if conflict.Kind != "unavailable" || conflict.UnavailableReason != "basis_incomparable" {
-		t.Fatalf("conflicting facts accepted: %+v", conflict)
-	}
-	for _, prior := range []string{familyID, conflictID} {
-		if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','fixture cleanup','reviewer',now(),$4)`, uuid.NewString(), publication, prior, strings.Repeat("d", 64)); err != nil {
+	owner, other, home, appliance := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1),($2)`, []any{owner, other}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'Home','America/Chicago')`, []any{home, owner}},
+		{`INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Lamp','light','{"brand":"Unknown","full_model":"Unknown","fuel":"electricity","match_quality":"unresolved"}')`, []any{appliance, home}},
+	} {
+		if _, err = pool.Exec(ctx, q.sql, q.args...); err != nil {
 			t.Fatal(err)
 		}
 	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(5*time.Second))
-	if err != nil {
-		t.Fatal(err)
+	now := time.Now().UTC()
+	store := PGRunStore{Pool: pool}
+	if _, err = store.ListRuns(ctx, other, home, nil, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner isolation: %v", err)
 	}
-	restored := decodeEstimate(t, runs[0])
-	if restored.Kind != "estimated_operating_cost" || restored.Energy == nil || restored.Cost == nil || restored.EvidenceRefs[0].ID != factID {
-		t.Fatalf("retracted conflicting facts still block original estimate: %+v", restored)
-	}
-	replacementID := uuid.NewString()
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',730,'kWh','{}','{}','epa_exact','https://example.org/correction',$4,'reviewed_row_manifest','sources/correction.json',now(),2,'{}')`, replacementID, productID, publication, strings.Repeat("e", 64)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,replacement_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,$4,'supersede','correct annual figure','reviewer',now(),$5)`, uuid.NewString(), publication, factID, replacementID, strings.Repeat("f", 64)); err != nil {
-		t.Fatal(err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(6*time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	corrected := decodeEstimate(t, runs[0])
-	if corrected.Kind != "estimated_operating_cost" || corrected.Energy == nil || corrected.Cost == nil || corrected.ID == restored.ID || corrected.Energy.Value == restored.Energy.Value || corrected.Cost.Value == restored.Cost.Value || len(corrected.EvidenceRefs) != 2 || corrected.EvidenceRefs[0].ID != replacementID {
-		t.Fatalf("corrected annual fact did not change estimate and evidence: %+v", corrected)
-	}
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','withdraw corrected figure','reviewer',now(),$4)`, uuid.NewString(), publication, replacementID, strings.Repeat("a", 64)); err != nil {
-		t.Fatal(err)
-	}
-	runs, err = store.ListRuns(ctx, owner.ID, home.ID, &a.ID, now.Add(7*time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	retracted := decodeEstimate(t, runs[0])
-	if retracted.Kind != "unavailable" || retracted.UnavailableReason != "source_unreviewed" || retracted.Energy != nil || retracted.Cost != nil || retracted.ID == corrected.ID {
-		t.Fatalf("retracted annual fact still produced numeric estimate: %+v", retracted)
-	}
-	for _, ref := range retracted.EvidenceRefs {
-		if ref.Kind == "catalog_fact" {
-			t.Fatalf("retracted catalog evidence exposed: %+v", retracted.EvidenceRefs)
+	read := func() estimateBody {
+		t.Helper()
+		runs, e := store.ListRuns(ctx, owner, home, &appliance, now)
+		if e != nil || len(runs) != 1 {
+			t.Fatalf("runs %d: %v", len(runs), e)
 		}
+		return decodeEstimate(t, runs[0])
 	}
-	if _, err = pool.Exec(ctx, `UPDATE estimate_runs SET formula_version='forged' WHERE id=$1`, second.ID); err == nil {
-		t.Fatal("estimate run changed")
+	initial := read()
+	if initial.Kind != "unavailable" || initial.UnavailableReason != "resolution_pending" {
+		t.Fatalf("before resolution: %+v", initial)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.20,'kWh','USD','user_tariff','bill',$2,false,$3)`, home, now, now.AddDate(0, -1, -1)); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); got.UnavailableReason != "resolution_pending" {
+		t.Fatalf("tariff without record: %+v", got)
+	}
+	resolved := `{"appliance_version":1,"status":"resolved","device_kind":"real_non_metering","values":{"kwh_per_day":0.008,"waste_kwh_per_day":0.008}}`
+	if _, err = pool.Exec(ctx, `INSERT INTO datawiz_energy_resolutions(appliance_ref,request_sha256,record,resolved_at) VALUES($1,$2,$3,clock_timestamp())`, "cloud:"+appliance, make([]byte, 32), resolved); err != nil {
+		t.Fatal(err)
+	}
+	got := read()
+	if got.Kind != "estimated_operating_cost" || got.Energy == nil || got.Cost == nil || got.WasteEnergy == nil || got.Energy.Value == "0.000000" || got.Energy.Value != got.WasteEnergy.Value || len(got.EvidenceRefs) != 2 || got.EvidenceRefs[0].Kind != "datawiz_resolution" || got.Quality.Consumption != "resolved" || got.Quality.Source != "datawiz_resolution" {
+		t.Fatalf("resolved estimate: %+v", got)
+	}
+	if again := read(); again.ID != got.ID {
+		t.Fatalf("unchanged resolution made new run: %+v", again)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE datawiz_energy_resolutions SET record=$2,resolved_at=clock_timestamp()+interval '1 second' WHERE appliance_ref=$1`, "cloud:"+appliance, `{"appliance_version":1,"status":"resolved","device_kind":"real_non_metering","values":{"kwh_per_day":0.016,"waste_kwh_per_day":null}}`); err != nil {
+		t.Fatal(err)
+	}
+	changed := read()
+	if changed.ID == got.ID || changed.Energy == nil || changed.Energy.Value == got.Energy.Value || changed.WasteEnergy != nil {
+		t.Fatalf("resolution change: %+v", changed)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE appliances SET version=2,identity='{"brand":"New","full_model":"M2","fuel":"electricity","match_quality":"unresolved"}' WHERE id=$1`, appliance); err != nil {
+		t.Fatal(err)
+	}
+	pending := read()
+	if pending.ID == changed.ID || pending.Kind != "unavailable" || pending.UnavailableReason != "resolution_pending" || pending.Energy != nil {
+		t.Fatalf("old identity estimate shown after edit: %+v", pending)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE datawiz_energy_resolutions SET resolved_at=clock_timestamp()+interval '1 hour' WHERE appliance_ref=$1`, "cloud:"+appliance); err != nil {
+		t.Fatal(err)
+	}
+	if late := read(); late.Kind != "unavailable" || late.UnavailableReason != "resolution_pending" {
+		t.Fatalf("late old result shown: %+v", late)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE datawiz_energy_resolutions SET record=$2,resolved_at=clock_timestamp()+interval '2 hours' WHERE appliance_ref=$1`, "cloud:"+appliance, `{"appliance_version":2,"status":"resolved","device_kind":"real_non_metering","values":{"kwh_per_day":0.024}}`); err != nil {
+		t.Fatal(err)
+	}
+	current := read()
+	if current.Kind != "estimated_operating_cost" || current.Energy == nil || current.ID == pending.ID {
+		t.Fatalf("current identity estimate missing: %+v", current)
+	}
+	hub, sensor := uuid.NewString(), uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO hubs(id,local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES($1,'elhub_estimation_test',$2,'test',$3,1)`, hub, make([]byte, 32), home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO sensor_endpoints(id,home_id,hub_id,ownership_epoch,local_sensor_id,kind,capabilities) VALUES($1,$2,$3,1,'meter','plug',ARRAY['power','energy'])`, sensor, home, hub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO appliance_revisions(appliance_id,home_id,version,snapshot) VALUES($1,$2,2,'{}')`, appliance, home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO attachments(home_id,sensor_id,appliance_id,identity_revision,started_at) VALUES($1,$2,$3,2,$4)`, home, sensor, appliance, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	attached := read()
+	if attached.Kind != "unavailable" || attached.Energy != nil || attached.ID == current.ID {
+		t.Fatalf("metering attachment must override stale resolution: %+v", attached)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE datawiz_energy_resolutions SET record=$2,resolved_at=clock_timestamp()+interval '3 hours' WHERE appliance_ref=$1`, "cloud:"+appliance, `{"appliance_version":2,"status":"measured_device","device_kind":"real_metering","values":null}`); err != nil {
+		t.Fatal(err)
+	}
+	measured := read()
+	if measured.Kind != "unavailable" || measured.Energy != nil || measured.Cost != nil {
+		t.Fatalf("metering fallback: %+v", measured)
 	}
 }

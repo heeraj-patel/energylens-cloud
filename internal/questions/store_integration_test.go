@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"energylens.local/cloud/internal/account"
+	"energylens.local/cloud/internal/datawizrequests"
 	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
@@ -138,9 +140,43 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	confirmed.Value = json.RawMessage("0")
 	now := time.Now().UTC().Format(time.RFC3339)
 	confirmed.ConfirmedAt = &now
-	answers, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{confirmed}, uuid.NewString(), reqHash[:])
+	confirmedKey := uuid.NewString()
+	answers, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{confirmed}, confirmedKey, reqHash[:])
 	if err != nil || answers[0].Revision != 2 || string(answers[0].Value) != "0" {
 		t.Fatalf("confirmed zero: %+v %v", answers, err)
+	}
+	var queued string
+	if err = pool.QueryRow(ctx, `SELECT reason FROM datawiz_resolve_queue WHERE appliance_id=$1`, a.ID).Scan(&queued); err != nil || queued != "usage_answer" {
+		t.Fatalf("usage answer not queued: %q %v", queued, err)
+	}
+	dir := t.TempDir()
+	producer := datawizrequests.Producer{DB: pool, Dir: dir}
+	if _, err = producer.RunOnce(ctx); err != nil {
+		t.Fatalf("drain answer queue: %v", err)
+	}
+	paths, err := filepath.Glob(filepath.Join(dir, "resolve", "*.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("resolve requests after queue: %d %v", len(paths), err)
+	}
+	body, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		Usage map[string]float64 `json:"usage"`
+	}
+	if err = json.Unmarshal(body, &request); err != nil || request.Usage["cycles_per_week"] != 0 {
+		t.Fatalf("queued usage: %s %v", body, err)
+	}
+	var pending int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM datawiz_resolve_queue WHERE appliance_id=$1`, a.ID).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("queue not drained: %d %v", pending, err)
+	}
+	if _, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{confirmed}, confirmedKey, reqHash[:]); err != nil {
+		t.Fatalf("confirmed replay: %v", err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM datawiz_resolve_queue WHERE appliance_id=$1`, a.ID).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("replay queued resolve: %d %v", pending, err)
 	}
 	current, err = store.CurrentAnswers(ctx, owner.ID, home.ID, a.ID)
 	if err != nil || len(current) != 1 || current[0].Revision != 2 || current[0].Status != "confirmed" || string(current[0].Value) != "0" || current[0].ConfirmedAt == nil {
@@ -157,6 +193,9 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	faqUnknown := AnswerCreate{QuestionID: faq[0].ID, QuestionVersion: faq[0].Version, ApplianceID: a.ID, IdentityRevision: 1, Status: "unknown", Value: json.RawMessage("null")}
 	if _, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{faqUnknown}, uuid.NewString(), reqHash[:]); err != nil {
 		t.Fatalf("save FAQ unknown: %v", err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM datawiz_resolve_queue WHERE appliance_id=$1`, a.ID).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("FAQ queued resolve: %d %v", pending, err)
 	}
 	faq, err = store.List(ctx, owner.ID, home.ID, "faq", &a.ID)
 	if err != nil || len(faq) != 0 {
@@ -178,6 +217,9 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	avoidConfirmed := AnswerCreate{QuestionID: avoid[0].ID, QuestionVersion: avoid[0].Version, ApplianceID: computer.ID, IdentityRevision: 1, Status: "confirmed", Value: json.RawMessage("0"), ConfirmedAt: &now}
 	if _, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{avoidConfirmed}, uuid.NewString(), reqHash[:]); err != nil {
 		t.Fatalf("save avoid zero: %v", err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM datawiz_resolve_queue WHERE appliance_id=$1`, computer.ID).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("avoid queued resolve: %d %v", pending, err)
 	}
 	avoid, err = store.List(ctx, owner.ID, home.ID, "avoid", &computer.ID)
 	if err != nil || len(avoid) != 0 {

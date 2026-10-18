@@ -2,13 +2,14 @@ package householdenergy
 
 import (
 	"encoding/json"
+	"energylens.local/cloud/internal/democost/testfixture"
 	"strings"
 	"testing"
 	"time"
 )
 
 func demoSnapshotForTest() DemoCostSnapshot {
-	return MobileDemoCostSnapshot()
+	return testfixture.DemoSnapshot()
 }
 
 func TestDemoCostSnapshotValidationAndDecode(t *testing.T) {

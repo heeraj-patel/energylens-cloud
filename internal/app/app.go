@@ -21,8 +21,10 @@ import (
 	"energylens.local/cloud/internal/cyclecomparison"
 	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/datawizrequests"
+	"energylens.local/cloud/internal/datawizresolution"
 	"energylens.local/cloud/internal/designfixture"
 	"energylens.local/cloud/internal/devicestate"
+	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/energyrate"
 	"energylens.local/cloud/internal/estimation"
 	"energylens.local/cloud/internal/faq"
@@ -184,6 +186,10 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			}
 			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
+			categories := energycategories.Service{Store: energycategories.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
+			modules = append(modules, Module{Name: "energy-categories", Mount: categories.Routes})
+			resolutions := datawizresolution.Service{Store: datawizresolution.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			modules = append(modules, Module{Name: "energy-resolutions", Mount: resolutions.Routes})
 			products := catalog.Service{Store: catalog.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
 			modules = append(modules, Module{Name: "reviewed-catalog", Mount: products.Routes})
 			usageFacts := usagefactapi.Service{Store: usagefactapi.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
@@ -314,6 +320,8 @@ func cloudRouter(modules []Module, ready func(context.Context) error, hub *hubtr
 				if pool != nil {
 					(catalog.Service{Store: catalog.PGStore{Pool: pool}, HubAuth: catalog.HubAuthentication(hubtrust.Store{Pool: pool})}).HubRoutes(h)
 					(usagefactapi.Service{Store: usagefactapi.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
+					(energycategories.Service{Store: energycategories.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
+					(datawizresolution.Service{Store: datawizresolution.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
 					(ratedinputapi.Service{Store: ratedinputapi.PGStore{Pool: pool}, HubCertificates: hubtrust.Store{Pool: pool}}).HubRoutes(h)
 					(sensors.Service{Store: sensors.Store{Pool: pool}}).HubRoutes(h)
 					(attachments.Service{Store: attachments.Store{Pool: pool}}).HubRoutes(h)

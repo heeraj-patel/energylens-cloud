@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/datawizrequests"
 	"errors"
 	"fmt"
 	"strconv"
@@ -90,30 +91,30 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT id,category,version FROM appliances WHERE home_id=$1 AND archived_at IS NULL AND ($2::uuid IS NULL OR id=$2) ORDER BY created_at,id`, home, appliance)
+	rows, err := s.Pool.Query(ctx, `SELECT a.id,a.category,COALESCE(c.key,alias.category_key,a.category),a.version FROM appliances a LEFT JOIN energy_categories c ON c.key=a.category LEFT JOIN energy_category_aliases alias ON alias.alias=a.category WHERE a.home_id=$1 AND a.archived_at IS NULL AND ($2::uuid IS NULL OR a.id=$2) ORDER BY a.created_at,a.id`, home, appliance)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	candidates := []Question{}
 	type applianceCandidate struct {
-		id, category string
-		version      int64
+		id, category, canonical string
+		version                 int64
 	}
 	var cycleCandidates []applianceCandidate
 	found := false
 	for rows.Next() {
-		var id, category string
+		var id, category, canonical string
 		var version int64
-		if err = rows.Scan(&id, &category, &version); err != nil {
+		if err = rows.Scan(&id, &category, &canonical, &version); err != nil {
 			return nil, err
 		}
 		found = true
-		if q, ok := questionFor(category, id, version, purpose); ok {
+		if q, ok := questionForMapped(category, canonical, id, version, purpose); ok {
 			candidates = append(candidates, q)
 		}
 		if purpose == "onboarding" {
-			cycleCandidates = append(cycleCandidates, applianceCandidate{id, category, version})
+			cycleCandidates = append(cycleCandidates, applianceCandidate{id: id, category: category, canonical: canonical, version: version})
 		}
 	}
 	err = rows.Err()
@@ -125,7 +126,7 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 		return nil, ErrNotFound
 	}
 	for _, item := range cycleCandidates {
-		q, err := reviewedCycleQuestion(ctx, s.Pool, home, item.id, item.category, item.version)
+		q, err := reviewedCycleQuestion(ctx, s.Pool, home, item.id, item.canonical, item.version)
 		if err != nil {
 			return nil, err
 		}
@@ -232,9 +233,9 @@ func (s PGStore) Submit(ctx context.Context, owner, home string, inputs []Answer
 			return nil, ErrInvalid
 		}
 		seen[dup] = true
-		var category string
+		var category, canonical string
 		var version int64
-		err = tx.QueryRow(ctx, `SELECT category,version FROM appliances WHERE id=$1 AND home_id=$2 AND archived_at IS NULL FOR UPDATE`, in.ApplianceID, home).Scan(&category, &version)
+		err = tx.QueryRow(ctx, `SELECT a.category,COALESCE(c.key,alias.category_key,a.category),a.version FROM appliances a LEFT JOIN energy_categories c ON c.key=a.category LEFT JOIN energy_category_aliases alias ON alias.alias=a.category WHERE a.id=$1 AND a.home_id=$2 AND a.archived_at IS NULL FOR UPDATE OF a`, in.ApplianceID, home).Scan(&category, &canonical, &version)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -244,9 +245,9 @@ func (s PGStore) Submit(ctx context.Context, owner, home string, inputs []Answer
 		if version != in.IdentityRevision {
 			return nil, ErrVersion
 		}
-		q, ok := questionByID(category, in.ApplianceID, version, in.QuestionID)
+		q, ok := questionByIDMapped(category, canonical, in.ApplianceID, version, in.QuestionID)
 		if !ok {
-			cycle, cycleErr := reviewedCycleQuestion(ctx, tx, home, in.ApplianceID, category, version)
+			cycle, cycleErr := reviewedCycleQuestion(ctx, tx, home, in.ApplianceID, canonical, version)
 			if cycleErr != nil {
 				return nil, cycleErr
 			}
@@ -272,6 +273,11 @@ func (s PGStore) Submit(ctx context.Context, owner, home string, inputs []Answer
 		err = tx.QueryRow(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id,recorded_at`, home, in.ApplianceID, in.IdentityRevision, in.QuestionID, in.QuestionVersion, revision, in.Status, value, in.ConfirmedAt).Scan(&a.ID, &a.RecordedAt)
 		if err != nil {
 			return nil, fmt.Errorf("insert answer: %w", err)
+		}
+		if isUsageQuestion(in.QuestionID) {
+			if err = datawizrequests.Queue(ctx, tx, in.ApplianceID, "usage_answer"); err != nil {
+				return nil, fmt.Errorf("queue resolve: %w", err)
+			}
 		}
 		out = append(out, a)
 	}

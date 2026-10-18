@@ -66,6 +66,31 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	if err != nil {
 		return nil, err
 	}
+	ruleCategories := make([]string, 0, len(initial))
+	for _, r := range initial {
+		ruleCategories = append(ruleCategories, r.category)
+	}
+	ruleKeys := map[string]string{}
+	ruleCounts := map[string]int{}
+	ruleRows, err := tx.Query(ctx, `SELECT v.raw,COALESCE(c.key,a.category_key,v.raw) FROM unnest($1::text[]) v(raw) LEFT JOIN energy_categories c ON c.key=v.raw LEFT JOIN energy_category_aliases a ON a.alias=v.raw`, ruleCategories)
+	if err != nil {
+		return nil, err
+	}
+	for ruleRows.Next() {
+		var raw, key string
+		if err = ruleRows.Scan(&raw, &key); err != nil {
+			break
+		}
+		ruleKeys[raw] = key
+		ruleCounts[key]++
+	}
+	if err == nil {
+		err = ruleRows.Err()
+	}
+	ruleRows.Close()
+	if err != nil {
+		return nil, err
+	}
 	var tariff *Evidence
 	var tariffID string
 	var tariffRevision int64
@@ -81,9 +106,11 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT a.id,a.category,a.identity,a.version,a.catalog_product_id,
+	rows, err := tx.Query(ctx, `SELECT a.id,a.category,COALESCE(c.key,alias.category_key,a.category),a.identity,a.version,a.catalog_product_id,
 	 cp.category,cp.fuel,cp.match_quality FROM appliances a
 	 LEFT JOIN catalog_products cp ON cp.id=a.catalog_product_id
+	 LEFT JOIN energy_categories c ON c.key=a.category
+	 LEFT JOIN energy_category_aliases alias ON alias.alias=a.category
 	 WHERE a.home_id=$1 AND a.archived_at IS NULL ORDER BY a.created_at,a.id LIMIT 101`, home)
 	if err != nil {
 		return nil, err
@@ -99,7 +126,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		var item current
 		var raw []byte
 		var catalogCategory, catalogFuel, catalogQuality *string
-		if err = rows.Scan(&item.ID, &item.Category, &raw, &item.Version, &item.ProductID,
+		if err = rows.Scan(&item.ID, &item.Category, &item.categoryKey, &raw, &item.Version, &item.ProductID,
 			&catalogCategory, &catalogFuel, &catalogQuality); err != nil {
 			break
 		}
@@ -109,6 +136,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		}
 		item.Fuel, item.Identity = identity.Fuel, identity.MatchQuality
 		item.Details = identity
+		item.ruleCategoryKeys, item.ruleKeyCounts = ruleKeys, ruleCounts
 		item.Tariff = tariff
 		item.Answers = map[string]Evidence{}
 		// An inconsistent product link cannot satisfy an exact-source gate.

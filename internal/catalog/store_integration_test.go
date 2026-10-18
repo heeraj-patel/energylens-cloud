@@ -75,6 +75,12 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 	if err != nil || len(results) != 1 {
 		t.Fatalf("neutral search: %d %v", len(results), err)
 	}
+	for _, query := range []Search{{Model: "a123"}, {Model: "a123", Fuel: "electricity"}} {
+		modelOnly, e := store.Search(ctx, query)
+		if e != nil || len(modelOnly) != 1 {
+			t.Fatalf("model-only search %+v: %d %v", query, len(modelOnly), e)
+		}
+	}
 	snapshotResults, snapshotGeneration, err := store.SnapshotSearch(ctx, Search{Brand: "acme", Model: "a123", Fuel: "electricity"})
 	if err != nil || len(snapshotResults) != 1 || snapshotGeneration != 1 {
 		t.Fatalf("snapshot search: %d generation %d error %v", len(snapshotResults), snapshotGeneration, err)

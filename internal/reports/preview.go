@@ -104,15 +104,8 @@ type Preview struct {
 
 type Store struct{ DB *pgxpool.Pool }
 
-var reportCategories = map[string]bool{
-	"refrigerator": true, "freezer": true, "washer": true, "dryer": true, "dishwasher": true,
-	"water_heater": true, "air_conditioner": true, "heat_pump": true, "space_heater": true,
-	"computer": true, "television": true, "range": true, "oven": true, "microwave": true,
-	"ev_charger": true, "solar": true, "storage": true, "other": true,
-}
-
 func safeCategory(raw string) string {
-	if reportCategories[raw] {
+	if raw != "" {
 		return raw
 	}
 	return "other"
@@ -268,7 +261,7 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	end := endLocal.Format("2006-01-02")
 	startUTC := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc).UTC()
 	endUTC := endLocal.UTC()
-	rows, err := tx.Query(ctx, `SELECT a.id,a.category,a.version,e.id,e.result_json,e.as_of
+	rows, err := tx.Query(ctx, `SELECT a.id,COALESCE(c.key,alias.category_key,'other'),a.version,e.id,e.result_json,e.as_of
 		FROM appliances a LEFT JOIN LATERAL (
 		 SELECT e.id,e.result_json,e.as_of FROM estimate_runs e
 		 WHERE e.home_id=a.home_id AND e.appliance_id=a.id AND e.appliance_version=a.version
@@ -276,6 +269,8 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 		   AND NOT EXISTS(SELECT 1 FROM estimate_run_invalidations i WHERE i.run_id=e.id)
 		 ORDER BY e.as_of DESC,e.id DESC LIMIT 1
 		) e ON true
+		LEFT JOIN energy_categories c ON c.key=a.category
+		LEFT JOIN energy_category_aliases alias ON alias.alias=a.category
 		WHERE a.home_id=$1 AND a.id=ANY($2::uuid[]) AND a.archived_at IS NULL ORDER BY a.id`, home, selected, start, end)
 	if err != nil {
 		return Preview{}, err

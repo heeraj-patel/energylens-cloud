@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"energylens.local/cloud/internal/democost/testfixture"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -90,7 +91,7 @@ func TestSeededReportPreviewInventoryRouteAndDependencies(t *testing.T) {
 		VALUES($1,$2,$3,1,$4,$5,'America/Chicago','reviewed-energy/v1',$6,'{}',$7,$8)`, uuid.New(), home, persisted, start, end, bytes.Repeat([]byte{1}, 32), estimate, now); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := householdenergy.MobileDemoCostSnapshot()
+	snapshot := testfixture.DemoSnapshot()
 	if err = householdenergy.ImportDemoCostSnapshot(ctx, pool, owner.String(), home.String(), snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func TestSeededReportPreviewInventoryRouteAndDependencies(t *testing.T) {
 	if err = queue(p, "internal2@example.com"); err != nil {
 		t.Fatalf("second current queue: %v", err)
 	}
-	changed := householdenergy.MobileDemoCostSnapshot()
+	changed := testfixture.DemoSnapshot()
 	changed.Devices[0].Default.Useful++
 	changedBody, err := json.Marshal(changed)
 	if err != nil {

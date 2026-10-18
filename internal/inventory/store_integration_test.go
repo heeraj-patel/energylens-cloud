@@ -14,6 +14,7 @@ import (
 
 	"energylens.local/cloud/internal/account"
 	"energylens.local/cloud/internal/attachments"
+	"energylens.local/cloud/internal/democost/testfixture"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/internal/telemetry"
@@ -97,7 +98,8 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	room := "Kitchen"
-	input := CreateInput{Name: "Fridge", Category: "refrigerator", Room: &room, Identity: Identity{Brand: "Acme", FullModel: "A123", Fuel: "electricity", MatchQuality: "unresolved"}}
+	fcc, ic, serial, upc := "2ABCD-X", "1234A-X", "SN123", "012345678901"
+	input := CreateInput{Name: "Fridge", Category: "refrigerator", Room: &room, Identity: Identity{Brand: "Acme", FullModel: "A123", Fuel: "electricity", MatchQuality: "unresolved", FCCID: &fcc, ICID: &ic, SerialNumber: &serial, UPC: &upc}}
 	hash := sha256.Sum256([]byte("create"))
 	transient, err := store.Create(ctx, owner.ID, transientHome.ID, input, uuid.NewString(), hash[:])
 	if err != nil {
@@ -110,6 +112,27 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil || len(active) != 0 || archivedOnlyRevision == neverUsedRevision {
 		t.Fatalf("last-row archive revision: %d %q %q %v", len(active), archivedOnlyRevision, neverUsedRevision, err)
 	}
+	unknownCategory := "scan-unclassified-v1"
+	categoryOnly := CreateInput{Name: "Unidentified device", Category: unknownCategory, Identity: Identity{Fuel: "electricity", MatchQuality: "unresolved"}}
+	if !ValidCreate(categoryOnly) {
+		t.Fatal("category-only unresolved input rejected")
+	}
+	unknown, err := store.Create(ctx, owner.ID, transientHome.ID, categoryOnly, uuid.NewString(), hash[:])
+	if err != nil || unknown.Category != unknownCategory || unknown.Identity.Brand != "" || unknown.Identity.FullModel != "" {
+		t.Fatalf("category-only save: %+v %v", unknown, err)
+	}
+	modelOnly := Identity{FullModel: "X100", Fuel: "electricity", MatchQuality: "unresolved"}
+	if !ValidIdentity(modelOnly) {
+		t.Fatal("model-only unresolved input rejected")
+	}
+	unknown, err = store.Patch(ctx, owner.ID, transientHome.ID, unknown.ID, PatchInput{Identity: &modelOnly}, unknown.Version, uuid.NewString(), hash[:])
+	if err != nil || unknown.Version != 2 || unknown.Category != unknownCategory || unknown.Identity.Brand != "" || unknown.Identity.FullModel != "X100" {
+		t.Fatalf("model-only edit: %+v %v", unknown, err)
+	}
+	unknown, err = store.Get(ctx, owner.ID, transientHome.ID, unknown.ID)
+	if err != nil || unknown.Category != unknownCategory || unknown.Identity.Brand != "" || unknown.Identity.FullModel != "X100" {
+		t.Fatalf("unknown identity round-trip: %+v %v", unknown, err)
+	}
 	key := uuid.NewString()
 	if _, err = store.Create(ctx, other.ID, home.ID, input, key, hash[:]); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner create = %v", err)
@@ -117,6 +140,10 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	a, err := store.Create(ctx, owner.ID, home.ID, input, key, hash[:])
 	if err != nil || a.Version != 1 {
 		t.Fatalf("create %+v %v", a, err)
+	}
+	readBack, err := store.Get(ctx, owner.ID, home.ID, a.ID)
+	if err != nil || readBack.Identity.FCCID == nil || *readBack.Identity.FCCID != fcc || readBack.Identity.UPC == nil || *readBack.Identity.UPC != upc {
+		t.Fatalf("identity round-trip: %+v %v", readBack.Identity, err)
 	}
 	createdRevision := revision()
 	if createdRevision == emptyRevision || revision() != createdRevision {
@@ -318,8 +345,8 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	}
 	family := exact
 	family.MatchQuality = "documented_variant_family"
-	if ValidIdentity(family) {
-		t.Fatal("family identity accepted exact catalog link")
+	if !ValidIdentity(family) {
+		t.Fatal("family identity rejected catalog link")
 	}
 	var hub, sensor string
 	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_inventory_archive_test',$1,'test',$2,1) RETURNING id`, make([]byte, 32), home.ID).Scan(&hub); err != nil {
@@ -421,7 +448,7 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = householdenergy.ImportDemoCostSnapshot(ctx, pool, owner.ID, demoHome.ID, householdenergy.MobileDemoCostSnapshot()); err != nil {
+	if err = householdenergy.ImportDemoCostSnapshot(ctx, pool, owner.ID, demoHome.ID, testfixture.DemoSnapshot()); err != nil {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()

@@ -17,47 +17,6 @@ import (
 
 const DemoSnapshotRevision = "mobile_demo_cost_v1"
 
-// MobileDemoCostSnapshot is the explicit operator seed for the approved
-// mobile demonstration schedule. It is never consulted by request handlers;
-// requests read only the imported homes.demo_cost_snapshot value.
-func MobileDemoCostSnapshot() DemoCostSnapshot {
-	names := []*string{
-		stringPtr("Study Desktop & Rig"), stringPtr(`Living Room 65" TV`), stringPtr("Phone & Tablet Chargers"),
-		stringPtr("Kitchen Refrigerator"), stringPtr("Hallway Central AC"), stringPtr("Living Room Soundbar"),
-		stringPtr("Home Office Monitors"), stringPtr("Mesh Wi-Fi Gateway & Router"), stringPtr("Subwoofer & Amp Rack"),
-		stringPtr("Central Heat Pump"), nil, nil, nil, nil, nil, nil, nil, nil,
-	}
-	refUseful := []int64{68, 20, 0, 84, 245, 15, 22, 18, 5, 190, 2, 2, 2, 2, 2, 2, 2, 2}
-	refWaste := []int64{35, 22, 9, 0, 4, 18, 14, 0, 12, 2, 10, 10, 10, 10, 10, 10, 10, 10}
-	s := DemoCostSnapshot{
-		Version: 1, FixtureRevision: DemoSnapshotRevision, Timezone: "America/Chicago",
-		ReferenceLocalDate: "2026-09-30", AdjustmentLocalDate: "2026-09-29", Currency: "USD", Provenance: "synthetic",
-		Unattributed: DemoSnapshotAttribution{
-			Reference:  DemoSnapshotCosts{Useful: 13 * 10_000, Waste: 92 * 10_000},
-			Default:    DemoSnapshotCosts{Waste: 16 * 10_000},
-			Adjustment: &DemoSnapshotCosts{Waste: 38 * 10_000},
-		},
-	}
-	for i := range names {
-		defaultUseful, defaultWaste := int64(5), int64(2)
-		if i == 0 {
-			defaultUseful = 65
-		}
-		if i == 3 {
-			defaultUseful, defaultWaste = 105, 4
-		}
-		if i == 4 {
-			defaultUseful, defaultWaste = 155, 4
-		}
-		s.Devices = append(s.Devices, DemoSnapshotDevice{
-			ID: fmt.Sprintf("demo-device-%02d", i+1), Name: names[i],
-			Reference: DemoSnapshotCosts{Useful: refUseful[i] * 10_000, Waste: refWaste[i] * 10_000},
-			Default:   DemoSnapshotCosts{Useful: defaultUseful * 10_000, Waste: defaultWaste * 10_000},
-		})
-	}
-	return s
-}
-
 // DemoCostSnapshot is an explicitly imported cost-only synthetic snapshot.
 // Values are integer microcurrency units; no energy or tariff is inferred.
 type DemoCostSnapshot = democost.Snapshot
@@ -289,7 +248,6 @@ func sumCostAllocations(rows []deviceAllocation, extras ...allocation) allocatio
 	return allocation{Cost: moneyMicros(u + w), UsefulCost: moneyMicros(u), WasteCost: moneyMicros(w), Availability: "partial", EvidenceBasis: "synthetic"}
 }
 func ptr(a allocation) *allocation { return &a }
-func stringPtr(v string) *string   { return &v }
 func moneyMicrosUnits(value any) int64 {
 	m, ok := value.(money)
 	if !ok {

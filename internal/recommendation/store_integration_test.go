@@ -158,6 +158,17 @@ func TestCurrentRecommendationEvidenceOwnerAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("candidate", "find_reviewed_energy_source", 0)
+	light := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Lamp','light','{"fuel":"electricity","match_quality":"unresolved"}')`, light, home); err != nil {
+		t.Fatal(err)
+	}
+	items, err = store.Current(ctx, owner, home, now)
+	if err != nil || len(items) != 2 || items[1].categoryKey != "light" {
+		t.Fatalf("category registry lookup: %+v %v", items, err)
+	}
+	if got := Evaluate(items[1]); len(got) != 1 || got[0].RuleID != "lighting.equivalent_bulb" {
+		t.Fatalf("mapped lighting rule: %+v", got)
+	}
 }
 
 func TestGasDryerRecommendationReadsExactUsageAndFreshThermRate(t *testing.T) {

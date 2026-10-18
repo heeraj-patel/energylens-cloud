@@ -7,6 +7,7 @@ import (
 	"energylens.local/cloud/internal/catalogimport"
 	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/datawizrequests"
+	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
 	"energylens.local/cloud/internal/ratedinputimport"
@@ -15,6 +16,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
 	"log/slog"
@@ -73,6 +75,12 @@ func run(ctx context.Context, args []string) error {
 	}
 	if len(args) > 0 && args[0] == "export-datawiz-requests" {
 		return exportDatawizRequests(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "export-energy-categories" {
+		return exportEnergyCategories(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "queue-datawiz-resolve" {
+		return queueDatawizResolve(ctx, args[1:])
 	}
 	if len(args) > 0 && args[0] == "read-datawiz-current" {
 		fs := flag.NewFlagSet("read-datawiz-current", flag.ContinueOnError)
@@ -192,6 +200,70 @@ func exportDatawizRequests(ctx context.Context, args []string) error {
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]int{"requests_written": count})
+}
+
+func exportEnergyCategories(ctx context.Context, args []string) error {
+	if len(args) != 0 {
+		return errors.New("usage: energylens-cloud export-energy-categories")
+	}
+	dsn := os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL")
+	if dsn == "" {
+		return errors.New("ENERGYLENS_CLOUD_DATABASE_URL required")
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	body, _, err := (energycategories.PGStore{Pool: pool}).Export(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(append(body, '\n'))
+	return err
+}
+
+func queueDatawizResolve(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("queue-datawiz-resolve", flag.ContinueOnError)
+	appliance := fs.String("appliance", "", "real or simulated appliance UUID")
+	output := fs.String("output", "", "absolute private requests directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || *appliance == "" || (*output != "" && !filepath.IsAbs(*output)) {
+		return errors.New("usage: energylens-cloud queue-datawiz-resolve -appliance <uuid> [-output <absolute-directory>]")
+	}
+	if _, err := uuid.Parse(*appliance); err != nil {
+		return errors.New("invalid appliance UUID")
+	}
+	dsn := os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL")
+	if dsn == "" {
+		return errors.New("ENERGYLENS_CLOUD_DATABASE_URL required")
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	p := datawizrequests.Producer{DB: pool, Dir: *output}
+	found, err := p.Exists(ctx, *appliance)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("appliance not found")
+	}
+	if err = datawizrequests.Queue(ctx, pool, *appliance, "admin"); err != nil {
+		return err
+	}
+	count := 0
+	if *output != "" {
+		count, err = p.DrainQueuedAppliance(ctx, *appliance)
+		if err != nil {
+			return err
+		}
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{"queued": *appliance, "reason": "admin", "requests_written": count})
 }
 
 // Operational provisioning is intentionally outside the public HTTP surface.
@@ -377,21 +449,15 @@ func operator(ctx context.Context, args []string) error {
 	if args[0] == "import-demo-cost-snapshot" {
 		owner := fs.String("owner-id", "", "owning user UUID")
 		home := fs.String("home-id", "", "home UUID")
-		seed := fs.Bool("seed-mobile-demo-v1", false, "import the approved 18-device mobile demo schedule")
 		if e = fs.Parse(args[1:]); e != nil {
 			return e
 		}
 		if fs.NArg() != 0 || *owner == "" || *home == "" {
-			return errors.New("owner-id and home-id required; use --seed-mobile-demo-v1 or provide snapshot JSON on stdin")
+			return errors.New("owner-id and home-id required; provide snapshot JSON on stdin")
 		}
-		var snapshot householdenergy.DemoCostSnapshot
-		if *seed {
-			snapshot = householdenergy.MobileDemoCostSnapshot()
-		} else {
-			snapshot, e = householdenergy.DecodeDemoCostSnapshot(io.LimitReader(os.Stdin, 1<<20))
-			if e != nil {
-				return e
-			}
+		snapshot, e := householdenergy.DecodeDemoCostSnapshot(io.LimitReader(os.Stdin, 1<<20))
+		if e != nil {
+			return e
 		}
 		if e = householdenergy.ImportDemoCostSnapshot(ctx, pool, *owner, *home, snapshot); e != nil {
 			return e

@@ -30,13 +30,25 @@ type definition struct {
 }
 
 var onboarding = map[string]definition{
+	"light":           {"light", "lighting.hours_per_week", "hours_per_week", "How many hours do you usually use this light each week?", "hours/week"},
+	"lighting":        {"lighting", "lighting.hours_per_week", "hours_per_week", "How many hours do you usually use this light each week?", "hours/week"},
 	"washer":          {"washer", "washer.cycles_per_week", "cycles_per_week", "How many wash cycles do you usually run each week?", "cycles/week"},
 	"dryer":           {"dryer", "dryer.cycles_per_week", "cycles_per_week", "How many dryer cycles do you usually run each week?", "cycles/week"},
 	"dishwasher":      {"dishwasher", "dishwasher.cycles_per_week", "cycles_per_week", "How many dishwasher cycles do you usually run each week?", "cycles/week"},
 	"computer":        {"computer", "computer.hours_per_week", "hours_per_week", "How many hours do you usually use this computer each week?", "hours/week"},
 	"television":      {"television", "television.hours_per_week", "hours_per_week", "How many hours do you usually watch this television each week?", "hours/week"},
+	"tv":              {"tv", "television.hours_per_week", "hours_per_week", "How many hours do you usually watch this television each week?", "hours/week"},
 	"space_heater":    {"space_heater", "space_heater.hours_per_week", "hours_per_week", "How many hours do you usually run this heater each week?", "hours/week"},
 	"air_conditioner": {"air_conditioner", "air_conditioner.hours_per_week", "hours_per_week", "How many hours do you usually run this air conditioner each week?", "hours/week"},
+}
+
+func isUsageQuestion(id string) bool {
+	for _, q := range onboarding {
+		if q.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // These are self-reported context prompts. Answers do not classify waste or
@@ -84,4 +96,18 @@ func questionByID(category, appliance string, version int64, id string) (Questio
 		}
 	}
 	return Question{}, false
+}
+
+func questionForMapped(raw, canonical, appliance string, version int64, purpose string) (Question, bool) {
+	if q, ok := questionFor(raw, appliance, version, purpose); ok {
+		return q, true
+	}
+	return questionFor(canonical, appliance, version, purpose)
+}
+
+func questionByIDMapped(raw, canonical, appliance string, version int64, id string) (Question, bool) {
+	if q, ok := questionByID(raw, appliance, version, id); ok {
+		return q, true
+	}
+	return questionByID(canonical, appliance, version, id)
 }

@@ -16,6 +16,9 @@ type PGStore struct{ Pool *pgxpool.Pool }
 // SearchResearch exposes current model-subject observations even before a legacy
 // catalog product has been imported. It does not create a product link.
 func (s PGStore) SearchResearch(ctx context.Context, q Search) ([]datawizfacts.Fact, error) {
+	if q.Brand == "" {
+		return datawizfacts.DeviceByModel(ctx, s.Pool, q.Model)
+	}
 	return datawizfacts.Device(ctx, s.Pool, q.Brand, q.Model)
 }
 
@@ -75,7 +78,7 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 // region-neutral records; a specified region also includes neutral records.
 func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage, error) {
 	rows, err := s.db.Query(ctx, `SELECT id FROM catalog_products
-        WHERE lower(brand)=lower($1) AND lower(full_model)=lower($2) AND fuel=$3
+	        WHERE ($1::text='' OR lower(brand)=lower($1)) AND lower(full_model)=lower($2) AND ($3::text='' OR fuel=$3)
           AND (region IS NULL OR ($4::text IS NOT NULL AND lower(region)=lower($4)))
 	      AND ($5::text IS NULL OR variant IS NULL OR lower(variant)=lower($5))
 	    ORDER BY CASE match_quality WHEN 'confirmed_exact' THEN 0 ELSE 1 END,
@@ -113,7 +116,7 @@ func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage,
 	}
 	rows, err = s.db.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model'
 	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id
-	    WHERE lower(p.brand)=lower($1) AND p.fuel=$2
+	    WHERE ($1::text='' OR lower(p.brand)=lower($1)) AND ($2::text='' OR p.fuel=$2)
 	      AND p.match_quality='documented_variant_family'
 	      AND f.source_kind IN ('oem_family', 'other_official')
 	      AND (p.variant IS NULL OR $3::text IS NULL OR lower(p.variant)=lower($3))

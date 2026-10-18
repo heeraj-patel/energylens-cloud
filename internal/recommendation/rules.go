@@ -18,20 +18,31 @@ type Evidence struct {
 }
 
 type Appliance struct {
-	ResearchTips   []datawizfacts.Fact
-	ID             string
-	Category       string
-	Fuel           string
-	Identity       string // confirmed_exact, documented_variant_family, unresolved
-	Facts          []Evidence
-	Answers        map[string]Evidence // only confirmed, current appliance-revision answers
-	Tariff         *Evidence           // current marginal electricity rate; never used for a savings claim
-	GasUsage       *Evidence           // exact reviewed dryer therm/cycle fact
-	GasTariff      *Evidence           // fresh USD/therm marginal rate
-	UsageFrequency int64               // legacy frequency for callers supplying one answer kind
-	HoursPerWeek   *int64              // confirmed current hours per week, including zero
-	CyclesPerWeek  *int64              // confirmed current cycles per week, including zero
-	Scenarios      []BenefitScenario   // explicit current action alternatives
+	ResearchTips     []datawizfacts.Fact
+	ID               string
+	Category         string
+	categoryKey      string
+	ruleCategoryKeys map[string]string
+	ruleKeyCounts    map[string]int
+	Fuel             string
+	Identity         string // confirmed_exact, documented_variant_family, unresolved
+	Facts            []Evidence
+	Answers          map[string]Evidence // only confirmed, current appliance-revision answers
+	Tariff           *Evidence           // current marginal electricity rate; never used for a savings claim
+	GasUsage         *Evidence           // exact reviewed dryer therm/cycle fact
+	GasTariff        *Evidence           // fresh USD/therm marginal rate
+	UsageFrequency   int64               // legacy frequency for callers supplying one answer kind
+	HoursPerWeek     *int64              // confirmed current hours per week, including zero
+	CyclesPerWeek    *int64              // confirmed current cycles per week, including zero
+	Scenarios        []BenefitScenario   // explicit current action alternatives
+}
+
+func (a Appliance) matchesRuleCategory(ruleCategory string) bool {
+	if a.Category == ruleCategory {
+		return true
+	}
+	key := a.ruleCategoryKeys[ruleCategory]
+	return key != "" && key == a.categoryKey && a.ruleKeyCounts[key] == 1
 }
 
 func (a Appliance) frequencyFor(kind string) int64 {
@@ -156,7 +167,7 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 			NextQuestion: next, BenefitGroup: "laundry_cycle", TipCategory: TipGeneral, EvidenceRefs: refs, usageFrequency: a.frequencyFor("cycles_per_week"), usageUnit: "cycles_per_week"})
 	}
 	for _, r := range initial {
-		if a.Category != r.category || a.Fuel != r.fuel {
+		if !a.matchesRuleCategory(r.category) || a.Fuel != r.fuel {
 			continue
 		}
 		refs := []Evidence{}

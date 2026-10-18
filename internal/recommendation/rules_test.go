@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestRulesUseUniqueRegistryCategoryMapping(t *testing.T) {
+	light := Appliance{ID: "light-1", Category: "light", categoryKey: "light", Fuel: "electricity", Identity: "unresolved", ruleCategoryKeys: map[string]string{"lighting": "light"}, ruleKeyCounts: map[string]int{"light": 1}}
+	got := Evaluate(light)
+	if len(got) != 1 || got[0].RuleID != "lighting.equivalent_bulb" {
+		t.Fatalf("canonical light category: %+v", got)
+	}
+	hvac := Appliance{ID: "hvac-1", Category: "hvac", categoryKey: "hvac", Fuel: "electricity", Identity: "unresolved", ruleCategoryKeys: map[string]string{"heat_pump": "hvac", "air_conditioner": "hvac"}, ruleKeyCounts: map[string]int{"hvac": 2}}
+	if got = Evaluate(hvac); len(got) != 1 || got[0].RuleID != "general.gather_information" {
+		t.Fatalf("ambiguous HVAC mapping should retain existing behavior: %+v", got)
+	}
+}
+
 func TestEvaluateRequiresExactSourceAndCurrentAnswer(t *testing.T) {
 	a := Appliance{ID: "washer-1", Category: "washer", Fuel: "electricity", Identity: "unresolved"}
 	got := Evaluate(a)

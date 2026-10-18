@@ -65,6 +65,14 @@ Paths below are relative to `/v1`. Schema names resolve to `components/schemas` 
 | `GET` | `/hubs/{hub}/attachments` | `listHubAttachmentRevisions` | `hub-mtls` / `active` | — | — | 200 [`HubAttachmentFeed`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-HubAttachmentFeed) | — |
 | `POST` | `/hubs/{hub}/sync/batches` | `uploadHubTelemetryBatch` | `hub-mtls` / `active` | — | [`TelemetryBatch`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-TelemetryBatch) | 200 [`TelemetryAcknowledgement`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-TelemetryAcknowledgement) | — |
 | `POST` | `/hubs/{hub}/kasa-runtime/snapshots` | `uploadKasaRuntimeSnapshots` | `hub-mtls` / `active` | — | [`KasaRuntimeUpload`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-KasaRuntimeUpload) | 200 [`KasaRuntimeAck`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-KasaRuntimeAck) | — |
+| `GET` | `/hubs/{hub}/energy-categories` | `getHubEnergyCategories` | `hub-mtls` / `active` | `header If-None-Match` | — | 200 [`energy-categories.schema.json`](../../energylens-common-contracts/api/energy-categories.schema.json) or 304 | `ETag` |
+| `GET` | `/hubs/{hub}/energy-resolutions/{appliance}` | `getHubEnergyResolution` | `hub-mtls` / `active` | — | — | 200 [`datawiz-energy-resolution.schema.json`](../../energylens-common-contracts/api/datawiz-energy-resolution.schema.json) | `Cache-Control` |
+
+### Energy categories
+
+| Method | Path | Operation | Auth / status | Parameters | Request | Success response | Response headers |
+|---|---|---|---|---|---|---|---|
+| `GET` | `/energy-categories` | `listEnergyCategories` | `bearer` / `active` | `header If-None-Match` | — | 200 grouped `{version, groups}` or 304 | `ETag` |
 
 ### Inventory
 
@@ -73,6 +81,7 @@ Paths below are relative to `/v1`. Schema names resolve to `components/schemas` 
 | `GET` | `/homes/{home}/appliances` | `listAppliances` | `bearer` / `active` | — | — | 200 object | `Cache-Control`, `X-EnergyLens-Data-Mode`, `X-EnergyLens-Fixture-Revision`, `X-EnergyLens-Inventory-Revision` |
 | `POST` | `/homes/{home}/appliances` | `createAppliance` | `bearer` / `active` | `header Idempotency-Key*` | [`ApplianceCreate`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-ApplianceCreate) | 201 [`Appliance`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-Appliance) | — |
 | `GET` | `/homes/{home}/appliances/{appliance}` | `getAppliance` | `bearer` / `active` | — | — | 200 [`Appliance`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-Appliance) | `Cache-Control`, `ETag`, `X-EnergyLens-Data-Mode`, `X-EnergyLens-Fixture-Revision` |
+| `GET` | `/homes/{home}/appliances/{appliance}/energy-resolution` | `getApplianceEnergyResolution` | `bearer` / `active` | — | — | 200 [`datawiz-energy-resolution.schema.json`](../../energylens-common-contracts/api/datawiz-energy-resolution.schema.json) | `Cache-Control` |
 | `PATCH` | `/homes/{home}/appliances/{appliance}` | `updateAppliance` | `bearer` / `active` | `header If-Match*`, `header Idempotency-Key*` | [`AppliancePatch`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-AppliancePatch) | 200 [`Appliance`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-Appliance) | `ETag` |
 | `DELETE` | `/homes/{home}/appliances/{appliance}` | `archiveAppliance` | `bearer` / `active` | `header If-Match*`, `header Idempotency-Key*` | — | 204 — | — |
 | `GET` | `/homes/{home}/sensors` | `listSensors` | `bearer` / `active` | — | — | 200 object | — |

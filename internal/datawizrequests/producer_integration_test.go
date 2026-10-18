@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"energylens.local/cloud/internal/datawizfacts"
+	"energylens.local/cloud/internal/democost/testfixture"
+	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
 	"github.com/google/uuid"
@@ -66,7 +68,7 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 	}
 	dir := t.TempDir()
 	p := Producer{DB: pool, Dir: dir}
-	if count, err := p.RunOnce(ctx); err != nil || count != 10 {
+	if count, err := p.RunOnce(ctx); err != nil || count != 11 {
 		t.Fatalf("first pass: %d %v", count, err)
 	}
 	assertPayload := func(route string, want map[string]any) {
@@ -90,6 +92,7 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 		}
 	}
 	assertPayload("device", map[string]any{"manufacturer": "Acme", "model": "Heat-100"})
+	assertPayload("resolve", map[string]any{"appliance_ref": "cloud:" + appliance, "appliance_version": float64(1), "device_kind": "real_non_metering", "category": "hvac"})
 	assertPayload("zip", map[string]any{"zip": "60601"})
 	if count, err := p.RunOnce(ctx); err != nil || count != 0 {
 		t.Fatalf("repeat pass: %d %v", count, err)
@@ -100,8 +103,12 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,2,'US','02108','postal_code','user_entered')`, home); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := p.RunOnce(ctx); err != nil || count != 3 {
+	if count, err := p.RunOnce(ctx); err != nil || count != 4 {
 		t.Fatalf("updated pass: %d %v", count, err)
+	}
+	entry, found, err := p.resolveEntryFor(ctx, appliance)
+	if err != nil || !found || entry.entry.ApplianceVersion != 2 || entry.entry.Model != "Heat-200" {
+		t.Fatalf("edited appliance resolve request: %+v %t %v", entry, found, err)
 	}
 	if paths, _ := filepath.Glob(filepath.Join(dir, "device", "*.json")); len(paths) != 2 {
 		t.Fatalf("device revisions: %d", len(paths))
@@ -123,5 +130,95 @@ VALUES($1,$2,'device','device:acme:heat-200','energy_rating','annual','{"amount"
 	facts, err := (datawizfacts.Store{DB: pool}).Current(ctx, "device", "device:acme:heat-200")
 	if err != nil || len(facts) != 1 || facts[0].Field != "energy_rating" {
 		t.Fatalf("approved current facts: %+v %v", facts, err)
+	}
+	if err = Queue(ctx, pool, appliance, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan int, 2)
+	for range 2 {
+		go func() {
+			count, e := p.drainQueue(ctx)
+			if e != nil {
+				results <- -1
+				return
+			}
+			results <- count
+		}()
+	}
+	if a, b := <-results, <-results; a+b != 1 || a < 0 || b < 0 {
+		t.Fatalf("concurrent queue drains: %d %d", a, b)
+	}
+	if err = Queue(ctx, pool, appliance, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if count, e := p.drainQueue(ctx); e != nil || count != 1 {
+		t.Fatalf("replay queue: %d %v", count, e)
+	}
+	snapshotJSON, err := json.Marshal(testfixture.DemoSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE homes SET demo_cost_snapshot=$2 WHERE id=$1`, home, snapshotJSON); err != nil {
+		t.Fatal(err)
+	}
+	if count, e := p.emitNewResolutions(ctx); e != nil || count != 10 {
+		t.Fatalf("simulated initial wave: %d %v", count, e)
+	}
+	demos, err := inventory.DemoAppliances(testfixture.DemoSnapshot(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(demos) != 10 {
+		t.Fatalf("demo appliances: %d", len(demos))
+	}
+	demoEntry, found, err := p.resolveEntryFor(ctx, demos[0].ID)
+	if err != nil || !found || demoEntry.entry.ApplianceVersion != 1 {
+		t.Fatalf("simulated resolve version: %+v %t %v", demoEntry, found, err)
+	}
+	if err = Queue(ctx, pool, demos[0].ID, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if count, e := p.drainQueue(ctx); e != nil || count != 1 {
+		t.Fatalf("simulated on-demand queue: %d %v", count, e)
+	}
+	hub, sensor, attachment := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO hubs(id,local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES($1,'elhub_resolve_producer',$2,'test',$3,1)`, hub, make([]byte, 32), home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO sensor_endpoints(id,home_id,hub_id,ownership_epoch,local_sensor_id,kind,capabilities) VALUES($1,$2,$3,1,'meter','plug',ARRAY['power','energy'])`, sensor, home, hub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO appliance_revisions(appliance_id,home_id,version,snapshot) VALUES($1,$2,2,'{}')`, appliance, home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO attachments(id,home_id,sensor_id,appliance_id,identity_revision,started_at) VALUES($1,$2,$3,$4,2,now())`, attachment, home, sensor, appliance); err != nil {
+		t.Fatal(err)
+	}
+	entry, found, err = p.resolveEntryFor(ctx, appliance)
+	if err != nil || !found || entry.entry.DeviceKind != "real_metering" {
+		t.Fatalf("metering attachment request: %+v %t %v", entry, found, err)
+	}
+	if count, e := p.emitNewResolutions(ctx); e != nil || count != 1 {
+		t.Fatalf("attachment change request: %d %v", count, e)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE attachments SET ended_at=now(),version=2 WHERE id=$1`, attachment); err != nil {
+		t.Fatal(err)
+	}
+	entry, found, err = p.resolveEntryFor(ctx, appliance)
+	if err != nil || !found || entry.entry.DeviceKind != "real_non_metering" {
+		t.Fatalf("closed metering attachment request: %+v %t %v", entry, found, err)
+	}
+	if count, e := p.emitNewResolutions(ctx); e != nil || count != 1 {
+		t.Fatalf("attachment closure request: %d %v", count, e)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE appliances SET name='Renamed HVAC',version=3 WHERE id=$1`, appliance); err != nil {
+		t.Fatal(err)
+	}
+	if count, e := p.emitNewResolutions(ctx); e != nil || count != 1 {
+		t.Fatalf("name-only version bump did not requeue: %d %v", count, e)
+	}
+	entry, found, err = p.resolveEntryFor(ctx, appliance)
+	if err != nil || !found || entry.entry.ApplianceVersion != 3 {
+		t.Fatalf("name-only version request: %+v %t %v", entry, found, err)
 	}
 }

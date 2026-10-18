@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/householdenergy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,18 +20,29 @@ import (
 var ErrNotFound = errors.New("appliance or home not found")
 var ErrVersion = errors.New("appliance version conflict")
 var ErrKeyReuse = errors.New("appliance idempotency key reused")
-var ErrCatalogMismatch = errors.New("catalog product does not match confirmed exact identity")
+var ErrCatalogMismatch = errors.New("catalog product not found")
 var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
 var ErrAttachmentConflict = errors.New("active attachment cannot safely close")
 
 type Identity struct {
-	Brand            string  `json:"brand"`
-	FullModel        string  `json:"full_model"`
-	Variant          *string `json:"variant,omitempty"`
-	Region           *string `json:"region,omitempty"`
-	Fuel             string  `json:"fuel"`
-	MatchQuality     string  `json:"match_quality"`
-	CatalogProductID *string `json:"catalog_product_id,omitempty"`
+	Brand            string     `json:"brand"`
+	FullModel        string     `json:"full_model"`
+	Variant          *string    `json:"variant,omitempty"`
+	Region           *string    `json:"region,omitempty"`
+	Fuel             string     `json:"fuel"`
+	MatchQuality     string     `json:"match_quality"`
+	CatalogProductID *string    `json:"catalog_product_id,omitempty"`
+	FCCID            *string    `json:"fcc_id,omitempty"`
+	ICID             *string    `json:"ic_id,omitempty"`
+	SerialNumber     *string    `json:"serial_number,omitempty"`
+	UPC              *string    `json:"upc,omitempty"`
+	BuildYear        *int       `json:"build_year,omitempty"`
+	BulbLabel        *BulbLabel `json:"bulb_label,omitempty"`
+}
+type BulbLabel struct {
+	LoadKind           string   `json:"load_kind"`
+	BulbCount          *int     `json:"bulb_count,omitempty"`
+	CombinedInputWatts *float64 `json:"combined_input_watts,omitempty"`
 }
 type Appliance struct {
 	ID                  string         `json:"id"`
@@ -321,20 +333,13 @@ func checkCatalog(ctx context.Context, tx pgx.Tx, a Appliance) error {
 	if id == nil {
 		return nil
 	}
-	if a.Identity.MatchQuality != "confirmed_exact" {
-		return ErrCatalogMismatch
-	}
-	var category, brand, model, fuel, quality string
-	var variant, region *string
-	err := tx.QueryRow(ctx, `SELECT category,brand,full_model,variant,region,fuel,match_quality FROM catalog_products WHERE id=$1`, *id).Scan(&category, &brand, &model, &variant, &region, &fuel, &quality)
+	var found string
+	err := tx.QueryRow(ctx, `SELECT id FROM catalog_products WHERE id=$1`, *id).Scan(&found)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrCatalogMismatch
 	}
 	if err != nil {
 		return err
-	}
-	if category != a.Category || brand != a.Identity.Brand || model != a.Identity.FullModel || fuel != a.Identity.Fuel || quality != "confirmed_exact" || !sameOptional(variant, a.Identity.Variant) || !sameOptional(region, a.Identity.Region) {
-		return ErrCatalogMismatch
 	}
 	return nil
 }
@@ -398,6 +403,9 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 		return a, e
 	}
 	a := Appliance{HomeID: home, Name: in.Name, Category: in.Category, Room: in.Room, Identity: in.Identity, Version: 1}
+	if _, err = energycategories.Ensure(ctx, tx, a.Category); err != nil {
+		return Appliance{}, err
+	}
 	if err = checkCatalog(ctx, tx, a); err != nil {
 		return Appliance{}, err
 	}
@@ -445,6 +453,9 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 	}
 	if in.Category != nil {
 		a.Category = *in.Category
+	}
+	if _, err = energycategories.Ensure(ctx, tx, a.Category); err != nil {
+		return Appliance{}, err
 	}
 	if in.Identity != nil {
 		a.Identity = *in.Identity
@@ -580,7 +591,7 @@ func (s PGStore) Archive(ctx context.Context, owner, home, id string, version in
 }
 func validText(s string, max int) bool { return s != "" && s == strings.TrimSpace(s) && len(s) <= max }
 func ValidIdentity(i Identity) bool {
-	if !validText(i.Brand, 120) || !validText(i.FullModel, 240) {
+	if i.Brand != "" && !validText(i.Brand, 120) || i.FullModel != "" && !validText(i.FullModel, 240) {
 		return false
 	}
 	if i.Variant != nil && !validText(*i.Variant, 120) || i.Region != nil && !validText(*i.Region, 120) {
@@ -596,9 +607,34 @@ func ValidIdentity(i Identity) bool {
 	default:
 		return false
 	}
+	if i.MatchQuality != "unresolved" && (i.Brand == "" || i.FullModel == "") {
+		return false
+	}
 	if i.CatalogProductID != nil {
-		if i.MatchQuality != "confirmed_exact" || !validUUID(*i.CatalogProductID) {
+		if !validUUID(*i.CatalogProductID) {
 			return false
+		}
+	}
+	for _, v := range []*string{i.FCCID, i.ICID, i.SerialNumber, i.UPC} {
+		if v != nil && !validText(*v, 120) {
+			return false
+		}
+	}
+	if i.BuildYear != nil && (*i.BuildYear < 1900 || *i.BuildYear > 2100) {
+		return false
+	}
+	if label := i.BulbLabel; label != nil {
+		if label.LoadKind != "replaceable_bulb" && label.LoadKind != "integrated_lamp" {
+			return false
+		}
+		if label.LoadKind == "integrated_lamp" {
+			if label.BulbCount != nil || label.CombinedInputWatts != nil {
+				return false
+			}
+		} else {
+			if label.BulbCount == nil || *label.BulbCount < 1 || *label.BulbCount > 8 || label.CombinedInputWatts == nil || *label.CombinedInputWatts < 0.1 || *label.CombinedInputWatts > 2000 {
+				return false
+			}
 		}
 	}
 	return true

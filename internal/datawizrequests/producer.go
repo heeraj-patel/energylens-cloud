@@ -133,11 +133,19 @@ func (p Producer) RunOnce(ctx context.Context) (int, error) {
 	if p.DB == nil || p.Dir == "" {
 		return 0, errors.New("Datawiz producer needs DB and requests directory")
 	}
+	count, err := p.drainQueue(ctx)
+	if err != nil {
+		return count, err
+	}
+	resolved, err := p.emitNewResolutions(ctx)
+	count += resolved
+	if err != nil {
+		return count, err
+	}
 	candidates, err := p.candidates(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("query Datawiz inputs: %w", err)
 	}
-	count := 0
 	for _, c := range candidates {
 		var exists bool
 		err = p.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM datawiz_request_emissions WHERE route=$1 AND source_kind=$2 AND source_id=$3 AND source_version=$4)`, c.route, c.kind, c.id, c.version).Scan(&exists)
