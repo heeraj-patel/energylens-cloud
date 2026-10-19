@@ -182,14 +182,28 @@ func TestLocalLoginVerifiedOnlyGenericFailuresAndHashedRefresh(t *testing.T) {
 	if _, err = refresh.Rotate(ctx, fourthFamily.RefreshToken, now.Add(time.Minute)); !errors.Is(err, ErrInvalidCredential) {
 		t.Fatalf("deleted account refreshed: %v", err)
 	}
-	accountKey := service.rateHash("account", "throttle@example.com")
-	if _, err = pool.Exec(ctx, `INSERT INTO auth_login_rate_limits(scope,key_hash,window_start,attempts) VALUES('account_hour',$1,$2,4)`, accountKey, now); err != nil {
+	throttleUserID := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,email,email_verified) VALUES($1,$2,true)`, throttleUserID, "throttle@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	denied("throttle@example.com", "correct long password", "192.0.2.6")
+	if _, err = pool.Exec(ctx, `INSERT INTO auth_identities(user_id,issuer,subject) VALUES($1,$2,$3)`, throttleUserID, LocalIssuer, throttleUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO auth_password_credentials(user_id,email_normalized,password_hash,verified_at) VALUES($1,$2,$3,$4)`, throttleUserID, "throttle@example.com", passwordHash, now); err != nil {
+		t.Fatal(err)
+	}
+	accountKey := service.rateHash("account", "throttle@example.com")
+	if _, err = pool.Exec(ctx, `INSERT INTO auth_login_rate_limits(scope,key_hash,window_start,attempts)
+		VALUES('account_hour',$1,$2,$3)
+		ON CONFLICT(scope,key_hash) DO UPDATE SET attempts=$3,window_start=$2`, accountKey, now, localAccountLoginHourlyLimit-1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Login(ctx, "throttle@example.com", "correct long password", "192.0.2.6", now); err != nil {
+		t.Fatalf("account login at hourly limit was denied: %v", err)
+	}
 	denied("throttle@example.com", "correct long password", "192.0.2.7")
 	var attempts int
-	if err = pool.QueryRow(ctx, `SELECT attempts FROM auth_login_rate_limits WHERE scope='account_hour' AND key_hash=$1`, accountKey).Scan(&attempts); err != nil || attempts != 6 {
+	if err = pool.QueryRow(ctx, `SELECT attempts FROM auth_login_rate_limits WHERE scope='account_hour' AND key_hash=$1`, accountKey).Scan(&attempts); err != nil || attempts != localAccountLoginHourlyLimit+1 {
 		t.Fatalf("account rate not counted: %d %v", attempts, err)
 	}
 	sourceKey := service.rateHash("source", "192.0.2.99")

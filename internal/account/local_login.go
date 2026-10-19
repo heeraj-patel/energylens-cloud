@@ -18,6 +18,7 @@ import (
 )
 
 const localRefreshLifetime = 30 * 24 * time.Hour
+const localAccountLoginHourlyLimit = 15
 
 var dummyHashOnce sync.Once
 var dummyHash string
@@ -103,7 +104,7 @@ func (s LocalLoginService) Login(ctx context.Context, identifier, password, sour
 	if s.Codec.Profile == LocalUsernameProfile {
 		rateIdentity = s.Codec.Profile.kind() + ":" + normalized
 	}
-	allowed, err = loginRate(ctx, tx, "account_hour", s.rateHash("account", rateIdentity), now, 5)
+	allowed, err = loginRate(ctx, tx, "account_hour", s.rateHash("account", rateIdentity), now, localAccountLoginHourlyLimit)
 	if err != nil {
 		return LocalLoginTokens{}, err
 	}
