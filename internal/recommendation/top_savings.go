@@ -1,7 +1,6 @@
 package recommendation
 
 import (
-	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/householdenergy"
 	"errors"
