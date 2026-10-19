@@ -28,13 +28,23 @@ func TestRenderApprovedHTMLIsEscapedDeterministicAndDigestBound(t *testing.T) {
 			t.Fatalf("missing report content %q", fragment)
 		}
 	}
-	for _, forbidden := range []string{"<script", "<img", "<a ", "private-home-id", "tracking"} {
+	for _, forbidden := range []string{"<script", "<img", "<a ", "private-home-id", "tracking", "Estimate evidence as of", "catalog_fact", "source&#34;&gt;"} {
 		if strings.Contains(first.HTML, forbidden) {
 			t.Fatalf("unsafe or private report content %q", forbidden)
 		}
 	}
 	if first.Subject != "EnergyLens report" || first.SnapshotSHA256 != p.SnapshotSHA256 {
 		t.Fatalf("report envelope: %+v", first)
+	}
+	withoutEstimate := p
+	withoutEstimate.Items = []Item{{ApplianceID: "device", Category: "other", Explanation: "No current monthly estimate is available for this appliance."}}
+	withoutEstimate.SnapshotSHA256, err = snapshotDigest(withoutEstimate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing, err := RenderApprovedHTML(withoutEstimate, withoutEstimate.SnapshotSHA256)
+	if err != nil || !strings.Contains(missing.HTML, "No current monthly estimate is available.</p>") {
+		t.Fatalf("approved empty estimate copy missing: %v", err)
 	}
 	changed := p
 	changed.Assumptions = []string{"changed after approval"}

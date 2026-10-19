@@ -481,8 +481,8 @@ func TestManualPreviewOwnerIsolationPrivacyAndStaleness(t *testing.T) {
 		t.Fatalf("measured v2 preview: %+v %v", measuredPreview, err)
 	}
 	measuredHTML, err := RenderApprovedHTML(measuredPreview, measuredPreview.SnapshotSHA256)
-	if err != nil || !strings.Contains(measuredHTML.HTML, measuredPreview.Items[0].Measured.SourceSHA256) || !strings.Contains(measuredHTML.HTML, "1.2000000000000000 kWh") {
-		t.Fatalf("measured provenance missing from report: %v", err)
+	if err != nil || strings.Contains(measuredHTML.HTML, measuredPreview.Items[0].Measured.SourceSHA256) || !strings.Contains(measuredHTML.HTML, "1.2000000000000000 kWh") {
+		t.Fatalf("measured summary or provenance presentation incorrect: %v", err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE energy_daily SET energy_wh=1300,computed_at=$2 WHERE attachment_id=$1`, attachment, measuredAt); err != nil {
 		t.Fatal(err)

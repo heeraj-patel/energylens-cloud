@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"sort"
 	"time"
@@ -123,8 +124,9 @@ func snapshotDigest(preview Preview) (string, error) {
 }
 
 type estimateResult struct {
-	Kind   string `json:"kind"`
-	Energy *struct {
+	Kind           string `json:"kind"`
+	FormulaVersion string `json:"formula_version"`
+	Energy         *struct {
 		Value string `json:"value"`
 		Unit  string `json:"unit"`
 		Fuel  string `json:"fuel"`
@@ -138,20 +140,22 @@ type estimateResult struct {
 		End   string `json:"end"`
 	} `json:"period"`
 	Quality struct {
-		Source string `json:"source"`
+		Source      string `json:"source"`
+		Consumption string `json:"consumption"`
 	} `json:"quality"`
 	EvidenceRefs []SourceRef `json:"evidence_refs"`
 }
 
-func vettedEstimate(raw []byte, start, end string, asOf time.Time) *Estimate {
+func vettedEstimate(raw []byte, applianceID, start, end string, asOf time.Time) *Estimate {
 	var r estimateResult
 	if json.Unmarshal(raw, &r) != nil || (r.Kind != "estimated_operating_cost" && r.Kind != "estimated_useful_cost") ||
 		r.Energy == nil || r.Cost == nil || (r.Energy.Unit != "kWh" && r.Energy.Unit != "therm") || r.Cost.Currency != "USD" ||
 		!decimalAmount.MatchString(r.Energy.Value) || !decimalAmount.MatchString(r.Cost.Value) ||
-		r.Period.Start != start || r.Period.End != end || r.Quality.Source != "reviewed_exact" {
+		r.Period.Start != start || r.Period.End != end ||
+		(r.Quality.Source != "reviewed_exact" && r.Quality.Source != "datawiz_resolution") {
 		return nil
 	}
-	hasFact, hasTariff := false, false
+	hasFact, hasResolution, hasTariff := false, false, false
 	for _, ref := range r.EvidenceRefs {
 		if _, err := uuid.Parse(ref.ID); err != nil || ref.Revision < 1 {
 			return nil
@@ -159,14 +163,30 @@ func vettedEstimate(raw []byte, start, end string, asOf time.Time) *Estimate {
 		switch ref.Kind {
 		case "catalog_fact", "reviewed_usage_fact":
 			hasFact = true
+		case "datawiz_resolution":
+			if ref.ID != applianceID || ref.Revision != 1 {
+				return nil
+			}
+			hasResolution = true
 		case "tariff":
 			hasTariff = true
 		default:
 			return nil
 		}
 	}
-	if !hasFact || !hasTariff || len(r.EvidenceRefs) > 4 {
+	if !hasTariff || len(r.EvidenceRefs) > 4 ||
+		(r.Quality.Source == "reviewed_exact" && (!hasFact || hasResolution)) ||
+		(r.Quality.Source == "datawiz_resolution" && (!hasResolution || hasFact || r.Quality.Consumption != "resolved" || len(r.EvidenceRefs) != 2)) {
 		return nil
+	}
+	if r.Quality.Source == "datawiz_resolution" {
+		if r.FormulaVersion != "datawiz-resolution/v1" || r.Kind != "estimated_operating_cost" || r.Energy.Unit != "kWh" || r.Energy.Fuel != "electricity" {
+			return nil
+		}
+		energy, ok := new(big.Rat).SetString(r.Energy.Value)
+		if !ok || energy.Sign() <= 0 {
+			return nil
+		}
 	}
 	if r.Energy.Unit == "therm" {
 		if r.Energy.Fuel != "natural_gas" || r.Kind != "estimated_useful_cost" {
@@ -275,7 +295,7 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 	if err != nil {
 		return Preview{}, err
 	}
-	preview := Preview{ID: uuid.NewString(), HomeID: home, SchemaVersion: "manual-preview/v2", CreatedAt: now.UTC(), ExpiresAt: now.UTC().Add(24 * time.Hour), Scope: "selected_appliances", HomeTotalStatus: "unavailable_incomplete_scope", MeasuredStatus: "unavailable", RecommendationsStatus: "unavailable", Assumptions: []string{"Per-device estimates use reviewed source evidence and a current monthly tariff.", "Measured electricity covers only complete daily sensor buckets for selected appliances; coverage may be incomplete.", "No whole-home total, measured savings, waste finding, or incentive is asserted."}, Items: []Item{}, Recommendations: []ReportRecommendation{}}
+	preview := Preview{ID: uuid.NewString(), HomeID: home, SchemaVersion: "manual-preview/v2", CreatedAt: now.UTC(), ExpiresAt: now.UTC().Add(24 * time.Hour), Scope: "selected_appliances", HomeTotalStatus: "unavailable_incomplete_scope", MeasuredStatus: "unavailable", RecommendationsStatus: "unavailable", Assumptions: []string{"Per-device estimates use available energy data and a current monthly tariff.", "Measured electricity covers only complete daily sensor buckets for selected appliances; coverage may be incomplete.", "No whole-home total, measured savings, waste finding, or incentive is asserted."}, Items: []Item{}, Recommendations: []ReportRecommendation{}}
 	type dependency struct {
 		id         uuid.UUID
 		version    *int64
@@ -293,11 +313,11 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 		if err = rows.Scan(&id, &category, &applianceVersion, &runID, &body, &asOf); err != nil {
 			break
 		}
-		item := Item{ApplianceID: id.String(), Category: safeCategory(category), Explanation: "No current reviewed monthly estimate is available for this appliance."}
+		item := Item{ApplianceID: id.String(), Category: safeCategory(category), Explanation: "No current monthly estimate is available for this appliance."}
 		if runID != nil && asOf != nil {
-			item.Estimate = vettedEstimate(body, start, end, *asOf)
+			item.Estimate = vettedEstimate(body, id.String(), start, end, *asOf)
 			if item.Estimate != nil {
-				item.Explanation = "Reviewed monthly energy and cost estimate; this is not measured use or a savings claim."
+				item.Explanation = "Monthly energy and cost estimate; this is not measured use or a savings claim."
 			} else {
 				runID = nil
 			}
@@ -327,7 +347,7 @@ func (s Store) Create(ctx context.Context, owner, home string, selected []uuid.U
 		}
 		demoID := row.DemoDeviceID
 		preview.Items = append(preview.Items, Item{ApplianceID: row.ID, Category: safeCategory(row.Category),
-			Explanation: "No current reviewed monthly estimate is available for this appliance."})
+			Explanation: "No current monthly estimate is available for this appliance."})
 		deps = append(deps, dependency{id: id, demoID: &demoID})
 	}
 	if len(preview.Items) != len(selected) {

@@ -24,16 +24,6 @@ type applianceEvidence struct {
 	Quality   string
 	ProductID *string
 }
-type factEvidence struct {
-	ID         string
-	Revision   int64
-	Value      string
-	Count      int64
-	Distinct   int64
-	NonExact   int64
-	Changes    int64
-	SourceKind string
-}
 type rateEvidence struct {
 	ID       string
 	Revision int64

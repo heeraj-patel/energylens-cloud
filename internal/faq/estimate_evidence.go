@@ -17,9 +17,10 @@ var decimalAmount = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?$`)
 // persisted estimate result; it never turns annual energy into useful cost.
 func OperatingCostFromEstimate(raw json.RawMessage, applianceID string) (*OperatingCost, bool) {
 	var result struct {
-		ApplianceID string `json:"appliance_id"`
-		Kind        string `json:"kind"`
-		Period      struct {
+		ApplianceID    string `json:"appliance_id"`
+		Kind           string `json:"kind"`
+		FormulaVersion string `json:"formula_version"`
+		Period         struct {
 			Start string `json:"start"`
 			End   string `json:"end"`
 		} `json:"period"`
@@ -27,6 +28,15 @@ func OperatingCostFromEstimate(raw json.RawMessage, applianceID string) (*Operat
 			Value    string `json:"value"`
 			Currency string `json:"currency"`
 		} `json:"cost"`
+		Energy *struct {
+			Value string `json:"value"`
+			Unit  string `json:"unit"`
+			Fuel  string `json:"fuel"`
+		} `json:"energy"`
+		Quality struct {
+			Source      string `json:"source"`
+			Consumption string `json:"consumption"`
+		} `json:"quality"`
 		Evidence []Evidence `json:"evidence_refs"`
 	}
 	if json.Unmarshal(raw, &result) != nil || result.ApplianceID != applianceID || result.Kind != "estimated_operating_cost" || result.Cost == nil {
@@ -53,7 +63,7 @@ func OperatingCostFromEstimate(raw json.RawMessage, applianceID string) (*Operat
 			return nil, false
 		}
 	}
-	var hasFact, hasRate bool
+	var hasFact, hasResolution, hasRate bool
 	for _, ref := range result.Evidence {
 		if _, err := uuid.Parse(ref.ID); err != nil || ref.Revision < 1 {
 			return nil, false
@@ -61,13 +71,30 @@ func OperatingCostFromEstimate(raw json.RawMessage, applianceID string) (*Operat
 		switch ref.Kind {
 		case "catalog_fact":
 			hasFact = true
+		case "datawiz_resolution":
+			if ref.ID != applianceID || ref.Revision != 1 {
+				return nil, false
+			}
+			hasResolution = true
 		case "tariff":
 			hasRate = true
 		default:
 			return nil, false
 		}
 	}
-	if !hasFact || !hasRate {
+	if !hasRate || (hasFact == hasResolution) {
+		return nil, false
+	}
+	if hasResolution {
+		if len(result.Evidence) != 2 || result.FormulaVersion != "datawiz-resolution/v1" || result.Quality.Source != "datawiz_resolution" || result.Quality.Consumption != "resolved" ||
+			result.Energy == nil || result.Energy.Unit != "kWh" || result.Energy.Fuel != "electricity" ||
+			!decimalAmount.MatchString(result.Energy.Value) || result.Cost.Currency != "USD" {
+			return nil, false
+		}
+		if energy, ok := new(big.Rat).SetString(result.Energy.Value); !ok || energy.Sign() <= 0 {
+			return nil, false
+		}
+	} else if result.Quality.Source == "datawiz_resolution" {
 		return nil, false
 	}
 	return &OperatingCost{Amount: result.Cost.Value, Currency: currency, PeriodStart: result.Period.Start, PeriodEnd: result.Period.End, Evidence: result.Evidence}, true

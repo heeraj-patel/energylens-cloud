@@ -2,7 +2,11 @@ package faq
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestOperatingCostEstimateRequiresCompatibleScopedEvidence(t *testing.T) {
@@ -24,6 +28,29 @@ func TestOperatingCostEstimateRequiresCompatibleScopedEvidence(t *testing.T) {
 		}
 		if got, ok := OperatingCostFromEstimate(raw, requested); ok {
 			t.Fatalf("%s escaped: %+v", name, got)
+		}
+	}
+}
+
+func TestOperatingCostAcceptsOnlyScopedDatawizResolution(t *testing.T) {
+	appliance, tariff := uuid.NewString(), uuid.NewString()
+	raw := fmt.Sprintf(`{"appliance_id":%q,"kind":"estimated_operating_cost","formula_version":"datawiz-resolution/v1","energy":{"value":"0.248000","unit":"kWh","fuel":"electricity"},"period":{"start":"2026-10-01","end":"2026-11-01"},"cost":{"value":"0.049600","currency":"USD"},"quality":{"source":"datawiz_resolution","consumption":"resolved"},"evidence_refs":[{"id":%q,"kind":"datawiz_resolution","revision":1},{"id":%q,"kind":"tariff","revision":1}]}`, appliance, appliance, tariff)
+	if got, ok := OperatingCostFromEstimate(json.RawMessage(raw), appliance); !ok || got.Amount != "0.049600" || len(got.Evidence) != 2 {
+		t.Fatalf("valid Datawiz cost: %+v %v", got, ok)
+	}
+	for name, changed := range map[string]string{
+		"foreign resolution": strings.Replace(raw, `"id":"`+appliance+`","kind":"datawiz_resolution"`, `"id":"`+uuid.NewString()+`","kind":"datawiz_resolution"`, 1),
+		"missing tariff":     strings.Replace(raw, `"kind":"tariff"`, `"kind":"catalog_fact"`, 1),
+		"mixed legacy fact":  strings.Replace(raw, `"kind":"datawiz_resolution"`, `"kind":"catalog_fact"`, 1),
+		"wrong unit":         strings.Replace(raw, `"unit":"kWh"`, `"unit":"therm"`, 1),
+		"zero energy":        strings.Replace(raw, `"value":"0.248000"`, `"value":"0"`, 1),
+		"malformed cost":     strings.Replace(raw, `"value":"0.049600"`, `"value":"NaN"`, 1),
+		"unavailable":        strings.Replace(raw, `"estimated_operating_cost"`, `"unavailable"`, 1),
+		"wrong formula":      strings.Replace(raw, `"datawiz-resolution/v1"`, `"other"`, 1),
+		"unresolved":         strings.Replace(raw, `"consumption":"resolved"`, `"consumption":"unavailable"`, 1),
+	} {
+		if got, ok := OperatingCostFromEstimate(json.RawMessage(changed), appliance); ok {
+			t.Fatalf("%s accepted: %+v", name, got)
 		}
 	}
 }
