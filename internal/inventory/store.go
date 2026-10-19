@@ -23,6 +23,19 @@ var ErrKeyReuse = errors.New("appliance idempotency key reused")
 var ErrCatalogMismatch = errors.New("catalog product not found")
 var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
 var ErrAttachmentConflict = errors.New("active attachment cannot safely close")
+var ErrNearbyOriginInvalid = errors.New("nearby origin is not owned by this home")
+
+type NearbyOriginConflict struct{ ApplianceID string }
+
+func (e NearbyOriginConflict) Error() string {
+	return "nearby device is already linked to an appliance"
+}
+
+type NearbyOrigin struct {
+	HubID            string `json:"hub_id"`
+	OwnershipEpoch   int64  `json:"ownership_epoch"`
+	ProtocolDeviceID string `json:"protocol_device_id"`
+}
 
 type Identity struct {
 	Brand            string     `json:"brand"`
@@ -58,6 +71,7 @@ type Appliance struct {
 	UpdatedAt           time.Time      `json:"updated_at,omitempty"`
 	ArchivedAt          *time.Time     `json:"archived_at"`
 	KbWasteResult       *KbWasteResult `json:"kb_waste_result,omitempty"`
+	NearbyOrigin        *NearbyOrigin  `json:"nearby_origin,omitempty"`
 }
 
 // Synthetic inventory has no creation or update event. Omit Go's zero-time
@@ -85,10 +99,11 @@ type KbWasteResult struct {
 	Status string `json:"status"`
 }
 type CreateInput struct {
-	Name     string   `json:"name"`
-	Category string   `json:"category"`
-	Room     *string  `json:"room,omitempty"`
-	Identity Identity `json:"identity"`
+	Name         string        `json:"name"`
+	Category     string        `json:"category"`
+	Room         *string       `json:"room,omitempty"`
+	Identity     Identity      `json:"identity"`
+	NearbyOrigin *NearbyOrigin `json:"nearby_origin,omitempty"`
 }
 type PatchInput struct {
 	Name     *string         `json:"name,omitempty"`
@@ -106,16 +121,21 @@ type Store interface {
 }
 type PGStore struct{ Pool *pgxpool.Pool }
 
-const selectAppliance = `SELECT a.id,a.home_id,a.name,a.category,a.room,a.identity,a.version,a.created_at,a.updated_at,a.archived_at FROM appliances a`
+const selectAppliance = `SELECT a.id,a.home_id,a.name,a.category,a.room,a.identity,a.version,a.created_at,a.updated_at,a.archived_at,a.nearby_hub_id,a.nearby_ownership_epoch,a.nearby_protocol_device_id FROM appliances a`
 
 type row interface{ Scan(...any) error }
 
 func scanAppliance(r row) (Appliance, error) {
 	var a Appliance
 	var identity []byte
-	err := r.Scan(&a.ID, &a.HomeID, &a.Name, &a.Category, &a.Room, &identity, &a.Version, &a.CreatedAt, &a.UpdatedAt, &a.ArchivedAt)
+	var hubID, protocolDeviceID *string
+	var epoch *int64
+	err := r.Scan(&a.ID, &a.HomeID, &a.Name, &a.Category, &a.Room, &identity, &a.Version, &a.CreatedAt, &a.UpdatedAt, &a.ArchivedAt, &hubID, &epoch, &protocolDeviceID)
 	if err != nil {
 		return a, err
+	}
+	if hubID != nil && epoch != nil && protocolDeviceID != nil {
+		a.NearbyOrigin = &NearbyOrigin{HubID: *hubID, OwnershipEpoch: *epoch, ProtocolDeviceID: *protocolDeviceID}
 	}
 	err = json.Unmarshal(identity, &a.Identity)
 	return a, err
@@ -396,13 +416,46 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 		return Appliance{}, err
 	}
 	defer tx.Rollback(ctx)
+	if in.NearbyOrigin != nil {
+		// Ownership mutations lock the user first. Attachment writes lock the
+		// home before the hub; use the same order below.
+		var userID string
+		err = tx.QueryRow(ctx, `SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, owner).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Appliance{}, ErrNearbyOriginInvalid
+		}
+		if err != nil {
+			return Appliance{}, err
+		}
+	}
 	if err = s.ownedHome(ctx, tx, owner, home); err != nil {
 		return Appliance{}, err
+	}
+	if in.NearbyOrigin != nil {
+		var currentHome string
+		var currentEpoch int64
+		err = tx.QueryRow(ctx, `SELECT home_id,ownership_epoch FROM hubs WHERE id=$1 AND home_id=$2 AND revoked_at IS NULL FOR UPDATE`, in.NearbyOrigin.HubID, home).Scan(&currentHome, &currentEpoch)
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && (currentHome != home || currentEpoch != in.NearbyOrigin.OwnershipEpoch) {
+			return Appliance{}, ErrNearbyOriginInvalid
+		}
+		if err != nil {
+			return Appliance{}, err
+		}
 	}
 	if a, found, e := replay(ctx, tx, owner, home, "create_appliance", key, hash); found || e != nil {
 		return a, e
 	}
-	a := Appliance{HomeID: home, Name: in.Name, Category: in.Category, Room: in.Room, Identity: in.Identity, Version: 1}
+	if in.NearbyOrigin != nil {
+		var existing string
+		err = tx.QueryRow(ctx, `SELECT id FROM appliances WHERE home_id=$1 AND nearby_hub_id=$2 AND nearby_ownership_epoch=$3 AND nearby_protocol_device_id=$4 AND archived_at IS NULL`, home, in.NearbyOrigin.HubID, in.NearbyOrigin.OwnershipEpoch, in.NearbyOrigin.ProtocolDeviceID).Scan(&existing)
+		if err == nil {
+			return Appliance{}, NearbyOriginConflict{ApplianceID: existing}
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return Appliance{}, err
+		}
+	}
+	a := Appliance{HomeID: home, Name: in.Name, Category: in.Category, Room: in.Room, Identity: in.Identity, Version: 1, NearbyOrigin: in.NearbyOrigin}
 	if _, err = energycategories.Ensure(ctx, tx, a.Category); err != nil {
 		return Appliance{}, err
 	}
@@ -410,7 +463,13 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 		return Appliance{}, err
 	}
 	identity, _ := json.Marshal(a.Identity)
-	err = tx.QueryRow(ctx, `INSERT INTO appliances(home_id,name,category,room,catalog_product_id,identity) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,created_at,updated_at`, home, a.Name, a.Category, a.Room, a.Identity.CatalogProductID, identity).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+	var nearbyHub any
+	var nearbyEpoch any
+	var nearbyDevice any
+	if in.NearbyOrigin != nil {
+		nearbyHub, nearbyEpoch, nearbyDevice = in.NearbyOrigin.HubID, in.NearbyOrigin.OwnershipEpoch, in.NearbyOrigin.ProtocolDeviceID
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO appliances(home_id,name,category,room,catalog_product_id,identity,nearby_hub_id,nearby_ownership_epoch,nearby_protocol_device_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,created_at,updated_at`, home, a.Name, a.Category, a.Room, a.Identity.CatalogProductID, identity, nearbyHub, nearbyEpoch, nearbyDevice).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return Appliance{}, err
 	}
@@ -574,7 +633,7 @@ func (s PGStore) Archive(ctx context.Context, owner, home, id string, version in
 			return Appliance{}, err
 		}
 	}
-	a, err = scanAppliance(tx.QueryRow(ctx, `UPDATE appliances a SET archived_at=$3,version=version+1,updated_at=$3 WHERE a.id=$1 AND a.home_id=$2 AND a.archived_at IS NULL RETURNING a.id,a.home_id,a.name,a.category,a.room,a.identity,a.version,a.created_at,a.updated_at,a.archived_at`, id, home, closedAt))
+	a, err = scanAppliance(tx.QueryRow(ctx, `UPDATE appliances a SET archived_at=$3,version=version+1,updated_at=$3 WHERE a.id=$1 AND a.home_id=$2 AND a.archived_at IS NULL RETURNING a.id,a.home_id,a.name,a.category,a.room,a.identity,a.version,a.created_at,a.updated_at,a.archived_at,a.nearby_hub_id,a.nearby_ownership_epoch,a.nearby_protocol_device_id`, id, home, closedAt))
 	if err != nil {
 		return Appliance{}, err
 	}
@@ -640,7 +699,7 @@ func ValidIdentity(i Identity) bool {
 	return true
 }
 func ValidCreate(in CreateInput) bool {
-	return validText(in.Name, 120) && validText(in.Category, 120) && (in.Room == nil || validText(*in.Room, 120)) && ValidIdentity(in.Identity)
+	return validText(in.Name, 120) && validText(in.Category, 120) && (in.Room == nil || validText(*in.Room, 120)) && ValidIdentity(in.Identity) && (in.NearbyOrigin == nil || validUUID(in.NearbyOrigin.HubID) && in.NearbyOrigin.OwnershipEpoch > 0 && validText(in.NearbyOrigin.ProtocolDeviceID, 256))
 }
 func ValidPatch(in PatchInput) bool {
 	if in.Name == nil && in.Category == nil && in.Room == nil && in.Identity == nil {

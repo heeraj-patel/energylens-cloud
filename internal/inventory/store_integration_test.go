@@ -352,6 +352,46 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_inventory_archive_test',$1,'test',$2,1) RETURNING id`, make([]byte, 32), home.ID).Scan(&hub); err != nil {
 		t.Fatal(err)
 	}
+	var nearbyHub string
+	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_inventory_nearby_test',$1,'test',$2,1) RETURNING id`, make([]byte, 32), transientHome.ID).Scan(&nearbyHub); err != nil {
+		t.Fatal(err)
+	}
+	nearby := CreateInput{Name: "Nearby television", Category: "tv", Identity: Identity{Fuel: "electricity", MatchQuality: "unresolved"}, NearbyOrigin: &NearbyOrigin{HubID: nearbyHub, OwnershipEpoch: 1, ProtocolDeviceID: "protocol-tv-1"}}
+	nearbyKey := uuid.NewString()
+	nearbyHash := sha256.Sum256([]byte("nearby-create"))
+	linkedNearby, err := store.Create(ctx, owner.ID, transientHome.ID, nearby, nearbyKey, nearbyHash[:])
+	if err != nil || linkedNearby.NearbyOrigin == nil || linkedNearby.NearbyOrigin.ProtocolDeviceID != "protocol-tv-1" {
+		t.Fatalf("nearby create/readback: %+v %v", linkedNearby, err)
+	}
+	if replayed, e := store.Create(ctx, owner.ID, transientHome.ID, nearby, nearbyKey, nearbyHash[:]); e != nil || replayed.ID != linkedNearby.ID {
+		t.Fatalf("nearby same-key replay: %+v %v", replayed, e)
+	}
+	changedHash := sha256.Sum256([]byte("changed-nearby-create"))
+	if _, e := store.Create(ctx, owner.ID, transientHome.ID, nearby, nearbyKey, changedHash[:]); !errors.Is(e, ErrKeyReuse) {
+		t.Fatalf("changed payload reused key: %v", e)
+	}
+	if _, e := store.Create(ctx, owner.ID, transientHome.ID, nearby, uuid.NewString(), nearbyHash[:]); e == nil {
+		t.Fatal("different key reused active nearby origin")
+	} else {
+		var conflict NearbyOriginConflict
+		if !errors.As(e, &conflict) || conflict.ApplianceID != linkedNearby.ID {
+			t.Fatalf("nearby conflict: %v", e)
+		}
+	}
+	staleNearby := nearby
+	staleNearby.NearbyOrigin = &NearbyOrigin{HubID: nearbyHub, OwnershipEpoch: 2, ProtocolDeviceID: "protocol-tv-1"}
+	if _, e := store.Create(ctx, owner.ID, transientHome.ID, staleNearby, uuid.NewString(), nearbyHash[:]); !errors.Is(e, ErrNearbyOriginInvalid) {
+		t.Fatalf("stale nearby epoch accepted: %v", e)
+	}
+	if _, e := store.Create(ctx, other.ID, transientHome.ID, nearby, uuid.NewString(), nearbyHash[:]); e == nil {
+		t.Fatal("foreign owner nearby origin accepted")
+	}
+	if _, err = pool.Exec(ctx, `UPDATE hubs SET revoked_at=now() WHERE id=$1`, nearbyHub); err != nil {
+		t.Fatal(err)
+	}
+	if _, e := store.Create(ctx, owner.ID, transientHome.ID, nearby, uuid.NewString(), nearbyHash[:]); !errors.Is(e, ErrNearbyOriginInvalid) {
+		t.Fatalf("revoked nearby hub accepted: %v", e)
+	}
 	if _, err = pool.Exec(ctx, `INSERT INTO hub_certificates(serial,hub_id,ownership_epoch,expires_at,certificate_pem) VALUES('inventory-archive-cert',$1,1,now()+interval '1 hour','test')`, hub); err != nil {
 		t.Fatal(err)
 	}

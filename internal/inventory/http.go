@@ -40,7 +40,12 @@ func write(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 func storeError(w http.ResponseWriter, err error) {
+	var linked NearbyOriginConflict
 	switch {
+	case errors.As(err, &linked):
+		write(w, 409, map[string]any{"code": "nearby_origin_conflict", "message": "device already linked", "request_id": uuid.NewString(), "details": map[string]any{"appliance_id": linked.ApplianceID}})
+	case errors.Is(err, ErrNearbyOriginInvalid):
+		fail(w, 404, "not_found", "appliance or home not found")
 	case errors.Is(err, ErrNotFound):
 		fail(w, 404, "not_found", "appliance or home not found")
 	case errors.Is(err, ErrVersion):
