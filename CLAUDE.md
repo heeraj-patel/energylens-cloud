@@ -10,8 +10,8 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   `sensors`/`attachments`/`telemetry`/`kasaruntime` (hub sync + owner reads), `meteredhistory|summary|export|rollup`,
   `householdenergy` (dashboard, trends), `catalog`/`catalogimport`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
   `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs` (+OEDI, source probe),
-  `reports`, `energyrate`, `weather`, `datawiz*`, `designfixture`, `identityscan`, `migrate`, `apierror`.
-- `migrations/` embedded SQL 0016..0073 (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
+  `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `scenarioimport`, `designfixture`, `identityscan`, `migrate`, `apierror`.
+- `migrations/` embedded SQL 0016..0079 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
 ## Build / test (verified 2026-10-16)
@@ -26,7 +26,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   Uses `go run` unless `ENERGYLENS_CLOUD_BIN` is set. Templates in `../energylens-dev-bash-scripts/templates/cloud-local-*.env.example`.
 - Direct: `go run ./cmd/energylens-cloud --role=api|worker|all`; subcommands: `migrate`, `check-config`, `check-local-auth-keys`,
   `provision-hub`, `issue-hub-enroll-nonce`, `import-reviewed-{catalog,usage-facts,program,rated-input,action-scenarios}`,
-  `import-official-tariff`, `import-demo-cost-snapshot`, `export-datawiz-requests`, `read-datawiz-current`,
+  `import-official-tariff`, `import-demo-cost-snapshot`, `export-datawiz-requests`, `read-datawiz-current`, `export-energy-categories`,
   `adopt-dev-account-username`, `unlock-dev-username-login`, `deletion-journal`, `export-unresolved-device-help`.
 - Migrate with a separate DDL role (`ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL`) before serving; serving never runs DDL.
 - Geekom deploy: `../energylens-common/scripts/deploy-geekom.sh cloud` cross-builds, copies to
@@ -74,7 +74,6 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 - Commits: Conventional Commits; no push.
 
 ## Gotchas
-- README says embedded migrations "through 0070"; directory holds through 0073.
 - Hub keys are provisioned only via CLI `provision-hub` (no HTTP); claim needs the hub's possession proof.
 - No documented cert generation/CA flow in this repo; server cert must be trusted by the client and cover the host/IP SAN.
 - Old kernel path references remain in code comments (`kernel-common-contracts`).
