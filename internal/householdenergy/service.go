@@ -179,17 +179,8 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		fail(w, 400, "invalid_request")
 		return
 	}
-	tx, err := s.Pool.BeginTx(r.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		internal(w, err)
-		return
-	}
-	defer tx.Rollback(r.Context())
-	var tz string
-	var homeVersion int64
-	var rawDemo []byte
-	err = tx.QueryRow(r.Context(), `SELECT timezone,version,demo_cost_snapshot FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL`, home, s.UserID(r)).Scan(&tz, &homeVersion, &rawDemo)
-	if errors.Is(err, pgx.ErrNoRows) {
+	c, err := s.compute(r.Context(), s.UserID(r), home, granularity, window)
+	if errors.Is(err, ErrNotFound) {
 		fail(w, 404, "not_found")
 		return
 	}
@@ -197,10 +188,65 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		internal(w, err)
 		return
 	}
+	b, a, sampleDeviceRows, sampleUnattributed, buckets, efficiency := c.base, c.totals, c.deviceRows, c.unattributed, c.buckets, c.efficiency
+	var out any
+	if view == "dashboard" {
+		out = struct {
+			base
+			View                string             `json:"view"`
+			Totals              allocation         `json:"totals"`
+			DeviceAllocations   []deviceAllocation `json:"device_allocations,omitempty"`
+			Unattributed        *allocation        `json:"unattributed,omitempty"`
+			TrendPeriod         string             `json:"trend_period"`
+			TopRecommendationID any                `json:"top_recommendation_id"`
+			AssistantIntentID   any                `json:"assistant_intent_id"`
+		}{b, "dashboard", a, sampleDeviceRows, sampleUnattributed, "day", nil, nil}
+	} else {
+		out = struct {
+			base
+			View         string                 `json:"view"`
+			Granularity  string                 `json:"granularity"`
+			Totals       allocation             `json:"totals"`
+			Buckets      []bucket               `json:"buckets"`
+			Unattributed *allocation            `json:"unattributed,omitempty"`
+			Efficiency   *efficiencyMonthToDate `json:"efficiency_month_to_date,omitempty"`
+		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed, efficiency}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// ErrNotFound reports an unknown or unowned home.
+var ErrNotFound = errors.New("home not found")
+
+type computed struct {
+	base         base
+	totals       allocation
+	deviceRows   []deviceAllocation
+	unattributed *allocation
+	buckets      []bucket
+	efficiency   *efficiencyMonthToDate
+}
+
+func (s Service) compute(ctx context.Context, owner, home, granularity, window string) (*computed, error) {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var tz string
+	var homeVersion int64
+	var rawDemo []byte
+	err = tx.QueryRow(ctx, `SELECT timezone,version,demo_cost_snapshot FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL`, home, owner).Scan(&tz, &homeVersion, &rawDemo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
 	now := time.Now().UTC()
 	if s.Now != nil {
@@ -215,45 +261,39 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		p = last5OccurrencesPeriod(now, loc, granularity)
 	}
 	var watermark int64
-	err = tx.QueryRow(r.Context(), `SELECT COALESCE(max(cursor),0) FROM ingest_batches WHERE home_id=$1`, home).Scan(&watermark)
+	err = tx.QueryRow(ctx, `SELECT COALESCE(max(cursor),0) FROM ingest_batches WHERE home_id=$1`, home).Scan(&watermark)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
 	var hasHistory, hasInventory bool
-	err = tx.QueryRow(r.Context(), `SELECT
+	err = tx.QueryRow(ctx, `SELECT
  EXISTS(SELECT 1 FROM ingest_events WHERE home_id=$1 AND event_kind='energy_interval'),
  EXISTS(SELECT 1 FROM appliances WHERE home_id=$1)`, home).Scan(&hasHistory, &hasInventory)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
-	items, _, err := readIntervals(r.Context(), tx, home, p, now)
+	items, _, err := readIntervals(ctx, tx, home, p, now)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
-	items, err = mergeRetainedIntervals(r.Context(), tx, home, p, items)
+	items, err = mergeRetainedIntervals(ctx, tx, home, p, items)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
 	var summaryRevision int64
-	if err = tx.QueryRow(r.Context(), `SELECT COALESCE(revision,0) FROM metered_summary_revision WHERE home_id=$1`, home).Scan(&summaryRevision); errors.Is(err, pgx.ErrNoRows) {
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(revision,0) FROM metered_summary_revision WHERE home_id=$1`, home).Scan(&summaryRevision); errors.Is(err, pgx.ErrNoRows) {
 		summaryRevision = 0
 	} else if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
 	buckets := makeBuckets(p, granularity, items)
 	selectedItems := make([]interval, 0, len(items))
 	for _, row := range buckets {
 		selectedItems = append(selectedItems, row.selected...)
 	}
-	latestTariffID, latestTariffRevision, tariff, err := readMarginalTariff(r.Context(), tx, home, now, selectedItems)
+	latestTariffID, latestTariffRevision, tariff, err := readMarginalTariff(ctx, tx, home, now, selectedItems)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
 	var demoSnapshot *DemoCostSnapshot
 	if len(rawDemo) > 0 && string(rawDemo) != "null" {
@@ -269,10 +309,9 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 	if demoSnapshot != nil && !hasHistory {
 		asOf = &now
 	} else if hasHistory {
-		asOf, err = homeEnergyAsOf(r.Context(), tx, home, now)
+		asOf, err = homeEnergyAsOf(ctx, tx, home, now)
 		if err != nil {
-			internal(w, err)
-			return
+			return nil, err
 		}
 	}
 	var sampleUnattributed *allocation
@@ -353,10 +392,9 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 			}
 		}
 	}
-	resolvedBuckets, resolvedPeriod, err := resolutionDeviceRows(r.Context(), tx, home, buckets, now)
+	resolvedBuckets, resolvedPeriod, err := resolutionDeviceRows(ctx, tx, home, buckets, now)
 	if err != nil {
-		internal(w, err)
-		return
+		return nil, err
 	}
 	for i := range buckets {
 		buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, resolvedBuckets[i]...)
@@ -381,7 +419,7 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 		b.Scope = "whole_home_including_unattributed_load"
 	}
 	var efficiency *efficiencyMonthToDate
-	if view == "energy_trends" && window == "month_to_date" && seededTotals {
+	if window == "month_to_date" && seededTotals {
 		efficiency = syntheticEfficiencyMonthToDate(a)
 	}
 	// Tariff eligibility can change as time passes, without a new tariff
@@ -401,35 +439,10 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 	}
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%d|%d|%d|%s|%s|%s|%d|%s", home, tz, p.Start.UTC().Format(time.RFC3339Nano), p.End.UTC().Format(time.RFC3339Nano), homeVersion, watermark, summaryRevision, granularity, b.DataMode, latestTariffID, latestTariffRevision, allocationState)))
 	b.SnapshotID = hex.EncodeToString(digest[:])
-	if err = tx.Commit(r.Context()); err != nil {
-		internal(w, err)
-		return
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
 	}
-	var out any
-	if view == "dashboard" {
-		out = struct {
-			base
-			View                string             `json:"view"`
-			Totals              allocation         `json:"totals"`
-			DeviceAllocations   []deviceAllocation `json:"device_allocations,omitempty"`
-			Unattributed        *allocation        `json:"unattributed,omitempty"`
-			TrendPeriod         string             `json:"trend_period"`
-			TopRecommendationID any                `json:"top_recommendation_id"`
-			AssistantIntentID   any                `json:"assistant_intent_id"`
-		}{b, "dashboard", a, sampleDeviceRows, sampleUnattributed, "day", nil, nil}
-	} else {
-		out = struct {
-			base
-			View         string                 `json:"view"`
-			Granularity  string                 `json:"granularity"`
-			Totals       allocation             `json:"totals"`
-			Buckets      []bucket               `json:"buckets"`
-			Unattributed *allocation            `json:"unattributed,omitempty"`
-			Efficiency   *efficiencyMonthToDate `json:"efficiency_month_to_date,omitempty"`
-		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed, efficiency}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	return &computed{base: b, totals: a, deviceRows: sampleDeviceRows, unattributed: sampleUnattributed, buckets: buckets, efficiency: efficiency}, nil
 }
 
 func allocationSnapshotState(a allocation) string {

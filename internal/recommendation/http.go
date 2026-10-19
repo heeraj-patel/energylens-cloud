@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/datawizfacts"
+	"energylens.local/cloud/internal/householdenergy"
 	"errors"
 	"io"
 	"log/slog"
@@ -18,10 +19,14 @@ type Service struct {
 	Store  EvidenceStore
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
+	Waste  interface {
+		DeviceMonthlyWaste(ctx context.Context, owner, home string) ([]householdenergy.DeviceWaste, error)
+	}
 }
 
 func (s Service) Routes(r chi.Router) {
 	r.With(s.Auth).Get("/homes/{home}/recommendations", s.list)
+	r.With(s.Auth).Get("/homes/{home}/top-savings-move", s.topSavingsMove)
 	r.With(s.Auth).Post("/homes/{home}/recommendation-events", s.record)
 }
 
