@@ -18,6 +18,11 @@ type resolvedEnergy struct {
 		AnnualKWh      *float64 `json:"annual_kwh"`
 		KWhPerDay      *float64 `json:"kwh_per_day"`
 		WasteKWhPerDay *float64 `json:"waste_kwh_per_day"`
+		StandbyWatts   *float64 `json:"standby_watts"`
+		UsageBasis     *struct {
+			Kind  string   `json:"kind"`
+			Value *float64 `json:"value"`
+		} `json:"usage_basis"`
 	} `json:"values"`
 }
 
@@ -43,7 +48,7 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 		if err = json.Unmarshal(raw, &record); err != nil {
 			break
 		}
-		if record.Status == "resolved" && record.DeviceKind == "real_non_metering" && record.Values != nil {
+		if record.estimable() {
 			devices = append(devices, device{id, record})
 		}
 	}
@@ -67,7 +72,6 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 	}
 	for _, d := range devices {
 		var total, allWaste, totalCost, allWasteCost big.Rat
-		hasWaste := d.resolution.Values.WasteKWhPerDay != nil
 		priced := tariff != nil
 		for bi, b := range buckets {
 			energy, waste := resolutionKWhForPeriod(d.resolution, b.Start, b.End)
@@ -78,17 +82,11 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 			total.Add(&total, e)
 			a := fromKWh(e)
 			a.EvidenceBasis = "estimated"
-			if hasWaste {
-				w := mustDecimal(fmt.Sprintf("%.9f", waste))
-				allWaste.Add(&allWaste, w)
-				a.WasteEnergy = &quantity{Value: w.FloatString(12), Unit: "kWh"}
-				remaining := new(big.Rat).Sub(e, w)
-				if remaining.Sign() <= 0 {
-					a.UnclassifiedEnergy = nil
-				} else {
-					a.UnclassifiedEnergy = &quantity{Value: remaining.FloatString(12), Unit: "kWh"}
-				}
-			}
+			w := mustDecimal(fmt.Sprintf("%.9f", waste))
+			allWaste.Add(&allWaste, w)
+			a.WasteEnergy = &quantity{Value: w.FloatString(12), Unit: "kWh"}
+			a.UsefulEnergy = &quantity{Value: nonNegative(new(big.Rat).Sub(e, w)).FloatString(12), Unit: "kWh"}
+			a.UnclassifiedEnergy = nil
 			if tariff != nil {
 				piece := interval{Start: b.Start, End: b.End, Wh: new(big.Rat).Mul(e, big.NewRat(1000, 1)), Fuel: &electricity}
 				cost := priceIntervalRange(piece, b.Start, b.End, *tariff)
@@ -99,7 +97,7 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 					a.Cost = money{Amount: cost.FloatString(6), Currency: tariff.Currency}
 					a.UnclassifiedCost = a.Cost
 				}
-				if hasWaste && cost != nil {
+				if cost != nil {
 					piece.Wh = new(big.Rat).Mul(mustDecimal(fmt.Sprintf("%.9f", waste)), big.NewRat(1000, 1))
 					wc := priceIntervalRange(piece, b.Start, b.End, *tariff)
 					if wc == nil {
@@ -107,12 +105,8 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 					} else {
 						allWasteCost.Add(&allWasteCost, wc)
 						a.WasteCost = money{Amount: wc.FloatString(6), Currency: tariff.Currency}
-						remaining := new(big.Rat).Sub(cost, wc)
-						if remaining.Sign() <= 0 {
-							a.UnclassifiedCost = nil
-						} else {
-							a.UnclassifiedCost = money{Amount: remaining.FloatString(6), Currency: tariff.Currency}
-						}
+						a.UsefulCost = money{Amount: nonNegative(new(big.Rat).Sub(cost, wc)).FloatString(6), Currency: tariff.Currency}
+						a.UnclassifiedCost = nil
 					}
 				}
 			}
@@ -123,27 +117,15 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 		}
 		a := fromKWh(&total)
 		a.EvidenceBasis = "estimated"
-		if hasWaste {
-			a.WasteEnergy = &quantity{Value: allWaste.FloatString(12), Unit: "kWh"}
-			remaining := new(big.Rat).Sub(&total, &allWaste)
-			if remaining.Sign() <= 0 {
-				a.UnclassifiedEnergy = nil
-			} else {
-				a.UnclassifiedEnergy = &quantity{Value: remaining.FloatString(12), Unit: "kWh"}
-			}
-		}
+		a.WasteEnergy = &quantity{Value: allWaste.FloatString(12), Unit: "kWh"}
+		a.UsefulEnergy = &quantity{Value: nonNegative(new(big.Rat).Sub(&total, &allWaste)).FloatString(12), Unit: "kWh"}
+		a.UnclassifiedEnergy = nil
 		if priced {
 			a.Cost = money{Amount: totalCost.FloatString(6), Currency: tariff.Currency}
 			a.UnclassifiedCost = a.Cost
-			if hasWaste {
-				a.WasteCost = money{Amount: allWasteCost.FloatString(6), Currency: tariff.Currency}
-				remaining := new(big.Rat).Sub(&totalCost, &allWasteCost)
-				if remaining.Sign() <= 0 {
-					a.UnclassifiedCost = nil
-				} else {
-					a.UnclassifiedCost = money{Amount: remaining.FloatString(6), Currency: tariff.Currency}
-				}
-			}
+			a.WasteCost = money{Amount: allWasteCost.FloatString(6), Currency: tariff.Currency}
+			a.UsefulCost = money{Amount: nonNegative(new(big.Rat).Sub(&totalCost, &allWasteCost)).FloatString(6), Currency: tariff.Currency}
+			a.UnclassifiedCost = nil
 		}
 		period = append(period, deviceAllocation{ApplianceID: d.id, Allocation: a})
 	}
@@ -171,10 +153,36 @@ func resolutionKWhForPeriod(record resolvedEnergy, start, end time.Time) (float6
 			daily = *record.Values.AnnualKWh / days
 		}
 		energy += daily * fraction
-		if record.Values.WasteKWhPerDay != nil {
-			waste += *record.Values.WasteKWhPerDay * fraction
-		}
+		waste += record.wasteKWhPerDay(daily) * fraction
 		at = stop
 	}
 	return energy, waste
+}
+
+// estimable is false for metered appliances: their spec only drives the split.
+func (r resolvedEnergy) estimable() bool {
+	return r.Status == "resolved" && r.DeviceKind == "real_non_metering" && r.Values != nil
+}
+
+func nonNegative(v *big.Rat) *big.Rat {
+	if v.Sign() < 0 {
+		return new(big.Rat)
+	}
+	return v
+}
+
+// wasteKWhPerDay prefers the record's own waste figure, then datawiz standby
+// watts over the idle hours of the usage basis; with neither it is zero.
+func (r resolvedEnergy) wasteKWhPerDay(daily float64) float64 {
+	if r.Values.WasteKWhPerDay != nil {
+		return *r.Values.WasteKWhPerDay
+	}
+	if r.Values.StandbyWatts == nil || *r.Values.StandbyWatts <= 0 {
+		return 0
+	}
+	hours := 24.0
+	if basis := r.Values.UsageBasis; basis != nil && basis.Kind == "hours_per_week" && basis.Value != nil {
+		hours = math.Max(0, 168-*basis.Value) / 7
+	}
+	return math.Min(*r.Values.StandbyWatts*hours/1000, daily)
 }

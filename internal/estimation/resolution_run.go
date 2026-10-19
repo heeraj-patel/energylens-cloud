@@ -70,7 +70,7 @@ func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a appliance
 		refs = append(refs, map[string]any{"id": rate.ID, "kind": "tariff", "revision": rate.Revision})
 	}
 	var unavailable string
-	if metering || len(recordJSON) == 0 || resolution.Status == "measured_device" || resolution.Values == nil {
+	if metering || len(recordJSON) == 0 || resolution.Status == "measured_device" || resolution.DeviceKind == "real_metering" || resolution.Values == nil {
 		unavailable = "resolution_pending"
 	} else if a.Fuel != "electricity" {
 		unavailable = "basis_incomparable"

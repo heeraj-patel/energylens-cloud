@@ -379,6 +379,11 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		if tariff != nil {
 			priceAttributedDevices(buckets, realRows, periodRows, selectedItems, *tariff)
 		}
+		specs, err := readStandbySpecs(ctx, tx, home)
+		if err != nil {
+			return nil, err
+		}
+		applyMeasuredSplit(buckets, realRows, periodRows, items, selectedItems, specs, tariff)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)
 		}
