@@ -82,11 +82,6 @@ type Config struct {
 	KBScanSources                string
 	KBScanCandidateIndex         string
 	KBScanAllowEPA               bool
-	KBScanGoogleSite             string
-	KBScanGoogleExistingCustomer bool
-	KBScanGoogleSearch           bool
-	KBScanGoogleCSEAPIKey        string
-	KBScanGoogleCSEID            string
 	KBHelpOutputPath             string
 	DatawizRequestsDir           string
 	ProgramRefreshEnabled        bool
@@ -117,7 +112,6 @@ func LoadConfig(role string) (Config, error) {
 		OEDIIOUPath:          os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
 		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"), KBHelpOutputPath: os.Getenv("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH"),
 		DatawizRequestsDir: os.Getenv("ENERGYLENS_CLOUD_DATAWIZ_REQUESTS_DIR"),
-		KBScanGoogleSite:   os.Getenv("ENERGYLENS_CLOUD_KB_GOOGLE_SITE"), KBScanGoogleCSEAPIKey: os.Getenv("ENERGYLENS_GOOGLE_CSE_API_KEY"), KBScanGoogleCSEID: os.Getenv("ENERGYLENS_GOOGLE_CSE_ID"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -146,20 +140,6 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_KB_ALLOW_EPA: %w", err)
 		}
 		c.KBScanAllowEPA = enabled
-	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_GOOGLE_SEARCH"); raw != "" {
-		enabled, err := strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_KB_GOOGLE_SEARCH: %w", err)
-		}
-		c.KBScanGoogleSearch = enabled
-	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_GOOGLE_EXISTING_CUSTOMER"); raw != "" {
-		confirmed, err := strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_KB_GOOGLE_EXISTING_CUSTOMER: %w", err)
-		}
-		c.KBScanGoogleExistingCustomer = confirmed
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_METERED_ROLLUP_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -485,17 +465,12 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
-	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA || c.KBHelpOutputPath != "" || c.KBScanGoogleSearch || c.KBScanGoogleSite != "" || c.KBScanGoogleExistingCustomer || c.KBScanGoogleCSEAPIKey != "" || c.KBScanGoogleCSEID != "" {
+	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA || c.KBHelpOutputPath != "" {
 		if c.KBScanPython == "" || c.KBScanSources == "" || c.DatabaseURL == "" || c.Role == RoleAPI {
 			return errors.New("KB scan requires worker role, database, Python and sources")
 		}
 		if c.KBHelpOutputPath != "" && (!filepath.IsAbs(c.KBHelpOutputPath) || filepath.Base(c.KBHelpOutputPath) != "unresolved_device_help.jsonl") {
 			return errors.New("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH must be an absolute unresolved_device_help.jsonl path")
-		}
-	}
-	if c.KBScanGoogleSearch || c.KBScanGoogleSite != "" || c.KBScanGoogleExistingCustomer || c.KBScanGoogleCSEAPIKey != "" || c.KBScanGoogleCSEID != "" {
-		if !c.KBScanGoogleSearch || !c.KBScanAllowEPA || !c.KBScanGoogleExistingCustomer || strings.TrimSpace(c.KBScanGoogleSite) == "" || c.KBScanGoogleSite != strings.TrimSpace(c.KBScanGoogleSite) || c.KBScanGoogleCSEAPIKey == "" || c.KBScanGoogleCSEID == "" {
-			return errors.New("KB Google search requires Google search, confirmed existing-customer access, a public site, EPA approval, and Google CSE credentials")
 		}
 	}
 	if c.Environment == "production" && c.Role == RoleAll {

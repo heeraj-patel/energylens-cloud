@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -76,37 +73,5 @@ func TestKBStdoutIsBoundedWhileWriting(t *testing.T) {
 	}
 	if _, err := b.Write([]byte("5")); err == nil || b.Len() != 4 {
 		t.Fatalf("unbounded KB output: len=%d err=%v", b.Len(), err)
-	}
-}
-
-func TestKBScannerAddsGoogleOptionsAsArguments(t *testing.T) {
-	dir := t.TempDir()
-	python := filepath.Join(dir, "python")
-	argsFile := filepath.Join(dir, "args")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE_ARGS\"\nprintf '{}\\n'\n"
-	if err := os.WriteFile(python, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CAPTURE_ARGS", argsFile)
-	sources := filepath.Join(dir, "sources")
-	if err := os.Mkdir(sources, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	scanner := KBScanner{Python: python, Sources: sources, AllowEPA: true, GoogleSearch: true, GoogleSite: "lg.com", GoogleExistingCustomer: true}
-	if err := scanner.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := scanner.Scan(context.Background(), Request{Category: "tv", Manufacturer: "Acme", Model: "M1"}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(argsFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := string(got)
-	for _, want := range []string{"--google-search", "--google-site\nlg.com", "--google-existing-customer"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("missing argument %q in captured argv", want)
-		}
 	}
 }

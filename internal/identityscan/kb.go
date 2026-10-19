@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
 type cappedBuffer struct {
@@ -28,9 +27,6 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 type KBScanner struct {
 	Python, Sources, CandidateIndex string
 	AllowEPA                        bool
-	GoogleSearch                    bool
-	GoogleSite                      string
-	GoogleExistingCustomer          bool
 }
 
 func (s KBScanner) Validate() error {
@@ -53,13 +49,6 @@ func (s KBScanner) Validate() error {
 			return errors.New("candidate index missing")
 		}
 	}
-	if s.GoogleSearch {
-		if !s.AllowEPA || strings.TrimSpace(s.GoogleSite) == "" || s.GoogleSite != strings.TrimSpace(s.GoogleSite) || !s.GoogleExistingCustomer {
-			return errors.New("KB Google search requires EPA approval, one public site, and existing-customer confirmation")
-		}
-	} else if s.GoogleSite != "" || s.GoogleExistingCustomer {
-		return errors.New("KB Google search options require Google search")
-	}
 	return nil
 }
 
@@ -73,9 +62,6 @@ func (s KBScanner) Scan(ctx context.Context, r Request) (json.RawMessage, error)
 	}
 	if !s.AllowEPA {
 		args = append(args, "--skip-epa")
-	}
-	if s.GoogleSearch {
-		args = append(args, "--google-search", "--google-site", s.GoogleSite, "--google-existing-customer")
 	}
 	cmd := exec.CommandContext(ctx, s.Python, args...)
 	output := cappedBuffer{Max: 262144}
