@@ -304,6 +304,14 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 			total.Add(total, b.energyKWh)
 		}
 	}
+	// Daily/Weekly/Monthly Trends must be comparable at a glance: each bucket
+	// here is one full day/week/month, so the period total is averaged over
+	// the elapsed buckets that have data rather than shown as a running sum.
+	averaged := window == "last_5_occurrences"
+	periodsWithData := countPeriodsWithData(buckets)
+	if averaged {
+		total = averageOverPeriods(total, periodsWithData)
+	}
 	a := fromKWh(total)
 	if seededTotals {
 		// The cost-only snapshot intentionally provides no kWh or tariff.
@@ -316,6 +324,9 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 	}
 	if !sample && tariff != nil {
 		if cost := priceEffectiveBuckets(buckets, selectedItems, *tariff); cost != nil {
+			if averaged {
+				*cost = averageOverMoney(*cost, periodsWithData)
+			}
 			a.Cost = *cost
 			a.UnclassifiedCost = *cost
 			a.EvidenceBasis = "mixed"
@@ -748,6 +759,41 @@ func minTime(a, b time.Time) time.Time {
 	}
 	return b
 }
+
+// countPeriodsWithData returns how many buckets have a measured energy
+// value. For the last_5_occurrences window, each bucket is exactly one
+// day/week/month, so this count is the number of elapsed days/weeks/months
+// a period total should be divided by to show a comparable average.
+func countPeriodsWithData(buckets []bucket) int {
+	count := 0
+	for _, b := range buckets {
+		if b.energyKWh != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func averageOverPeriods(total *big.Rat, periods int) *big.Rat {
+	if total == nil || periods <= 0 {
+		return total
+	}
+	return new(big.Rat).Quo(total, big.NewRat(int64(periods), 1))
+}
+
+func averageOverMoney(m money, periods int) money {
+	if periods <= 0 {
+		return m
+	}
+	amount, ok := new(big.Rat).SetString(m.Amount)
+	if !ok {
+		return m
+	}
+	amount.Quo(amount, big.NewRat(int64(periods), 1))
+	m.Amount = amount.FloatString(6)
+	return m
+}
+
 func fromKWh(v *big.Rat) allocation {
 	a := allocation{Availability: "unavailable", EvidenceBasis: "unavailable"}
 	if v != nil {
