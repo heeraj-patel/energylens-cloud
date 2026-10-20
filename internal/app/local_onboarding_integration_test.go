@@ -192,18 +192,6 @@ func TestLocalOnboardingTwoAccountsDurableHTTP(t *testing.T) {
 		}
 		return access, refresh
 	}
-	accept := func(token string) {
-		t.Helper()
-		pref, h := get("/v1/me/preferences", token, 200)
-		if pref["history_disclosure_accepted_at"] != nil {
-			t.Fatal("new account silently accepted disclosure")
-		}
-		stamp := time.Now().UTC().Format(time.RFC3339)
-		out, _ := call("PATCH", "/v1/me/preferences", token, map[string]string{"history_disclosure_accepted_at": stamp}, map[string]string{"Idempotency-Key": uuid.NewString(), "If-Match": h.Get("ETag")}, 200)
-		if out["history_disclosure_accepted_at"] == nil {
-			t.Fatal("disclosure acceptance did not persist")
-		}
-	}
 	homeBody := func(name string) map[string]any {
 		return map[string]any{"name": name, "timezone": "America/Chicago", "location": map[string]string{"country_code": "US", "postal_code": "60601", "precision": "postal_code", "source": "user_entered"}}
 	}
@@ -226,8 +214,9 @@ func TestLocalOnboardingTwoAccountsDurableHTTP(t *testing.T) {
 	if n := len(list("/v1/homes/", aToken, "homes")); n != 0 {
 		t.Fatalf("signup created %d homes", n)
 	}
-	post("/v1/homes/", aToken, homeBody("Alice home"), map[string]string{"Idempotency-Key": uuid.NewString()}, 403)
-	accept(aToken)
+	if pref, _ := get("/v1/me/preferences", aToken, 200); pref["history_disclosure_accepted_at"] != nil {
+		t.Fatal("new account has a recorded disclosure")
+	}
 	aHome := home(aToken, "Alice home", uuid.NewString())
 	applianceBody := map[string]any{"name": "Study lamp", "category": "light", "identity": map[string]string{"brand": "Fixture", "full_model": "Study Lamp 1", "fuel": "electricity", "match_quality": "unresolved"}}
 	appliance := post("/v1/homes/"+aHome+"/appliances/", aToken, applianceBody, map[string]string{"Idempotency-Key": uuid.NewString()}, 201)
@@ -244,7 +233,6 @@ func TestLocalOnboardingTwoAccountsDurableHTTP(t *testing.T) {
 		t.Fatalf("Bob inherited %d homes", n)
 	}
 	get("/v1/homes/"+aHome, bToken, 404)
-	accept(bToken)
 	bHome := home(bToken, "Bob home", uuid.NewString())
 	if n := len(list("/v1/homes/"+bHome+"/appliances/", bToken, "appliances")); n != 0 {
 		t.Fatalf("Bob home inherited %d appliances", n)

@@ -47,14 +47,6 @@ type routeStore struct {
 	extra   []Appliance
 }
 
-func TestDisclosureRequiredErrorCode(t *testing.T) {
-	w := httptest.NewRecorder()
-	storeError(w, ErrDisclosureRequired)
-	if w.Code != 403 || !strings.Contains(w.Body.String(), `"code":"history_disclosure_required"`) {
-		t.Fatalf("disclosure response = %d %s", w.Code, w.Body.String())
-	}
-}
-
 func (s *routeStore) List(_ context.Context, owner, home string) ([]Appliance, error) {
 	if s.listErr != nil {
 		return nil, s.listErr

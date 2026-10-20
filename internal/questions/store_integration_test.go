@@ -65,10 +65,6 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted := time.Now().UTC().Format(time.RFC3339)
-	if _, err = (account.PGPreferenceStore{Pool: pool}).PatchAccountPreferences(ctx, owner.ID, account.AccountPreferencesPatch{HistoryDisclosureAcceptedAt: &accepted}, 1, uuid.NewString(), make([]byte, 32)); err != nil {
-		t.Fatal(err)
-	}
 	home, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "House", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -107,9 +103,6 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO estimate_runs(id,home_id,appliance_id,appliance_version,period_start,period_end,timezone,formula_version,dependency_hash,dependency_snapshot,result_json) VALUES($1,$2,$3,1,'2026-10-01','2026-11-01','America/Chicago','reviewed-energy/v1',$4,'{}','{}')`, runID, home.ID, a.ID, bytes.Repeat([]byte{1}, 32)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `UPDATE account_preferences SET history_disclosure_accepted_at=NULL WHERE user_id=$1`, owner.ID); err != nil {
-		t.Fatal(err)
-	}
 	unknown := AnswerCreate{QuestionID: q[0].ID, QuestionVersion: q[0].Version, ApplianceID: a.ID, IdentityRevision: 1, Status: "unknown", Value: json.RawMessage("null")}
 	key := uuid.NewString()
 	reqHash := sha256.Sum256([]byte("unknown"))
@@ -120,12 +113,8 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	if err != nil || len(answers) != 1 || answers[0].Revision != 1 || answers[0].ConfirmedAt != nil {
 		t.Fatalf("unknown: %+v %v", answers, err)
 	}
-	// The owner never accepted the history disclosure; the answer still saves.
 	if answers[0].Status != "unknown" {
 		t.Fatalf("answer without disclosure: %+v", answers[0])
-	}
-	if _, err = pool.Exec(ctx, `UPDATE account_preferences SET history_disclosure_accepted_at=now() WHERE user_id=$1`, owner.ID); err != nil {
-		t.Fatal(err)
 	}
 	if _, err = store.CurrentAnswers(ctx, other.ID, home.ID, a.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner answer read: %v", err)

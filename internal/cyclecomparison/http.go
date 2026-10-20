@@ -138,9 +138,6 @@ func (s Service) save(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrIdempotencyConflict):
 		fail(w, 409, "idempotency_conflict")
 		return
-	case errors.Is(err, ErrDisclosureRequired):
-		fail(w, 403, "history_disclosure_required")
-		return
 	case errors.Is(err, ErrEvidenceUnavailable):
 		fail(w, 409, "evidence_unavailable")
 		return
@@ -163,10 +160,6 @@ func (s Service) saved(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Store.Get(r.Context(), s.UserID(r), home, appliance, id, time.Now().UTC())
 	if errors.Is(err, ErrNotFound) {
 		fail(w, 404, "not_found")
-		return
-	}
-	if errors.Is(err, ErrDisclosureRequired) {
-		fail(w, 403, "history_disclosure_required")
 		return
 	}
 	if err != nil {

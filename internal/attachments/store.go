@@ -16,7 +16,6 @@ var ErrNotFound = errors.New("home, sensor, appliance, or attachment not found")
 var ErrVersion = errors.New("attachment or sensor version changed")
 var ErrConflict = errors.New("attachment effective interval conflicts")
 var ErrKeyReuse = errors.New("idempotency key reused")
-var ErrDisclosure = errors.New("history disclosure required")
 
 type Attachment struct {
 	ID               string     `json:"id"`
@@ -52,7 +51,7 @@ func pgConflict(err error) bool {
 	var e *pgconn.PgError
 	return errors.As(err, &e) && (e.Code == "23P01" || e.Code == "23505")
 }
-func owned(ctx context.Context, tx pgx.Tx, owner, home string, disclosure bool) error {
+func owned(ctx context.Context, tx pgx.Tx, owner, home string) error {
 	var id string
 	err := tx.QueryRow(ctx, `SELECT id FROM homes WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL FOR UPDATE`, home, owner).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -60,16 +59,6 @@ func owned(ctx context.Context, tx pgx.Tx, owner, home string, disclosure bool) 
 	}
 	if err != nil {
 		return err
-	}
-	if disclosure {
-		var accepted bool
-		err = tx.QueryRow(ctx, `SELECT history_disclosure_accepted_at IS NOT NULL FROM account_preferences WHERE user_id=$1`, owner).Scan(&accepted)
-		if err != nil {
-			return err
-		}
-		if !accepted {
-			return ErrDisclosure
-		}
 	}
 	return nil
 }
@@ -135,7 +124,7 @@ func (s Store) Create(ctx context.Context, owner, home string, in CreateInput, s
 		return Attachment{}, err
 	}
 	defer tx.Rollback(ctx)
-	if err = owned(ctx, tx, owner, home, true); err != nil {
+	if err = owned(ctx, tx, owner, home); err != nil {
 		return Attachment{}, err
 	}
 	if old, found, e := replay(ctx, tx, owner, home, "create", key, hash); found || e != nil {
@@ -217,7 +206,7 @@ func (s Store) Close(ctx context.Context, owner, home, id string, end time.Time,
 		return Attachment{}, err
 	}
 	defer tx.Rollback(ctx)
-	if err = owned(ctx, tx, owner, home, true); err != nil {
+	if err = owned(ctx, tx, owner, home); err != nil {
 		return Attachment{}, err
 	}
 	if old, found, e := replay(ctx, tx, owner, home, "close", key, hash); found || e != nil {

@@ -16,7 +16,6 @@ import (
 var ErrNotFound = errors.New("not found")
 var ErrVersion = errors.New("version conflict")
 var ErrKeyReuse = errors.New("idempotency key reused with different request")
-var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
 var ErrDeleted = errors.New("account deleted")
 
 type User struct {
@@ -210,9 +209,6 @@ func (s PGStore) Create(ctx context.Context, owner string, in HomeCreate, key st
 	} else if err != nil {
 		return Home{}, err
 	}
-	if err = requireDisclosure(ctx, tx, owner); err != nil {
-		return Home{}, err
-	}
 	if h, found, e := readReplay(ctx, tx, owner, "create_home", key, hash); found || e != nil {
 		return h, e
 	}
@@ -251,9 +247,6 @@ func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, ve
 		return Home{}, ErrNotFound
 	}
 	if err != nil {
-		return Home{}, err
-	}
-	if err = requireDisclosure(ctx, tx, owner); err != nil {
 		return Home{}, err
 	}
 	op := "patch_home:" + home
@@ -312,18 +305,4 @@ func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, ve
 		return Home{}, err
 	}
 	return h, tx.Commit(ctx)
-}
-func requireDisclosure(ctx context.Context, tx pgx.Tx, owner string) error {
-	var accepted bool
-	err := tx.QueryRow(ctx, `SELECT history_disclosure_accepted_at IS NOT NULL FROM account_preferences WHERE user_id=$1`, owner).Scan(&accepted)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrDisclosureRequired
-	}
-	if err != nil {
-		return err
-	}
-	if !accepted {
-		return ErrDisclosureRequired
-	}
-	return nil
 }

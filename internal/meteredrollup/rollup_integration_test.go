@@ -54,10 +54,6 @@ func TestRollupCorrectionAndRetentionGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted := time.Now().UTC().Format(time.RFC3339)
-	if _, err = (account.PGPreferenceStore{Pool: pool}).PatchAccountPreferences(ctx, owner.ID, account.AccountPreferencesPatch{HistoryDisclosureAcceptedAt: &accepted}, 1, uuid.NewString(), make([]byte, 32)); err != nil {
-		t.Fatal(err)
-	}
 	home, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "House", Timezone: "UTC", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)

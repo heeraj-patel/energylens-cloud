@@ -41,8 +41,6 @@ func storeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		fail(w, 404, "not_found")
-	case errors.Is(err, ErrDisclosure):
-		fail(w, 403, "history_disclosure_required")
 	case errors.Is(err, ErrVersion):
 		fail(w, 409, "version_conflict")
 	case errors.Is(err, ErrConflict):

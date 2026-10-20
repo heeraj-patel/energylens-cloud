@@ -14,14 +14,6 @@ import (
 
 type fixedVerifier struct{}
 
-func TestDisclosureRequiredErrorCode(t *testing.T) {
-	w := httptest.NewRecorder()
-	storeError(w, ErrDisclosureRequired)
-	if w.Code != 403 || !strings.Contains(w.Body.String(), `"code":"history_disclosure_required"`) {
-		t.Fatalf("disclosure response = %d %s", w.Code, w.Body.String())
-	}
-}
-
 func (fixedVerifier) Verify(_ context.Context, raw string) (Identity, error) {
 	return Identity{Issuer: "https://issuer.example/", Subject: raw}, nil
 }

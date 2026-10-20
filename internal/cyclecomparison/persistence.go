@@ -12,16 +12,6 @@ import (
 
 var ErrIdempotencyConflict = errors.New("idempotency key reused for different cycle")
 var ErrEvidenceUnavailable = errors.New("cycle evidence unavailable")
-var ErrDisclosureRequired = errors.New("history disclosure required")
-
-func requireDisclosure(ctx context.Context, tx pgx.Tx, owner string) error {
-	var accepted bool
-	err := tx.QueryRow(ctx, `SELECT history_disclosure_accepted_at IS NOT NULL FROM account_preferences WHERE user_id=$1`, owner).Scan(&accepted)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && !accepted {
-		return ErrDisclosureRequired
-	}
-	return err
-}
 
 func (s Store) Save(ctx context.Context, owner, home, appliance, key string, in Request, now time.Time) (SavedEvidence, error) {
 	var out SavedEvidence
@@ -43,9 +33,6 @@ func (s Store) Save(ctx context.Context, owner, home, appliance, key string, in 
 		return out, ErrNotFound
 	}
 	if err != nil {
-		return out, err
-	}
-	if err = requireDisclosure(ctx, tx, owner); err != nil {
 		return out, err
 	}
 	var priorHash []byte
@@ -108,9 +95,6 @@ func loadSaved(ctx context.Context, tx pgx.Tx, owner, home, appliance, id string
 	}
 	if err != nil {
 		return out, err
-	}
-	if err = requireDisclosure(ctx, tx, owner); err != nil {
-		return SavedEvidence{}, err
 	}
 	if !expires.After(now) {
 		return SavedEvidence{}, ErrNotFound

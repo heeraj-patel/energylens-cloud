@@ -54,8 +54,6 @@ func storeError(w http.ResponseWriter, err error) {
 		fail(w, 409, "idempotency_key_reuse", "key used with another request")
 	case errors.Is(err, ErrCatalogMismatch):
 		fail(w, 409, "catalog_mismatch", "confirmed catalog identity does not match")
-	case errors.Is(err, ErrDisclosureRequired):
-		fail(w, 403, "history_disclosure_required", "accept history disclosure before changing appliances")
 	case errors.Is(err, ErrAttachmentConflict):
 		fail(w, 409, "attachment_conflict", "")
 	default:

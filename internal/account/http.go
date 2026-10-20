@@ -299,8 +299,6 @@ func storeError(w http.ResponseWriter, err error) {
 		fail(w, 409, "version_conflict", "home version changed")
 	case errors.Is(err, ErrKeyReuse):
 		fail(w, 409, "idempotency_key_reuse", "key was used with another request")
-	case errors.Is(err, ErrDisclosureRequired):
-		fail(w, 403, "history_disclosure_required", "accept history disclosure before changing homes")
 	default:
 		internal(w, err)
 	}

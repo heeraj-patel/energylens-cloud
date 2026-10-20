@@ -60,7 +60,6 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	start := now.Add(-2 * time.Hour)
 	end := start.Add(90 * time.Minute)
 	exec(`INSERT INTO users(id) VALUES($1),($2)`, owner, other)
-	exec(`UPDATE account_preferences SET history_disclosure_accepted_at=$2 WHERE user_id IN ($1,$3)`, owner, now, other)
 	exec(`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'House','UTC')`, home, owner)
 	exec(`INSERT INTO hubs(id,local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES($1,'elhub_cycle_test',$2,'test',$3,2)`, hub, make([]byte, 32), home)
 	exec(`INSERT INTO sensor_endpoints(id,home_id,hub_id,ownership_epoch,local_sensor_id,kind) VALUES($1,$2,$3,2,'dishwasher-plug','plug')`, sensor, home, hub)
@@ -137,14 +136,6 @@ func TestPostgresExactDishwasherCycle(t *testing.T) {
 	if _, e = s.Save(ctx, owner, home, appliance, key, changed, now); !errors.Is(e, ErrIdempotencyConflict) {
 		t.Fatalf("changed replay: %v", e)
 	}
-	exec(`UPDATE account_preferences SET history_disclosure_accepted_at=NULL WHERE user_id=$1`, owner)
-	if _, e = s.Get(ctx, owner, home, appliance, saved.ID, now); !errors.Is(e, ErrDisclosureRequired) {
-		t.Fatalf("disclosure read: %v", e)
-	}
-	if _, e = s.Save(ctx, owner, home, appliance, key, in, now); !errors.Is(e, ErrDisclosureRequired) {
-		t.Fatalf("disclosure replay: %v", e)
-	}
-	exec(`UPDATE account_preferences SET history_disclosure_accepted_at=$2 WHERE user_id=$1`, owner, now)
 	interval(event2, 3, start.Add(44*time.Minute), end, 500)
 	stale, e := s.Get(ctx, owner, home, appliance, saved.ID, now)
 	if e != nil || stale.Status != "invalidated" || stale.Reason != "meter_evidence_changed" || stale.MeasuredKWh != nil || stale.DifferenceKWh != nil {

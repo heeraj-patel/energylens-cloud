@@ -114,8 +114,9 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 			if err != nil || accountPref.Version != 1 || accountPref.HistoryDisclosureAcceptedAt != nil {
 				t.Fatalf("initial account preferences = %+v %v", accountPref, err)
 			}
-			if _, err = s.Create(ctx, a.ID, in, key, hash[:]); !errors.Is(err, ErrDisclosureRequired) {
-				t.Fatalf("create before disclosure = %v", err)
+			home, err := s.Create(ctx, a.ID, in, key, hash[:])
+			if err != nil {
+				t.Fatalf("create without disclosure = %v", err)
 			}
 			enabled := true
 			accepted := time.Now().UTC().Format(time.RFC3339)
@@ -124,29 +125,13 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 			if err != nil || updatedAccount.Version != 2 || !updatedAccount.EmailReportsEnabled || updatedAccount.HistoryDisclosureAcceptedAt == nil {
 				t.Fatalf("account preference patch = %+v %v", updatedAccount, err)
 			}
-			home, err := s.Create(ctx, a.ID, in, key, hash[:])
-			if err != nil {
-				t.Fatal(err)
-			}
 			replay, err := s.Create(ctx, a.ID, in, key, hash[:])
 			if err != nil || replay.ID != home.ID {
 				t.Fatalf("create replay: %v %v", replay.ID, err)
 			}
-			if _, err = pool.Exec(ctx, `UPDATE account_preferences SET history_disclosure_accepted_at=NULL WHERE user_id=$1`, a.ID); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.Create(ctx, a.ID, in, key, hash[:]); !errors.Is(err, ErrDisclosureRequired) {
-				t.Fatalf("create replay without disclosure = %v", err)
-			}
 			nameBefore := "Denied rename"
 			if _, err = s.Patch(ctx, b.ID, home.ID, HomePatch{Name: &nameBefore}, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrNotFound) {
-				t.Fatalf("cross-owner before disclosure = %v", err)
-			}
-			if _, err = s.Patch(ctx, a.ID, home.ID, HomePatch{Name: &nameBefore}, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrDisclosureRequired) {
-				t.Fatalf("patch without disclosure = %v", err)
-			}
-			if _, err = pool.Exec(ctx, `UPDATE account_preferences SET history_disclosure_accepted_at=now() WHERE user_id=$1`, a.ID); err != nil {
-				t.Fatal(err)
+				t.Fatalf("cross-owner patch = %v", err)
 			}
 			otherHash := sha256.Sum256([]byte("other"))
 			if _, err = s.Create(ctx, a.ID, in, key, otherHash[:]); !errors.Is(err, ErrKeyReuse) {

@@ -69,10 +69,6 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted := time.Now().UTC().Format(time.RFC3339)
-	if _, err = (account.PGPreferenceStore{Pool: pool}).PatchAccountPreferences(ctx, owner.ID, account.AccountPreferencesPatch{HistoryDisclosureAcceptedAt: &accepted}, 1, uuid.NewString(), make([]byte, 32)); err != nil {
-		t.Fatal(err)
-	}
 	home, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "House", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -279,20 +275,11 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil || replay.Version != 2 {
 		t.Fatalf("patch replay %+v %v", replay, err)
 	}
-	if _, err = pool.Exec(ctx, `UPDATE account_preferences SET history_disclosure_accepted_at=NULL WHERE user_id=$1`, owner.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = store.Create(ctx, owner.ID, home.ID, input, key, hash[:]); !errors.Is(err, ErrDisclosureRequired) {
-		t.Fatalf("create replay without disclosure = %v", err)
+	if got, err := store.Create(ctx, owner.ID, home.ID, input, key, hash[:]); err != nil || got.ID != a.ID {
+		t.Fatalf("create replay = %+v %v", got, err)
 	}
 	if _, err = store.Patch(ctx, other.ID, home.ID, a.ID, PatchInput{Name: &name}, 1, patchKey, patchHash[:]); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("other owner before disclosure = %v", err)
-	}
-	if _, err = store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Name: &name}, 1, patchKey, patchHash[:]); !errors.Is(err, ErrDisclosureRequired) {
-		t.Fatalf("patch replay without disclosure = %v", err)
-	}
-	if _, err = pool.Exec(ctx, `UPDATE account_preferences SET history_disclosure_accepted_at=now() WHERE user_id=$1`, owner.ID); err != nil {
-		t.Fatal(err)
+		t.Fatalf("other owner patch = %v", err)
 	}
 	if _, err = store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Name: &name}, 1, uuid.NewString(), patchHash[:]); !errors.Is(err, ErrVersion) {
 		t.Fatalf("stale patch = %v", err)

@@ -22,7 +22,6 @@ var ErrNotFound = errors.New("appliance or home not found")
 var ErrVersion = errors.New("appliance version conflict")
 var ErrKeyReuse = errors.New("appliance idempotency key reused")
 var ErrCatalogMismatch = errors.New("catalog product not found")
-var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
 var ErrAttachmentConflict = errors.New("active attachment cannot safely close")
 var ErrNearbyOriginInvalid = errors.New("nearby origin is not owned by this home")
 
@@ -149,17 +148,6 @@ func (s PGStore) ownedHome(ctx context.Context, tx pgx.Tx, owner, home string) e
 	}
 	if err != nil {
 		return err
-	}
-	var accepted bool
-	err = tx.QueryRow(ctx, `SELECT history_disclosure_accepted_at IS NOT NULL FROM account_preferences WHERE user_id=$1`, owner).Scan(&accepted)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrDisclosureRequired
-	}
-	if err != nil {
-		return err
-	}
-	if !accepted {
-		return ErrDisclosureRequired
 	}
 	return nil
 }
