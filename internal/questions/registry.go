@@ -40,7 +40,8 @@ var (
 	hoursOptions = []Option{{"lt_1h", 3.5}, {"1_3h", 14}, {"3_5h", 28}, {"5_8h", 45.5}, {"gt_8h", 70}}
 	cycleOptions = []Option{{"0_2", 1.5}, {"3_5", 4}, {"6_8", 7}, {"9_plus", 10}}
 	seasonOpts   = []Option{{"all_year", 1}, {"6_months", 0.5}, {"3_months", 0.25}, {"1_month", 0.083}}
-	ageOptions   = []Option{{"2014_or_newer", 1}, {"2001_2013", 1.25}, {"before_2001", 1.75}}
+	// DOE 2014 standard = 1.0; 2001 standard ~1.2-1.4x (DOE 2011 final rule govinfo 2011-22329); 2008-2015 mixes both.
+	ageOptions   = []Option{{"2016_or_newer", 1}, {"2008_2015", 1.25}, {"2007_or_older", 1.3}}
 	spaceOptions = []Option{{"no", 0}, {"yes", 1}}
 )
 
