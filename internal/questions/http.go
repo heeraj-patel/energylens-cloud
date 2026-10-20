@@ -46,8 +46,6 @@ func storeError(w http.ResponseWriter, err error) {
 		fail(w, 400, "invalid_request", "invalid question answer")
 	case errors.Is(err, ErrKeyReuse):
 		fail(w, 409, "idempotency_key_reuse", "key used with another request")
-	case errors.Is(err, ErrDisclosureRequired):
-		fail(w, 403, "history_disclosure_required", "accept history disclosure before answering questions")
 	default:
 		slog.Error("question store failed", "error", err)
 		fail(w, 500, "internal_error", "question request failed")

@@ -19,7 +19,6 @@ var ErrNotFound = errors.New("home or appliance not found")
 var ErrVersion = errors.New("appliance identity revision changed")
 var ErrInvalid = errors.New("invalid question answer")
 var ErrKeyReuse = errors.New("idempotency key reused with different answers")
-var ErrDisclosureRequired = errors.New("history disclosure acceptance required")
 
 type AnswerCreate struct {
 	QuestionID       string          `json:"question_id"`
@@ -207,14 +206,6 @@ func (s PGStore) Submit(ctx context.Context, owner, home string, inputs []Answer
 	}
 	if err != nil {
 		return nil, err
-	}
-	var accepted bool
-	err = tx.QueryRow(ctx, `SELECT history_disclosure_accepted_at IS NOT NULL FROM account_preferences WHERE user_id=$1`, owner).Scan(&accepted)
-	if err != nil {
-		return nil, err
-	}
-	if !accepted {
-		return nil, ErrDisclosureRequired
 	}
 	var oldHash, oldBody []byte
 	err = tx.QueryRow(ctx, `SELECT request_hash,response_json FROM question_answer_idempotency WHERE owner_user_id=$1 AND home_id=$2 AND key=$3`, owner, home, key).Scan(&oldHash, &oldBody)
