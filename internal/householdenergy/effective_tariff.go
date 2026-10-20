@@ -4,12 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
+
+// NationalRate returns the US average residential rate in $/kWh.
+type NationalRate func(context.Context) (float64, error)
+
+// schedule prices a home without a tariff at the national rate, or nil when
+// no rate is available.
+func (n NationalRate) schedule(ctx context.Context) *marginalTariff {
+	if n == nil {
+		return nil
+	}
+	value, err := n(ctx)
+	if err != nil || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil
+	}
+	rate := mustDecimal(strconv.FormatFloat(value, 'f', 9, 64))
+	return &marginalTariff{Currency: "USD", Rate: rate, Segments: []marginalTariff{{Currency: "USD", Rate: rate}}}
+}
 
 // Each measured instant must have exactly one fresh, nonfallback tariff. The
 // selected schedule may contain adjacent revisions; a gap or overlap makes the

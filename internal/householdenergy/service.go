@@ -25,6 +25,8 @@ type Service struct {
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
 	Now    func() time.Time
+	// NationalRate prices homes without a tariff; nil leaves them unpriced.
+	NationalRate NationalRate
 }
 
 type quantity struct {
@@ -42,6 +44,8 @@ type allocation struct {
 	UnclassifiedCost   any       `json:"unclassified_cost"`
 	Availability       string    `json:"availability"`
 	EvidenceBasis      string    `json:"evidence_basis"`
+	WasteBasis         string    `json:"waste_basis,omitempty"`
+	RateBasis          string    `json:"rate_basis,omitempty"`
 }
 type money struct {
 	Amount   string `json:"amount"`
@@ -379,11 +383,15 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		if tariff != nil {
 			priceAttributedDevices(buckets, realRows, periodRows, selectedItems, *tariff)
 		}
-		specs, err := readStandbySpecs(ctx, tx, home)
+		specs, err := readSplitSpecs(ctx, tx, home)
 		if err != nil {
 			return nil, err
 		}
-		applyMeasuredSplit(buckets, realRows, periodRows, items, selectedItems, specs, tariff)
+		var national *marginalTariff
+		if tariff == nil {
+			national = s.NationalRate.schedule(ctx)
+		}
+		applyMeasuredSplit(buckets, realRows, periodRows, items, selectedItems, specs, tariff, national)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)
 		}
@@ -397,7 +405,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 			}
 		}
 	}
-	resolvedBuckets, resolvedPeriod, err := resolutionDeviceRows(ctx, tx, home, buckets, now)
+	resolvedBuckets, resolvedPeriod, err := resolutionDeviceRows(ctx, tx, home, buckets, now, s.NationalRate)
 	if err != nil {
 		return nil, err
 	}
