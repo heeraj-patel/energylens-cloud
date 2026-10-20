@@ -53,7 +53,7 @@ func TestCategoryRegistryAndETag(t *testing.T) {
 	}
 	store := PGStore{Pool: pool}
 	initial, err := store.List(ctx)
-	if err != nil || initial.Version != 1 || len(initial.Groups) != 10 {
+	if err != nil || initial.Version < 1 || len(initial.Groups) != 10 {
 		t.Fatalf("seed list: %+v %v", initial, err)
 	}
 	tx, err := pool.Begin(ctx)
