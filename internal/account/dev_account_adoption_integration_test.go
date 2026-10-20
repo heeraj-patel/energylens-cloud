@@ -81,7 +81,7 @@ func TestAdoptDevAccountUsernamePreservesOwnerAndRevocableSession(t *testing.T) 
 	if err := db.QueryRow(ctx, `SELECT issuer FROM auth_identities WHERE user_id=$1 AND issuer=$2`, id, DevLocalIssuer).Scan(&issuer); err != nil || issuer != DevLocalIssuer {
 		t.Fatalf("dev identity lost: %v", err)
 	}
-	rotated, err := refresh.Rotate(ctx, session.RefreshToken, now.Add(time.Second))
+	rotated, err := refresh.Rotate(ctx, session.RefreshToken, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("adopted account refresh: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestAdoptDevAccountUsernamePreservesOwnerAndRevocableSession(t *testing.T) 
 	if err != nil || rotatedIdentity.Subject != id || rotatedIdentity.SessionID != identity.SessionID {
 		t.Fatalf("refresh changed adopted account or session family: %v", err)
 	}
-	if err := refresh.Logout(ctx, rotated.RefreshToken, now.Add(time.Second)); err != nil {
+	if err := refresh.Logout(ctx, rotated.RefreshToken, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := (LocalAccessVerifier{DB: db, Codec: login.Codec}).Verify(ctx, session.AccessToken); !errors.Is(err, ErrInvalidCredential) {
