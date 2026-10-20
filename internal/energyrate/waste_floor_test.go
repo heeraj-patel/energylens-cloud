@@ -43,3 +43,11 @@ func TestNationalUSDPerKWhIgnoresStateAndUsesNationalRow(t *testing.T) {
 		t.Fatal("national rate without cache, key or static value must fail")
 	}
 }
+
+func TestNationalUSDPerKWhFallsBackToStaticWhenEIAUnavailable(t *testing.T) {
+	static := StaticRate{USDPerKWh: 0.1831, AsOf: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)}
+	got, err := NewService(Options{Cache: NewMemCache(), Static: static}).NationalUSDPerKWh(context.Background())
+	if err != nil || got != 0.1831 {
+		t.Fatalf("national static rate = %f, %v", got, err)
+	}
+}

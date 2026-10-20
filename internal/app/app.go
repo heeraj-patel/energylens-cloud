@@ -131,6 +131,11 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		rates := energyrate.NewService(energyrate.Options{
 			Research: rateResearch,
 			Fetcher:  fetcher, HasKey: c.EIAAPIKey != "", Cache: cache,
+			Static: energyrate.StaticRate{
+				USDPerKWh: 0.1831,
+				AsOf:      time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+				SourceURL: "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a", // EPM Table 5.6.A, U.S. Total residential, released 2026-09-24
+			},
 			StaticStates: map[string]energyrate.StaticRate{"TX": {
 				USDPerKWh: 0.1588,
 				AsOf:      time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
