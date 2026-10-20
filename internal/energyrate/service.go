@@ -242,6 +242,13 @@ func (s *Service) resolveBase(ctx context.Context, country, zip string) (Resolve
 	return Resolved{}, ErrTemporarilyUnavailable
 }
 
+// NationalUSDPerKWh is the US average residential rate used for homes without
+// a tariff: the cached or fetched EIA national row, else the static value.
+func (s *Service) NationalUSDPerKWh(ctx context.Context) (float64, error) {
+	r, err := s.resolveBase(ctx, "US", "")
+	return r.RateUSDPerKWh, err
+}
+
 func national(rate float64, asOf time.Time) Resolved {
 	return Resolved{
 		RateUSDPerKWh: rate,
