@@ -18,9 +18,9 @@ func TestCurrentStateRequiresFreshMeasuredPower(t *testing.T) {
 	}{
 		{"fresh positive", &fresh, &positive, "active"},
 		{"fresh zero", &fresh, &zero, "idle"},
-		{"stale positive", &stale, &positive, "standby"},
-		{"missing watt", &fresh, nil, "standby"},
-		{"unreachable", nil, nil, "standby"},
+		{"stale positive", &stale, &positive, "offline"},
+		{"missing watt", &fresh, nil, "offline"},
+		{"unreachable", nil, nil, "offline"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := classify(tc.observed, tc.watts, now); got != tc.want {

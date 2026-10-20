@@ -209,13 +209,14 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 	} else {
 		out = struct {
 			base
-			View         string                 `json:"view"`
-			Granularity  string                 `json:"granularity"`
-			Totals       allocation             `json:"totals"`
-			Buckets      []bucket               `json:"buckets"`
-			Unattributed *allocation            `json:"unattributed,omitempty"`
-			Efficiency   *efficiencyMonthToDate `json:"efficiency_month_to_date,omitempty"`
-		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed, efficiency}
+			View               string                    `json:"view"`
+			Granularity        string                    `json:"granularity"`
+			Totals             allocation                `json:"totals"`
+			Buckets            []bucket                  `json:"buckets"`
+			Unattributed       *allocation               `json:"unattributed,omitempty"`
+			Efficiency         *efficiencyMonthToDate    `json:"efficiency_month_to_date,omitempty"`
+			TrailingEfficiency *efficiencyTrailing30Days `json:"efficiency_trailing_30_days,omitempty"`
+		}{b, "energy_trends", granularity, a, buckets, sampleUnattributed, efficiency, c.trailingEfficiency}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -225,12 +226,13 @@ func (s Service) read(w http.ResponseWriter, r *http.Request, view, granularity,
 var ErrNotFound = errors.New("home not found")
 
 type computed struct {
-	base         base
-	totals       allocation
-	deviceRows   []deviceAllocation
-	unattributed *allocation
-	buckets      []bucket
-	efficiency   *efficiencyMonthToDate
+	base               base
+	totals             allocation
+	deviceRows         []deviceAllocation
+	unattributed       *allocation
+	buckets            []bucket
+	efficiency         *efficiencyMonthToDate
+	trailingEfficiency *efficiencyTrailing30Days
 }
 
 func (s Service) compute(ctx context.Context, owner, home, granularity, window string) (*computed, error) {
@@ -438,8 +440,11 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		b.Scope = "whole_home_including_unattributed_load"
 	}
 	var efficiency *efficiencyMonthToDate
+	var trailingEfficiency *efficiencyTrailing30Days
 	if window == "month_to_date" && seededTotals {
 		efficiency = syntheticEfficiencyMonthToDate(a)
+	} else if window == "trailing_30_days" && seededTotals {
+		trailingEfficiency = syntheticEfficiencyTrailing30Days(a)
 	}
 	// Tariff eligibility can change as time passes, without a new tariff
 	// revision (for example, at source_as_of + the electricity max age). Include the
@@ -448,6 +453,10 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 	allocationState := allocationSnapshotState(a)
 	if efficiency != nil {
 		state, _ := json.Marshal(efficiency)
+		allocationState += "|" + string(state)
+	}
+	if trailingEfficiency != nil {
+		state, _ := json.Marshal(trailingEfficiency)
 		allocationState += "|" + string(state)
 	}
 	deviceState, _ := json.Marshal(sampleDeviceRows)
@@ -461,7 +470,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &computed{base: b, totals: a, deviceRows: sampleDeviceRows, unattributed: sampleUnattributed, buckets: buckets, efficiency: efficiency}, nil
+	return &computed{base: b, totals: a, deviceRows: sampleDeviceRows, unattributed: sampleUnattributed, buckets: buckets, efficiency: efficiency, trailingEfficiency: trailingEfficiency}, nil
 }
 
 func allocationSnapshotState(a allocation) string {

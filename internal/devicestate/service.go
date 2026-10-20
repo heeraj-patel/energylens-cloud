@@ -78,7 +78,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 
 func classify(observed *time.Time, watts *float64, now time.Time) string {
 	if observed == nil || watts == nil || observed.After(now) || now.Sub(*observed) > freshFor {
-		return "standby"
+		return "offline"
 	}
 	if *watts > 0 {
 		return "active"
@@ -88,7 +88,7 @@ func classify(observed *time.Time, watts *float64, now time.Time) string {
 
 // Current selects each event's latest revision before finding the newest point.
 // Only a single active terminal meter for the current Hub epoch may classify
-// an appliance. Missing/stale telemetry is Standby, without implying zero use.
+// an appliance. Missing/stale telemetry is Offline, without implying zero use.
 func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time) ([]State, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -141,7 +141,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		}
 		seen[state.ApplianceID] = true
 		state.State = classify(state.ObservedAt, state.Watts, now)
-		if state.State == "standby" {
+		if state.State == "offline" {
 			state.ObservedAt, state.Watts = nil, nil
 		}
 		states = append(states, state)

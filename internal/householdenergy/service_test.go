@@ -85,6 +85,22 @@ func TestTrailing30DaysUsesHomeLocalCalendarBounds(t *testing.T) {
 	}
 }
 
+func TestTrailing30DaysCrossesMonthBoundaryAndLeapDay(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Chicago")
+	now := time.Date(2028, 3, 1, 18, 0, 0, 0, time.UTC)
+	p := trailing30DaysPeriod(now, loc)
+	if got, want := p.Start.In(loc).Format("2006-01-02"), "2028-02-01"; got != want {
+		t.Fatalf("rolling start = %s, want %s", got, want)
+	}
+	if got, want := p.End.In(loc).Format("2006-01-02"), "2028-03-02"; got != want {
+		t.Fatalf("rolling exclusive end = %s, want %s", got, want)
+	}
+	buckets := makeBuckets(p, "day", nil)
+	if len(buckets) != 30 || buckets[28].Start.In(loc).Day() != 29 || buckets[29].Start.In(loc).Day() != 1 {
+		t.Fatalf("rolling buckets omit leap day or current day: %+v", buckets)
+	}
+}
+
 func TestLastFiveOccurrencesAreHomeLocalAcrossDSTAndCalendarBoundaries(t *testing.T) {
 	loc, _ := time.LoadLocation("America/Chicago")
 	for _, tc := range []struct {
@@ -552,6 +568,11 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	} else {
 		if sample["efficiency_month_to_date"] != nil {
 			t.Fatal("MTD efficiency leaked into trailing window")
+		}
+		rolling, ok := sample["efficiency_trailing_30_days"].(map[string]any)
+		if !ok || !reflect.DeepEqual(rolling["period_cost"], sample["totals"].(map[string]any)["cost"]) ||
+			!reflect.DeepEqual(rolling["waste_opportunity"], sample["totals"].(map[string]any)["waste_cost"]) {
+			t.Fatalf("rolling efficiency not tied to rolling totals: %+v", sample)
 		}
 		last := sample["buckets"].([]any)[29].(map[string]any)
 		if last["allocation"].(map[string]any)["cost"].(map[string]any)["amount"] != "2.469984" || last["allocation"].(map[string]any)["energy"] != nil {

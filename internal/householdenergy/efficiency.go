@@ -24,6 +24,44 @@ type efficiencyMonthToDate struct {
 	EvidenceBasis         string                   `json:"evidence_basis"`
 }
 
+// The rolling projection shares the same calculation, but names its cost for
+// the requested window rather than implying a calendar month-to-date total.
+type efficiencyTrailing30Days struct {
+	PeriodCost            money                    `json:"period_cost"`
+	IdentifiedOpportunity money                    `json:"identified_opportunity"`
+	OptimalBase           money                    `json:"optimal_base"`
+	WasteOpportunity      money                    `json:"waste_opportunity"`
+	AwayOpportunity       money                    `json:"away_opportunity"`
+	NightTotalOpportunity money                    `json:"night_total_opportunity"`
+	AwayTotalOpportunity  money                    `json:"away_total_opportunity"`
+	PeakRatesOpportunity  money                    `json:"peak_rates_opportunity"`
+	HabitsOpportunity     money                    `json:"habits_opportunity"`
+	ChartSegmentWidth     chartSegmentWidthPercent `json:"chart_segment_width_percent"`
+	WasteTimingBasis      string                   `json:"waste_timing_basis"`
+	EvidenceBasis         string                   `json:"evidence_basis"`
+}
+
+func syntheticEfficiencyTrailing30Days(total allocation) *efficiencyTrailing30Days {
+	projection := syntheticEfficiencyMonthToDate(total)
+	if projection == nil {
+		return nil
+	}
+	return &efficiencyTrailing30Days{
+		PeriodCost:            projection.MonthToDateCost,
+		IdentifiedOpportunity: projection.IdentifiedOpportunity,
+		OptimalBase:           projection.OptimalBase,
+		WasteOpportunity:      projection.WasteOpportunity,
+		AwayOpportunity:       projection.AwayOpportunity,
+		NightTotalOpportunity: projection.NightTotalOpportunity,
+		AwayTotalOpportunity:  projection.AwayTotalOpportunity,
+		PeakRatesOpportunity:  projection.PeakRatesOpportunity,
+		HabitsOpportunity:     projection.HabitsOpportunity,
+		ChartSegmentWidth:     projection.ChartSegmentWidth,
+		WasteTimingBasis:      projection.WasteTimingBasis,
+		EvidenceBasis:         projection.EvidenceBasis,
+	}
+}
+
 type chartSegmentWidthPercent struct {
 	Night     string `json:"night"`
 	Away      string `json:"away"`

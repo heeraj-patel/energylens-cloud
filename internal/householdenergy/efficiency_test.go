@@ -33,6 +33,27 @@ func TestSyntheticEfficiencyMonthToDateUsesAllWasteAndSeparateDemoOpportunities(
 	assertChartWidthsSumTo100(t, got.ChartSegmentWidth)
 }
 
+func TestSyntheticEfficiencyTrailing30DaysReconcilesWithRollingTotal(t *testing.T) {
+	s := demoSnapshotForTest()
+	loc, err := time.LoadLocation(s.Timezone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2028, 3, 1, 12, 0, 0, 0, loc)
+	_, total, _, _ := projectDemoSnapshot(s, trailing30DaysPeriod(now, loc), "day", now)
+	got := syntheticEfficiencyTrailing30Days(total)
+	if got == nil || got.PeriodCost != total.Cost || got.WasteOpportunity != total.WasteCost {
+		t.Fatalf("rolling projection does not use the same-window total: %+v", got)
+	}
+	if moneyMicrosUnits(got.OptimalBase)+moneyMicrosUnits(got.WasteOpportunity) != moneyMicrosUnits(got.PeriodCost) {
+		t.Fatalf("rolling base and waste do not reconcile with spend: %+v", got)
+	}
+	if sum := moneyMicrosUnits(got.NightTotalOpportunity) + moneyMicrosUnits(got.AwayTotalOpportunity) + moneyMicrosUnits(got.PeakRatesOpportunity) + moneyMicrosUnits(got.HabitsOpportunity); sum != moneyMicrosUnits(got.IdentifiedOpportunity) {
+		t.Fatalf("rolling opportunity does not equal four rows: %+v", got)
+	}
+	assertChartWidthsSumTo100(t, got.ChartSegmentWidth)
+}
+
 func TestSyntheticEfficiencyMonthToDateAssignsIndivisibleWasteToAway(t *testing.T) {
 	got := syntheticEfficiencyMonthToDate(allocation{Cost: moneyMicros(1), WasteCost: moneyMicros(1), EvidenceBasis: "synthetic"})
 	if got == nil || got.NightTotalOpportunity.Amount != "0.000000" || got.AwayTotalOpportunity.Amount != "4.200001" ||
