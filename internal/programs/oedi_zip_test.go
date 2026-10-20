@@ -15,7 +15,7 @@ func oediFixtureResolver(t *testing.T) OEDIZIPResolver {
 	t.Helper()
 	dir := t.TempDir()
 	copyFile := func(name string) (string, string) {
-		body, err := os.ReadFile(filepath.Join("../../../energylens-kb/tests/fixtures", name))
+		body, err := os.ReadFile(filepath.Join("testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
