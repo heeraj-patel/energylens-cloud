@@ -36,7 +36,8 @@ func subjectID(subject string) string {
 }
 
 func (p Producer) candidates(ctx context.Context) ([]candidate, error) {
-	rows, err := p.DB.Query(ctx, `SELECT a.identity->>'brand',a.identity->>'full_model',a.category,pr.brand,pr.full_model,pr.match_quality
+	rows, err := p.DB.Query(ctx, `SELECT a.identity->>'brand',a.identity->>'full_model',a.category,pr.brand,pr.full_model,pr.match_quality,
+  EXISTS(SELECT 1 FROM active_catalog_facts f WHERE f.product_id=a.catalog_product_id)
 FROM appliances a JOIN homes h ON h.id=a.home_id LEFT JOIN catalog_products pr ON pr.id=a.catalog_product_id
 WHERE a.archived_at IS NULL AND h.deleted_at IS NULL AND NULLIF(btrim(a.identity->>'brand'),'') IS NOT NULL
 ORDER BY a.updated_at,a.id`)
@@ -46,14 +47,16 @@ ORDER BY a.updated_at,a.id`)
 	var out []candidate
 	for rows.Next() {
 		var brand, model, category, pBrand, pModel, pQuality *string
-		if err = rows.Scan(&brand, &model, &category, &pBrand, &pModel, &pQuality); err != nil {
+		var hasFact bool
+		if err = rows.Scan(&brand, &model, &category, &pBrand, &pModel, &pQuality, &hasFact); err != nil {
 			break
 		}
 		manufacturer := strings.TrimSpace(deref(brand))
 		modelText := strings.TrimSpace(deref(model))
 		if modelText != "" {
 			quality, _ := catalog.SendableLink(manufacturer, modelText, catalog.LinkedProduct{Brand: deref(pBrand), FullModel: deref(pModel), MatchQuality: deref(pQuality)})
-			if quality != "confirmed_exact" {
+			// Identity-only catalog products carry no facts, so they still need device research.
+			if quality != "confirmed_exact" || !hasFact {
 				out = append(out, candidate{"device", "model", subjectID(datawizfacts.DeviceSubject(manufacturer, modelText)), 1, map[string]string{"manufacturer": manufacturer, "model": modelText}})
 			}
 		}

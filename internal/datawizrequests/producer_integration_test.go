@@ -301,3 +301,52 @@ func TestProducerDedupAndCatalogLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestProducerExactLinkNeedsActiveFactToSkipDevice(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home := uuid.NewString(), uuid.NewString()
+	for _, q := range []string{
+		`INSERT INTO users(id) VALUES('` + owner + `')`,
+		`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES('` + home + `','` + owner + `','Home','America/Chicago')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hash := strings.Repeat("a", 64)
+	if _, err := pool.Exec(ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',1,1)`, hash); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		model    string
+		withFact bool
+		want     int
+	}{{"Bare-1", false, 1}, {"Fact-1", true, 0}} {
+		product, appliance := uuid.NewString(), uuid.NewString()
+		if _, err := pool.Exec(ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'heat_pump','Acme',$2,'electricity','confirmed_exact','{}')`, product, tc.model); err != nil {
+			t.Fatal(err)
+		}
+		if tc.withFact {
+			if _, err := pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',20,'kWh','{}','{}','epa_exact','https://example.org/fact',$3,'reviewed_row_manifest','sources/example.json',now(),1,'{}')`, uuid.NewString(), product, hash); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity,catalog_product_id) VALUES($1,$2,'HP','heat_pump',jsonb_build_object('brand','Acme','full_model',$3::text),$4)`, appliance, home, tc.model, product); err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		if _, err := (Producer{DB: pool, Dir: dir}).RunOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+		paths, _ := filepath.Glob(filepath.Join(dir, "device", "*.json"))
+		found := 0
+		for _, path := range paths {
+			if body, _ := os.ReadFile(path); strings.Contains(string(body), tc.model) {
+				found++
+			}
+		}
+		if found != tc.want {
+			t.Fatalf("%s device requests: got %d want %d", tc.model, found, tc.want)
+		}
+	}
+}
