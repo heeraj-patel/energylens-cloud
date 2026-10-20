@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -353,7 +354,7 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	var nearbyHub string
-	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_inventory_nearby_test',$1,'test',$2,1) RETURNING id`, make([]byte, 32), transientHome.ID).Scan(&nearbyHub); err != nil {
+	if err = pool.QueryRow(ctx, `INSERT INTO hubs(local_hub_id,device_public_key,registered_by,home_id,ownership_epoch) VALUES('elhub_inventory_nearby_test',$1,'test',$2,1) RETURNING id`, bytes.Repeat([]byte{1}, 32), transientHome.ID).Scan(&nearbyHub); err != nil {
 		t.Fatal(err)
 	}
 	nearby := CreateInput{Name: "Nearby television", Category: "tv", Identity: Identity{Fuel: "electricity", MatchQuality: "unresolved"}, NearbyOrigin: &NearbyOrigin{HubID: nearbyHub, OwnershipEpoch: 1, ProtocolDeviceID: "protocol-tv-1"}}
