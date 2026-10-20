@@ -42,6 +42,9 @@ type resolveCandidate struct {
 	demo              bool
 }
 
+var queueReasons = map[string]bool{"usage_answer": true, "admin": true, "owner_refresh": true, "low_tier": true,
+	"stale": true, "source_config": true, "catalog_change": true, "schema": true}
+
 // Queue participates in the caller's transaction when given a pgx.Tx.
 func Queue(ctx context.Context, db interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
@@ -49,7 +52,7 @@ func Queue(ctx context.Context, db interface {
 	if _, err := uuid.Parse(applianceID); err != nil {
 		return err
 	}
-	if reason != "usage_answer" && reason != "admin" {
+	if !queueReasons[reason] {
 		return errors.New("invalid resolve reason")
 	}
 	_, err := db.Exec(ctx, `INSERT INTO datawiz_resolve_queue(appliance_id,reason) VALUES($1,$2) ON CONFLICT(appliance_id) DO UPDATE SET reason=EXCLUDED.reason,queued_at=clock_timestamp()`, applianceID, reason)
