@@ -18,7 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestProducerSavedInputsAndRevisions(t *testing.T) {
+func testPool(t *testing.T) (context.Context, *pgxpool.Pool) {
+	t.Helper()
 	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
@@ -29,11 +30,9 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close()
 	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -43,15 +42,25 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
 	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close(ctx)
 	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		pool.Close()
+		conn.Close(ctx)
+		admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+	})
+	return ctx, pool
+}
+
+func TestProducerSavedInputsAndRevisions(t *testing.T) {
+	ctx, pool := testPool(t)
+	var err error
 	owner, home, appliance := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	for _, q := range []struct {
 		sql  string
@@ -103,7 +112,7 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,2,'US','02108','postal_code','user_entered')`, home); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := p.RunOnce(ctx); err != nil || count != 4 {
+	if count, err := p.RunOnce(ctx); err != nil || count != 3 {
 		t.Fatalf("updated pass: %d %v", count, err)
 	}
 	entry, found, err := p.resolveEntryFor(ctx, appliance)
@@ -220,5 +229,75 @@ VALUES($1,$2,'device','device:acme:heat-200','energy_rating','annual','{"amount"
 	entry, found, err = p.resolveEntryFor(ctx, appliance)
 	if err != nil || !found || entry.entry.ApplianceVersion != 3 {
 		t.Fatalf("name-only version request: %+v %t %v", entry, found, err)
+	}
+}
+
+func TestProducerDedupAndCatalogLinks(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home, home2 := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	exactID, famID, wrongID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO users(id) VALUES($1)`, owner)
+	for _, h := range []string{home, home2} {
+		exec(`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'H','America/Chicago')`, h, owner)
+		exec(`INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,1,'US','60601','postal_code','user_entered')`, h)
+	}
+	for _, p := range [][]string{{exactID, "Acme", "Heat-100", "confirmed_exact"}, {famID, "Acme", "Fam-1", "documented_variant_family"}, {wrongID, "Acme", "Other-9", "confirmed_exact"}} {
+		exec(`INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'hvac',$2,$3,'electricity',$4,'{}')`, p[0], p[1], p[2], p[3])
+	}
+	add := func(home, name, model string, link *string) string {
+		id := uuid.NewString()
+		exec(`INSERT INTO appliances(id,home_id,name,category,catalog_product_id,identity) VALUES($1,$2,$3,'hvac',$4,$5)`, id, home, name, link,
+			`{"brand":"Acme","full_model":"`+model+`"}`)
+		return id
+	}
+	count := func(dir, route string) int {
+		paths, _ := filepath.Glob(filepath.Join(dir, route, "*.json"))
+		return len(paths)
+	}
+	dir := t.TempDir()
+	p := Producer{DB: pool, Dir: dir}
+	a1 := add(home, "A", "Same-1", nil)
+	add(home2, "B", "SAME 1", nil)
+	if _, err := p.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if count(dir, "device") != 1 || count(dir, "savings") != 1 || count(dir, "zip") != 1 {
+		t.Fatalf("same model, brand and ZIP: device=%d savings=%d zip=%d", count(dir, "device"), count(dir, "savings"), count(dir, "zip"))
+	}
+	exec(`UPDATE appliances SET name='Renamed',room='Den',version=2 WHERE id=$1`, a1)
+	if _, err := p.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if count(dir, "device") != 1 || count(dir, "savings") != 1 || count(dir, "zip") != 1 {
+		t.Fatalf("rename emitted new files: device=%d savings=%d zip=%d", count(dir, "device"), count(dir, "savings"), count(dir, "zip"))
+	}
+
+	exactApp := add(home, "Exact", "heat 100", &exactID)
+	famApp := add(home, "Family", "Fam-2", &famID)
+	wrongApp := add(home, "Wrong", "Heat-100", &wrongID)
+	before := count(dir, "device")
+	if _, err := p.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := count(dir, "device") - before; got != 2 {
+		t.Fatalf("device files for family and mismatched legacy link: %d", got)
+	}
+	for _, c := range []struct {
+		id, link, quality string
+	}{{exactApp, exactID, "confirmed_exact"}, {famApp, famID, "documented_variant_family"}, {wrongApp, "", ""}} {
+		entry, found, err := p.resolveEntryFor(ctx, c.id)
+		if err != nil || !found || entry.entry.CatalogProductID != c.link || entry.entry.MatchQuality != c.quality {
+			t.Fatalf("resolve link for %s: %+v %t %v", c.id, entry.entry, found, err)
+		}
+		body, _ := json.Marshal(entry.entry)
+		if strings.Contains(string(body), `"catalog"`) {
+			t.Fatalf("catalog block in %s", body)
+		}
 	}
 }

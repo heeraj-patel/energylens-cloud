@@ -75,3 +75,21 @@ func FindLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, err
 	}
 	return Link{candidates[0].id, "documented_variant_family"}, true, nil
 }
+
+// SendableLink returns the match quality to send for an appliance's linked
+// product. An exact link must match the appliance brand and model; a family
+// link need not.
+func SendableLink(brand, model string, p LinkedProduct) (string, bool) {
+	switch p.MatchQuality {
+	case "documented_variant_family":
+		return p.MatchQuality, true
+	case "confirmed_exact":
+		if CanonicalBrandKey(brand) == CanonicalBrandKey(p.Brand) && normalizedModel(model) == normalizedModel(p.FullModel) {
+			return p.MatchQuality, true
+		}
+	}
+	return "", false
+}
+
+// LinkedProduct is the catalog product row an appliance links to.
+type LinkedProduct struct{ Brand, FullModel, MatchQuality string }

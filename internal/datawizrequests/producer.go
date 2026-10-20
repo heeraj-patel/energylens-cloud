@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 
+	"energylens.local/cloud/internal/catalog"
+	"energylens.local/cloud/internal/datawizfacts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,34 +31,34 @@ type candidate struct {
 
 var usZIP = regexp.MustCompile(`^[0-9]{5}$`)
 
+func subjectID(subject string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("energylens:datawiz:"+subject)).String()
+}
+
 func (p Producer) candidates(ctx context.Context) ([]candidate, error) {
-	rows, err := p.DB.Query(ctx, `SELECT a.id::text,a.version,a.identity->>'brand',a.identity->>'full_model',a.category
-FROM appliances a JOIN homes h ON h.id=a.home_id
-WHERE a.archived_at IS NULL AND h.deleted_at IS NULL AND
-  NULLIF(btrim(a.identity->>'brand'),'') IS NOT NULL AND
-  ((NULLIF(btrim(a.identity->>'full_model'),'') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM datawiz_request_emissions e WHERE e.route='device' AND e.source_kind='appliance' AND e.source_id=a.id AND e.source_version=a.version))
-   OR (NULLIF(btrim(a.category),'') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM datawiz_request_emissions e WHERE e.route='savings' AND e.source_kind='appliance' AND e.source_id=a.id AND e.source_version=a.version)))
-ORDER BY a.updated_at,a.id LIMIT 100`)
+	rows, err := p.DB.Query(ctx, `SELECT a.identity->>'brand',a.identity->>'full_model',a.category,pr.brand,pr.full_model,pr.match_quality
+FROM appliances a JOIN homes h ON h.id=a.home_id LEFT JOIN catalog_products pr ON pr.id=a.catalog_product_id
+WHERE a.archived_at IS NULL AND h.deleted_at IS NULL AND NULLIF(btrim(a.identity->>'brand'),'') IS NOT NULL
+ORDER BY a.updated_at,a.id`)
 	if err != nil {
 		return nil, err
 	}
 	var out []candidate
 	for rows.Next() {
-		var id, category string
-		var version int64
-		var brand, model *string
-		if err = rows.Scan(&id, &version, &brand, &model, &category); err != nil {
+		var brand, model, category, pBrand, pModel, pQuality *string
+		if err = rows.Scan(&brand, &model, &category, &pBrand, &pModel, &pQuality); err != nil {
 			break
 		}
-		if brand == nil || strings.TrimSpace(*brand) == "" {
-			continue
+		manufacturer := strings.TrimSpace(deref(brand))
+		modelText := strings.TrimSpace(deref(model))
+		if modelText != "" {
+			quality, _ := catalog.SendableLink(manufacturer, modelText, catalog.LinkedProduct{Brand: deref(pBrand), FullModel: deref(pModel), MatchQuality: deref(pQuality)})
+			if quality != "confirmed_exact" {
+				out = append(out, candidate{"device", "model", subjectID(datawizfacts.DeviceSubject(manufacturer, modelText)), 1, map[string]string{"manufacturer": manufacturer, "model": modelText}})
+			}
 		}
-		manufacturer := strings.TrimSpace(*brand)
-		if model != nil && strings.TrimSpace(*model) != "" {
-			out = append(out, candidate{"device", "appliance", id, version, map[string]string{"manufacturer": manufacturer, "model": strings.TrimSpace(*model)}})
-		}
-		if strings.TrimSpace(category) != "" {
-			out = append(out, candidate{"savings", "appliance", id, version, map[string]any{"devices": []map[string]string{{"manufacturer": manufacturer, "device_type": strings.TrimSpace(category)}}}})
+		if cat := strings.TrimSpace(deref(category)); cat != "" {
+			out = append(out, candidate{"savings", "offer", subjectID(datawizfacts.SavingsSubject(manufacturer, cat)), 1, map[string]any{"devices": []map[string]string{{"manufacturer": manufacturer, "device_type": cat}}}})
 		}
 	}
 	if err == nil {
@@ -66,23 +68,20 @@ ORDER BY a.updated_at,a.id LIMIT 100`)
 	if err != nil {
 		return nil, err
 	}
-	rows, err = p.DB.Query(ctx, `SELECT l.id::text,l.revision,l.country_code,l.postal_code
+	rows, err = p.DB.Query(ctx, `SELECT l.postal_code
 FROM home_location_revisions l JOIN homes h ON h.id=l.home_id
-WHERE h.deleted_at IS NULL AND l.revision=(SELECT max(revision) FROM home_location_revisions WHERE home_id=l.home_id)
-AND NOT EXISTS(SELECT 1 FROM datawiz_request_emissions e WHERE e.route='zip' AND e.source_kind='location' AND e.source_id=l.id AND e.source_version=l.revision)
-ORDER BY l.recorded_at,l.id LIMIT 100`)
+WHERE h.deleted_at IS NULL AND l.country_code='US' AND l.revision=(SELECT max(revision) FROM home_location_revisions WHERE home_id=l.home_id)
+ORDER BY l.recorded_at,l.id`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, country, postal string
-		var version int64
-		if err = rows.Scan(&id, &version, &country, &postal); err != nil {
+		var postal string
+		if err = rows.Scan(&postal); err != nil {
 			break
 		}
-		postal = strings.TrimSpace(postal)
-		if country == "US" && usZIP.MatchString(postal) {
-			out = append(out, candidate{"zip", "location", id, version, map[string]string{"zip": postal}})
+		if postal = strings.TrimSpace(postal); usZIP.MatchString(postal) {
+			out = append(out, candidate{"zip", "zip", subjectID("zip:" + postal), 1, map[string]string{"zip": postal}})
 		}
 	}
 	if err == nil {
@@ -146,7 +145,13 @@ func (p Producer) RunOnce(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("query Datawiz inputs: %w", err)
 	}
+	seen := map[string]bool{}
 	for _, c := range candidates {
+		key := c.route + "|" + c.kind + "|" + c.id
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		var exists bool
 		err = p.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM datawiz_request_emissions WHERE route=$1 AND source_kind=$2 AND source_id=$3 AND source_version=$4)`, c.route, c.kind, c.id, c.version).Scan(&exists)
 		if err != nil {
@@ -165,4 +170,11 @@ func (p Producer) RunOnce(ctx context.Context) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

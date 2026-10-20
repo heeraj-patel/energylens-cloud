@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/inventory"
 	"github.com/google/uuid"
@@ -29,6 +30,8 @@ type resolveEntry struct {
 	SerialNumber     string               `json:"serial_number,omitempty"`
 	UPC              string               `json:"upc,omitempty"`
 	Label            *inventory.BulbLabel `json:"label,omitempty"`
+	CatalogProductID string               `json:"catalog_product_id,omitempty"`
+	MatchQuality     string               `json:"match_quality,omitempty"`
 	Usage            map[string]float64   `json:"usage,omitempty"`
 	DemoDeviceID     string               `json:"demo_device_id,omitempty"`
 	Name             string               `json:"name,omitempty"`
@@ -61,8 +64,9 @@ func Queue(ctx context.Context, db interface {
 
 func (p Producer) resolveCandidates(ctx context.Context) ([]resolveCandidate, error) {
 	rows, err := p.DB.Query(ctx, `SELECT a.id::text,a.version,a.category,a.identity,
-  t.id::text,t.version,EXISTS(SELECT 1 FROM attachments live JOIN sensor_endpoints s ON s.id=live.sensor_id WHERE live.appliance_id=a.id AND live.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[])
+  a.catalog_product_id::text,pr.brand,pr.full_model,pr.match_quality,t.id::text,t.version,EXISTS(SELECT 1 FROM attachments live JOIN sensor_endpoints s ON s.id=live.sensor_id WHERE live.appliance_id=a.id AND live.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[])
  FROM appliances a JOIN homes h ON h.id=a.home_id
+ LEFT JOIN catalog_products pr ON pr.id=a.catalog_product_id
  LEFT JOIN LATERAL (SELECT id,version,sensor_id,ended_at FROM attachments WHERE appliance_id=a.id ORDER BY started_at DESC,id LIMIT 1) t ON true
  WHERE a.archived_at IS NULL AND h.deleted_at IS NULL ORDER BY a.updated_at,a.id`)
 	if err != nil {
@@ -73,7 +77,8 @@ func (p Producer) resolveCandidates(ctx context.Context) ([]resolveCandidate, er
 		var c resolveCandidate
 		var raw []byte
 		var metering bool
-		if err = rows.Scan(&c.applianceID, &c.version, &c.entry.Category, &raw, &c.attachmentID, &c.attachmentVersion, &metering); err != nil {
+		var linkID, pBrand, pModel, pQuality *string
+		if err = rows.Scan(&c.applianceID, &c.version, &c.entry.Category, &raw, &linkID, &pBrand, &pModel, &pQuality, &c.attachmentID, &c.attachmentVersion, &metering); err != nil {
 			break
 		}
 		var identity inventory.Identity
@@ -89,6 +94,11 @@ func (p Producer) resolveCandidates(ctx context.Context) ([]resolveCandidate, er
 		c.entry.Manufacturer = identity.Brand
 		c.entry.Model = identity.FullModel
 		c.entry.Label = identity.BulbLabel
+		if linkID != nil {
+			if quality, ok := catalog.SendableLink(identity.Brand, identity.FullModel, catalog.LinkedProduct{Brand: deref(pBrand), FullModel: deref(pModel), MatchQuality: deref(pQuality)}); ok {
+				c.entry.CatalogProductID, c.entry.MatchQuality = *linkID, quality
+			}
+		}
 		if identity.FCCID != nil {
 			c.entry.FCCID = *identity.FCCID
 		}
