@@ -18,6 +18,7 @@ var ErrNotFound = errors.New("energy resolution not found")
 type Store interface {
 	ForOwner(context.Context, string, string, string) (json.RawMessage, error)
 	ForHub(context.Context, string, string) (json.RawMessage, error)
+	Refresh(ctx context.Context, owner, home, appliance, key string) (RefreshResult, error)
 }
 type PGStore struct{ Pool *pgxpool.Pool }
 
