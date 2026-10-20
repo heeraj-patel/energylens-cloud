@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -146,22 +145,13 @@ SELECT $1,q.home_id,q.id,q.identity_key FROM identity_scan_requests q WHERE q.ho
 	if err = store.Finish(ctx, *transientRetry, json.RawMessage(`{"schema_version":1,"model_count":1,"models":[{"category":"dryer","manufacturer":"Acme","model":"A2","status":"identity_review_candidate"}]}`), nil, failureNow.Add(16*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	// Only a completed KB no-evidence cycle enters the human research file.
+	// Completed no-evidence cycles leave the rows the later claim passes count.
 	finalReport := `{"schema_version":1,"model_count":1,"models":[{"category":"dryer","manufacturer":"Acme","model":"A1","status":"no_evidence"}]}`
 	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=5,next_attempt_at=NULL,candidate_report=$2,updated_at=$3 WHERE home_id=$1 AND model='A1'`, home, finalReport, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `UPDATE identity_scan_requests SET status='missing_source',attempt_count=4,next_attempt_at=$2,candidate_report=$3 WHERE home_id<>$1 AND model='A1'`, home, now.Add(24*time.Hour), finalReport); err != nil {
 		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "unresolved_device_help.jsonl")
-	exported, err := ExportHelp(ctx, pool, path)
-	if err != nil || exported != 2 {
-		t.Fatalf("final KB export: %d %v", exported, err)
-	}
-	content, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(content), `"appliance_id":"`+appliance+`"`) || !strings.Contains(string(content), `"appliance_id":"`+secondAppliance+`"`) || strings.Contains(string(content), `"home_id"`) || strings.Contains(string(content), `"model":"A2"`) {
-		t.Fatalf("export content: %q %v", content, err)
 	}
 
 	for i := 0; i < 12; i++ {

@@ -34,19 +34,22 @@ func normalizeIdentity(category, manufacturer, model, fuel string) string {
 	return strings.Join(parts, "|")
 }
 
-// ExportHelp reads final KB no-evidence outcomes. A transient lookup error or
-// a scheduled retry never enters the human queue.
+// ExportHelp reads the research queue: live appliances whose stored Datawiz resolution is unresolved or
+// category-typical, minus models that already carry manual research.
 func ExportHelp(ctx context.Context, pool *pgxpool.Pool, path string) (int, error) {
-	rows, err := pool.Query(ctx, `SELECT a.id::text,q.manufacturer,q.model,q.category,q.fuel,q.status,q.updated_at
-FROM identity_scan_subscriptions s
-JOIN appliances a ON a.id=s.appliance_id AND a.home_id=s.home_id AND a.archived_at IS NULL
-JOIN identity_scan_requests q ON q.id=s.request_id AND q.home_id=s.home_id AND q.identity_key=s.identity_key
-JOIN homes h ON h.id=s.home_id
-WHERE h.deleted_at IS NULL AND a.identity->>'match_quality'='confirmed_exact'
- AND q.status='missing_source' AND q.attempt_count=5
- AND q.next_attempt_at IS NULL AND q.candidate_report IS NOT NULL
- AND q.candidate_report->'models'->0->>'status' IN ('no_evidence','rated_input_only')
-ORDER BY q.appliance_id,q.updated_at,q.id`)
+	rows, err := pool.Query(ctx, `SELECT a.id::text,r.record->'identity'->>'manufacturer',r.record->'identity'->>'model',
+ a.category,COALESCE(a.identity->>'fuel','electricity'),
+ CASE WHEN r.record->>'status'='unresolved' THEN 'unresolved' ELSE 'category_typical' END,r.resolved_at
+FROM datawiz_energy_resolutions r
+JOIN appliances a ON left(r.appliance_ref,6)='cloud:' AND a.id::text=substr(r.appliance_ref,7) AND a.archived_at IS NULL
+JOIN homes h ON h.id=a.home_id AND h.deleted_at IS NULL
+WHERE (r.record->>'status'='unresolved' OR r.record->'source'->>'tier'='category_typical')
+ AND COALESCE(r.record->'identity'->>'manufacturer','')<>'' AND COALESCE(r.record->'identity'->>'model','')<>''
+ AND NOT EXISTS (SELECT 1 FROM datawiz_current c JOIN datawiz_observations o ON o.id=c.observation_id
+  WHERE c.route='device' AND o.source->>'adapter'='manual_research'
+   AND c.subject_key='device:'||trim(both '-' from regexp_replace(lower(r.record->'identity'->>'manufacturer'),'[^a-z0-9]+','-','g'))
+    ||':'||regexp_replace(lower(r.record->'identity'->>'model'),'[^a-z0-9]','','g'))
+ORDER BY a.id`)
 	if err != nil {
 		return 0, err
 	}
