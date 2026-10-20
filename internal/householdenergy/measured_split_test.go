@@ -1,6 +1,7 @@
 package householdenergy
 
 import (
+	"context"
 	"encoding/json"
 	"math/big"
 	"testing"
@@ -233,4 +234,42 @@ func TestMeteredSpecYieldsOnlyMeasuredSplitRow(t *testing.T) {
 		t.Fatalf("metered row = %+v", a)
 	}
 	assertSplit(t, a, "0.002000", "0.000010")
+}
+
+func TestNationalRatePricesMeteredRowsAndSplit(t *testing.T) {
+	start := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	fuel := "electricity"
+	items := []interval{{Start: start, End: start.Add(15 * time.Minute), Wh: mustDecimal("20"), Fuel: &fuel, ApplianceID: "dyson", SensorKind: "plug"}}
+	national := NationalRate(func(context.Context) (float64, error) { return 0.2, nil })
+	schedule := national.scheduleFor(context.Background(), items)
+	if schedule == nil || schedule.nationalBasis() != "us_average" {
+		t.Fatalf("national schedule = %+v", schedule)
+	}
+	if national.scheduleFor(context.Background(), nil) != nil {
+		t.Fatal("empty items were priced")
+	}
+	unavailable := []interval{{Start: start, End: start.Add(time.Hour), Unavailable: true, Fuel: &fuel}}
+	if national.scheduleFor(context.Background(), unavailable) != nil {
+		t.Fatal("unavailable interval was priced")
+	}
+	if NationalRate(nil).scheduleFor(context.Background(), items) != nil {
+		t.Fatal("nil national rate priced the home")
+	}
+	buckets := makeBuckets(period{Start: start, End: start.Add(time.Hour)}, "hour", items)
+	total := priceEffectiveBuckets(buckets, items, *schedule)
+	if total == nil || total.Amount != "0.004000" {
+		t.Fatalf("whole-home cost = %+v", total)
+	}
+	rows, wh := attributeDeviceBuckets(buckets, items, nil)
+	periodRows := sumDeviceAllocations(wh, nil)
+	priceAttributedDevices(buckets, rows, periodRows, items, *schedule)
+	markNationalRate(schedule, rows, periodRows)
+	applyMeasuredSplit(buckets, rows, periodRows, items, items, map[string]splitSpec{"dyson": {FloorUSDPerDay: 0.01}}, schedule, nil)
+	for _, a := range []allocation{rows[0][0].Allocation, periodRows[0].Allocation} {
+		if a.Cost.(money).Amount != "0.004000" || a.RateBasis != "us_average" || a.WasteBasis != "floor" {
+			t.Fatalf("metered national row = %+v", a)
+		}
+		// $0.01/day at $0.20/kWh is 50 Wh/day; 15 covered minutes is 0.52 Wh.
+		assertSplit(t, a, "0.003896", "0.000104")
+	}
 }

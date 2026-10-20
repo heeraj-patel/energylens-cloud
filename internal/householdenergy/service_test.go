@@ -1,9 +1,10 @@
 package householdenergy
 
-import (\n\ttariffpkg "energylens.local/cloud/internal/tariff"
+import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	tariffpkg "energylens.local/cloud/internal/tariff"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -644,6 +645,21 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	withoutTariffSnapshot := live["snapshot_id"]
 	if code, replaced := getSample(dash, "owner"); code != 200 || replaced["data_mode"] != "mixed" || replaced["totals"].(map[string]any)["cost"] != nil || len(replaced["device_allocations"].([]any)) != 19 {
 		t.Fatalf("real evidence did not retain separate seeded allocations: %d %+v", code, replaced)
+	}
+	national := s
+	national.NationalRate = func(context.Context) (float64, error) { return 0.2, nil }
+	nationalRouter := chi.NewRouter()
+	nationalRouter.Route("/v1", national.Routes)
+	nationalReq := httptest.NewRequest("GET", dash, nil)
+	nationalReq.Header.Set("Authorization", "Bearer owner")
+	nationalW := httptest.NewRecorder()
+	nationalRouter.ServeHTTP(nationalW, nationalReq)
+	var nationalDash map[string]any
+	_ = json.Unmarshal(nationalW.Body.Bytes(), &nationalDash)
+	nationalTotals := nationalDash["totals"].(map[string]any)
+	nationalReal := nationalDash["device_allocations"].([]any)[18].(map[string]any)["allocation"].(map[string]any)
+	if nationalTotals["cost"].(map[string]any)["amount"] != "0.300000" || nationalTotals["rate_basis"] != "us_average" || nationalReal["cost"].(map[string]any)["amount"] != "0.300000" || nationalReal["rate_basis"] != "us_average" {
+		t.Fatalf("no-tariff home was not priced at the national rate: %+v", nationalDash)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.20,'kWh','USD','user_tariff','owner bill',$2,false,$3)`, home.ID, now.Add(-10*24*time.Hour), now.Add(-30*24*time.Hour)); err != nil {
 		t.Fatal(err)

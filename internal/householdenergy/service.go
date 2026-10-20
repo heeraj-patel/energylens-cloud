@@ -126,6 +126,7 @@ type marginalTariff struct {
 	To           *time.Time
 	SourceAsOf   time.Time
 	Segments     []marginalTariff
+	Basis        string
 }
 
 func (s Service) Routes(r chi.Router) {
@@ -299,6 +300,9 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 	if err != nil {
 		return nil, err
 	}
+	if tariff == nil {
+		tariff = s.NationalRate.scheduleFor(ctx, selectedItems)
+	}
 	var demoSnapshot *DemoCostSnapshot
 	if len(rawDemo) > 0 && string(rawDemo) != "null" {
 		var parsed DemoCostSnapshot
@@ -373,6 +377,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 			a.Cost = *cost
 			a.UnclassifiedCost = *cost
 			a.EvidenceBasis = "mixed"
+			a.RateBasis = tariff.nationalBasis()
 		}
 	}
 	// Real appliance rows are derived from the same observations as the home
@@ -382,6 +387,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		periodRows := sumDeviceAllocations(deviceWh, nil)
 		if tariff != nil {
 			priceAttributedDevices(buckets, realRows, periodRows, selectedItems, *tariff)
+			markNationalRate(tariff, realRows, periodRows)
 		}
 		specs, err := readSplitSpecs(ctx, tx, home)
 		if err != nil {

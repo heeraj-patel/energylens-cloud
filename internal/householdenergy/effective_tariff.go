@@ -1,7 +1,8 @@
 package householdenergy
 
-import (\n\ttariffpkg "energylens.local/cloud/internal/tariff"
+import (
 	"context"
+	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
 	"fmt"
 	"math"
@@ -27,7 +28,49 @@ func (n NationalRate) schedule(ctx context.Context) *marginalTariff {
 		return nil
 	}
 	rate := mustDecimal(strconv.FormatFloat(value, 'f', 9, 64))
-	return &marginalTariff{Currency: "USD", Rate: rate, Segments: []marginalTariff{{Currency: "USD", Rate: rate}}}
+	return &marginalTariff{Currency: "USD", Rate: rate, Segments: []marginalTariff{{Currency: "USD", Rate: rate}}, Basis: "us_average"}
+}
+
+// scheduleFor is schedule limited to a nonempty set of available electricity
+// intervals, the only ones that can be priced.
+func (n NationalRate) scheduleFor(ctx context.Context, items []interval) *marginalTariff {
+	if len(items) == 0 {
+		return nil
+	}
+	for _, item := range items {
+		if item.Unavailable || item.Fuel == nil || *item.Fuel != "electricity" || item.Wh == nil {
+			return nil
+		}
+	}
+	return n.schedule(ctx)
+}
+
+// nationalBasis is "us_average" for a national-rate schedule, else empty.
+func (t *marginalTariff) nationalBasis() string {
+	if t == nil {
+		return ""
+	}
+	return t.Basis
+}
+
+// markNationalRate tags priced device rows with the national rate basis.
+func markNationalRate(t *marginalTariff, rows [][]deviceAllocation, periodRows []deviceAllocation) {
+	if t.nationalBasis() == "" {
+		return
+	}
+	mark := func(a *deviceAllocation) {
+		if _, ok := a.Allocation.Cost.(money); ok {
+			a.Allocation.RateBasis = t.Basis
+		}
+	}
+	for i := range rows {
+		for j := range rows[i] {
+			mark(&rows[i][j])
+		}
+	}
+	for i := range periodRows {
+		mark(&periodRows[i])
+	}
 }
 
 // Each measured instant must have exactly one fresh, nonfallback tariff. The

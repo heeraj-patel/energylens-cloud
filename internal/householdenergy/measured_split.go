@@ -60,6 +60,13 @@ func intervalIsWaste(item interval, standbyWatts float64) (waste, counted bool) 
 	return mean.Cmp(ceiling) <= 0, true
 }
 
+func homeRateBasis(t *marginalTariff) string {
+	if b := t.nationalBasis(); b != "" {
+		return b
+	}
+	return "home_tariff"
+}
+
 func hasSplit(a allocation) bool {
 	return a.UsefulEnergy != nil || a.UsefulCost != nil || a.WasteEnergy != nil || a.WasteCost != nil
 }
@@ -122,7 +129,7 @@ func applyMeasuredSplit(buckets []bucket, rows [][]deviceAllocation, periodRows 
 			}
 			floorSchedule, wasteBasis, rateBasis := tariff, "", ""
 			if standby <= 0 && spec.FloorUSDPerDay > 0 {
-				wasteBasis, rateBasis = "floor", "home_tariff"
+				wasteBasis, rateBasis = "floor", homeRateBasis(tariff)
 				if floorSchedule == nil {
 					floorSchedule, rateBasis = national, "us_average"
 				}
@@ -159,7 +166,7 @@ func applyMeasuredSplit(buckets []bucket, rows [][]deviceAllocation, periodRows 
 				continue
 			}
 			if rateBasis == "" {
-				a.RateBasis, periodMarks[id] = "home_tariff", [2]string{wasteBasis, "home_tariff"}
+				a.RateBasis, periodMarks[id] = homeRateBasis(tariff), [2]string{wasteBasis, homeRateBasis(tariff)}
 			}
 			wasteCost := new(big.Rat)
 			if wasteBasis == "floor" {
