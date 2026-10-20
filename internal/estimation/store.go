@@ -11,7 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type PGRunStore struct{ Pool *pgxpool.Pool }
+type PGRunStore struct {
+	Pool *pgxpool.Pool
+	// NationalRate prices homes without a tariff; nil leaves them unpriced.
+	NationalRate NationalRate
+}
 
 type applianceEvidence struct {
 	ID        string
@@ -80,8 +84,9 @@ func (s PGRunStore) ListRuns(ctx context.Context, owner, home string, appliance 
 		return nil, ErrNotFound
 	}
 	out := make([]json.RawMessage, 0, len(items))
+	national := s.nationalOnce()
 	for _, a := range items {
-		result, err := buildResolutionRun(ctx, tx, home, a, start, end, timezone, startTime, endTime, now)
+		result, err := buildResolutionRun(ctx, tx, home, a, start, end, timezone, startTime, endTime, now, national)
 		if err != nil {
 			return nil, err
 		}
@@ -91,4 +96,22 @@ func (s PGRunStore) ListRuns(ctx context.Context, owner, home string, appliance 
 		return nil, err
 	}
 	return out, nil
+}
+
+// nationalOnce reads the national rate at most once per request.
+func (s PGRunStore) nationalOnce() func(context.Context) (float64, error) {
+	var value float64
+	var err error
+	done := false
+	return func(ctx context.Context) (float64, error) {
+		if !done {
+			done = true
+			if s.NationalRate == nil {
+				err = errors.New("national rate not configured")
+			} else {
+				value, err = s.NationalRate(ctx)
+			}
+		}
+		return value, err
+	}
 }

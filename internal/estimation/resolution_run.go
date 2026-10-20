@@ -10,6 +10,7 @@ import (
 	"math"
 	"time"
 
+	"energylens.local/cloud/internal/energyrate"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -21,12 +22,31 @@ type energyResolution struct {
 		AnnualKWh      *float64 `json:"annual_kwh"`
 		KWhPerDay      *float64 `json:"kwh_per_day"`
 		WasteKWhPerDay *float64 `json:"waste_kwh_per_day"`
+		WasteBasis     string   `json:"waste_basis"`
 	} `json:"values"`
+	WasteFloor *struct {
+		USDPerDay *float64 `json:"usd_per_day"`
+	} `json:"waste_floor"`
 }
+
+// wasteKWh is the record's own waste figure, else its dollar floor converted
+// at rate. It is unknown for a v1 record with neither.
+func (r energyResolution) wasteKWh(daily, rate float64) (float64, bool) {
+	if r.Values.WasteKWhPerDay != nil {
+		return *r.Values.WasteKWhPerDay, true
+	}
+	if r.WasteFloor == nil || r.WasteFloor.USDPerDay == nil || rate <= 0 {
+		return 0, false
+	}
+	return energyrate.WasteFloorKWh(*r.WasteFloor.USDPerDay, rate, daily), true
+}
+
+// NationalRate returns the US average residential rate in $/kWh.
+type NationalRate func(context.Context) (float64, error)
 
 // buildResolutionRun snapshots the one Datawiz result and the applicable
 // tariff. Source metadata never changes eligibility or arithmetic here.
-func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, start, end, timezone string, startTime, endTime, now time.Time) (json.RawMessage, error) {
+func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a applianceEvidence, start, end, timezone string, startTime, endTime, now time.Time, national func(context.Context) (float64, error)) (json.RawMessage, error) {
 	var metering bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM attachments t JOIN sensor_endpoints s ON s.id=t.sensor_id WHERE t.appliance_id=$1 AND t.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[])`, a.ID).Scan(&metering); err != nil {
 		return nil, err
@@ -65,35 +85,52 @@ func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a appliance
 		quality["source"] = "datawiz_resolution"
 		refs = append(refs, map[string]any{"id": a.ID, "kind": "datawiz_resolution", "revision": 1})
 	}
+	var rateValue, nationalRate float64
 	if rate.ID != "" {
 		quality["rate"] = rate.Kind
 		refs = append(refs, map[string]any{"id": rate.ID, "kind": "tariff", "revision": rate.Revision})
+		if _, e := fmt.Sscan(rate.Rate, &rateValue); e != nil {
+			return nil, e
+		}
 	}
 	var unavailable string
-	if metering || len(recordJSON) == 0 || resolution.Status == "measured_device" || resolution.DeviceKind == "real_metering" || resolution.Values == nil {
+	if metering || len(recordJSON) == 0 || resolution.Status == "measured_device" || resolution.DeviceKind == "real_metering" {
+		unavailable = "resolution_pending"
+	} else if resolution.Status == "unresolved" {
+		unavailable = "no_energy_data"
+	} else if resolution.Values == nil {
 		unavailable = "resolution_pending"
 	} else if a.Fuel != "electricity" {
 		unavailable = "basis_incomparable"
 	} else if rate.ID == "" {
-		unavailable = "rate_unavailable"
+		if value, e := national(ctx); e != nil || value <= 0 {
+			unavailable = "rate_unavailable"
+		} else {
+			rateValue, nationalRate = value, value
+			quality["rate"] = "regional_average"
+			refs = append(refs, map[string]any{"id": a.ID, "kind": "national_rate", "revision": 1})
+		}
 	} else if rate.Currency != "USD" {
 		unavailable = "basis_incomparable"
 	}
 	var energy, waste float64
+	wasteKnown := true
 	if unavailable == "" {
 		for day := startTime; day.Before(endTime); day = day.AddDate(0, 0, 1) {
+			var daily float64
 			if resolution.Values.KWhPerDay != nil {
-				energy += *resolution.Values.KWhPerDay
+				daily = *resolution.Values.KWhPerDay
 			} else if resolution.Values.AnnualKWh != nil {
 				days := 365.0
 				if day.Year()%4 == 0 && (day.Year()%100 != 0 || day.Year()%400 == 0) {
 					days = 366
 				}
-				energy += *resolution.Values.AnnualKWh / days
+				daily = *resolution.Values.AnnualKWh / days
 			}
-			if resolution.Values.WasteKWhPerDay != nil {
-				waste += *resolution.Values.WasteKWhPerDay
-			}
+			energy += daily
+			dayWaste, ok := resolution.wasteKWh(daily, rateValue)
+			wasteKnown = wasteKnown && ok
+			waste += dayWaste
 		}
 		if math.IsNaN(energy) || math.IsInf(energy, 0) || energy <= 0 {
 			unavailable = "resolution_pending"
@@ -102,6 +139,9 @@ func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a appliance
 		}
 	}
 	snapshot := map[string]any{"appliance_version": a.Version, "metering_attachment": metering, "resolution_request_sha256": hex.EncodeToString(requestHash), "resolution_resolved_at": resolvedAt, "tariff_id": rate.ID, "tariff_revision": rate.Revision, "tariff_count": rate.Count, "period_start": start, "period_end": end, "timezone": timezone, "formula_version": "datawiz-resolution/v1"}
+	if nationalRate > 0 {
+		snapshot["national_rate_usd_per_kwh"] = nationalRate
+	}
 	snapshotJSON, e := json.Marshal(snapshot)
 	if e != nil {
 		return nil, e
@@ -124,16 +164,21 @@ func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a appliance
 	if unavailable != "" {
 		result["unavailable_reason"] = unavailable
 	} else {
-		var rateValue float64
-		if _, e = fmt.Sscan(rate.Rate, &rateValue); e != nil {
-			return nil, e
+		currency, rateKind, rateBasis := rate.Currency, rate.Kind, "home_tariff"
+		if nationalRate > 0 {
+			currency, rateKind, rateBasis = "USD", "regional_average", "us_average"
 		}
 		result["kind"] = "estimated_operating_cost"
+		result["rate_basis"] = rateBasis
 		result["energy"] = map[string]any{"value": fmt.Sprintf("%.6f", energy), "unit": "kWh", "fuel": "electricity"}
-		result["cost"] = map[string]any{"value": fmt.Sprintf("%.6f", energy*rateValue), "currency": rate.Currency, "rate_kind": rate.Kind}
-		if resolution.Values.WasteKWhPerDay != nil {
+		result["cost"] = map[string]any{"value": fmt.Sprintf("%.6f", energy*rateValue), "currency": currency, "rate_kind": rateKind}
+		if wasteKnown {
+			result["waste"] = "assessed"
 			result["waste_energy"] = map[string]any{"value": fmt.Sprintf("%.6f", waste), "unit": "kWh", "fuel": "electricity"}
-			result["waste_cost"] = map[string]any{"value": fmt.Sprintf("%.6f", waste*rateValue), "currency": rate.Currency, "rate_kind": rate.Kind}
+			result["waste_cost"] = map[string]any{"value": fmt.Sprintf("%.6f", waste*rateValue), "currency": currency, "rate_kind": rateKind}
+			if resolution.Values.WasteBasis != "" {
+				result["waste_basis"] = resolution.Values.WasteBasis
+			}
 		}
 	}
 	body, e := json.Marshal(result)
