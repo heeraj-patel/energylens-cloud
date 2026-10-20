@@ -275,7 +275,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			if queryErr = answerRows.Scan(&answerID, &questionID, &questionVersion, &revision, &status, &answerValue); queryErr != nil {
 				break
 			}
-			if status != "confirmed" || questionVersion != 1 {
+			if status != "confirmed" || (questionVersion != 1 && questionVersion != 2) {
 				continue
 			}
 			for _, kind := range []string{"hours_per_week", "cycles_per_week"} {

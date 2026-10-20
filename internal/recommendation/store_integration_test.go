@@ -244,7 +244,7 @@ func TestGasDryerRecommendationReadsExactUsageAndFreshThermRate(t *testing.T) {
 		t.Fatalf("source: %+v", action)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO question_answers(id,home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at)
-	 VALUES($1,$2,$3,1,'dryer.cycles_per_week',1,1,'confirmed','3',$4)`, answer, home, device, now); err != nil {
+	 VALUES($1,$2,$3,1,'dryer.cycles_per_week',2,1,'confirmed','3',$4)`, answer, home, device, now); err != nil {
 		t.Fatal(err)
 	}
 	if action := read(); action.NextQuestion != "add_gas_rate" || len(action.EvidenceRefs) != 2 {
