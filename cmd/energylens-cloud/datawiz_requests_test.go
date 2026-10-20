@@ -126,3 +126,13 @@ func TestQueueDatawizResolveOperator(t *testing.T) {
 		t.Fatalf("queue drain: %d %v", pending, err)
 	}
 }
+
+func TestRelinkCatalogRequiresNoArgsAndDatabase(t *testing.T) {
+	t.Setenv("ENERGYLENS_CLOUD_DATABASE_URL", "")
+	if err := relinkCatalog(context.Background(), []string{"extra"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("args: %v", err)
+	}
+	if err := relinkCatalog(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "ENERGYLENS_CLOUD_DATABASE_URL required") {
+		t.Fatalf("database gate: %v", err)
+	}
+}

@@ -744,3 +744,71 @@ func ValidPatch(in PatchInput) bool {
 	return true
 }
 func validUUID(s string) bool { _, err := uuid.Parse(s); return err == nil && s == strings.ToLower(s) }
+
+// RelinkResult counts the outcome of one RelinkCatalog pass.
+type RelinkResult struct{ LinkedExact, LinkedFamily, Unresolved int }
+
+// RelinkCatalog links active electricity appliances that have no catalog link,
+// writing each change like a Patch: version bump, snapshot and scan re-enqueue.
+func (s PGStore) RelinkCatalog(ctx context.Context) (RelinkResult, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id FROM appliances WHERE catalog_product_id IS NULL AND archived_at IS NULL AND identity->>'fuel'='electricity' AND btrim(identity->>'brand')<>'' AND btrim(identity->>'full_model')<>'' ORDER BY created_at,id`)
+	if err != nil {
+		return RelinkResult{}, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return RelinkResult{}, err
+	}
+	var out RelinkResult
+	for _, id := range ids {
+		quality, err := s.relinkOne(ctx, id)
+		if err != nil {
+			return out, err
+		}
+		switch quality {
+		case "confirmed_exact":
+			out.LinkedExact++
+		case "documented_variant_family":
+			out.LinkedFamily++
+		default:
+			out.Unresolved++
+		}
+	}
+	return out, nil
+}
+
+func (s PGStore) relinkOne(ctx context.Context, id string) (string, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	a, err := scanAppliance(tx.QueryRow(ctx, selectAppliance+` WHERE a.id=$1 AND a.archived_at IS NULL AND a.catalog_product_id IS NULL FOR UPDATE`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err = linkCatalog(ctx, tx, &a); err != nil {
+		return "", err
+	}
+	if a.Identity.CatalogProductID == nil {
+		return "", nil
+	}
+	identity, _ := json.Marshal(a.Identity)
+	err = tx.QueryRow(ctx, `UPDATE appliances SET catalog_product_id=$2,identity=$3,version=version+1,updated_at=now() WHERE id=$1 RETURNING version,updated_at`, id, a.Identity.CatalogProductID, identity).Scan(&a.Version, &a.UpdatedAt)
+	if err != nil {
+		return "", err
+	}
+	if err = snapshot(ctx, tx, a); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM identity_scan_subscriptions WHERE appliance_id=$1`, id); err != nil {
+		return "", err
+	}
+	if err = enqueueScan(ctx, tx, a); err != nil {
+		return "", err
+	}
+	return a.Identity.MatchQuality, tx.Commit(ctx)
+}

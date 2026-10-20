@@ -224,3 +224,39 @@ func TestPatchModelEditClearsAndRelinks(t *testing.T) {
 	a = patch(a.Version, edited)
 	f.wantLink(a, picked, "confirmed_exact")
 }
+
+func TestRelinkCatalogLinksUnlinkedAppliancesOnce(t *testing.T) {
+	f := newLinkFixture(t)
+	now := time.Now().UTC()
+	exact := f.create("Acme", "A123", "electricity")
+	family := f.create("Delta", "DX1234B", "electricity")
+	unknown := f.create("Zed", "Z1", "electricity")
+	gas := f.create("Acme", "A123", "natural_gas")
+	pExact := f.product("Acme", "acme", "A123", "confirmed_exact", nil, nil)
+	f.fact(pExact, "epa_exact", "", now)
+	pFamily := f.product("Delta", "delta", "DX1234A", "documented_variant_family", nil, nil)
+	f.fact(pFamily, "oem_family", "DX1234*", now)
+
+	got, err := f.store.RelinkCatalog(f.ctx)
+	if err != nil || got != (RelinkResult{LinkedExact: 1, LinkedFamily: 1, Unresolved: 1}) {
+		t.Fatalf("first pass %+v %v", got, err)
+	}
+	for id, want := range map[string]string{exact.ID: pExact, family.ID: pFamily} {
+		var column *string
+		var version int64
+		var revisions int
+		if err = f.pool.QueryRow(f.ctx, `SELECT catalog_product_id::text,version,(SELECT count(*) FROM appliance_revisions WHERE appliance_id=$1) FROM appliances WHERE id=$1`, id).Scan(&column, &version, &revisions); err != nil || column == nil || *column != want || version != 2 || revisions != 2 {
+			t.Fatalf("appliance %s: %v %d %d %v", id, column, version, revisions, err)
+		}
+	}
+	for _, id := range []string{unknown.ID, gas.ID} {
+		var version int64
+		if err = f.pool.QueryRow(f.ctx, `SELECT version FROM appliances WHERE id=$1`, id).Scan(&version); err != nil || version != 1 {
+			t.Fatalf("untouched %s: %d %v", id, version, err)
+		}
+	}
+	got, err = f.store.RelinkCatalog(f.ctx)
+	if err != nil || got != (RelinkResult{Unresolved: 1}) {
+		t.Fatalf("second pass %+v %v", got, err)
+	}
+}

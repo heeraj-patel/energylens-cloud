@@ -10,6 +10,7 @@ import (
 	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
+	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/ratedinputimport"
 	"energylens.local/cloud/internal/scenarioimport"
 	"energylens.local/cloud/internal/usagefactimport"
@@ -81,6 +82,9 @@ func run(ctx context.Context, args []string) error {
 	}
 	if len(args) > 0 && args[0] == "queue-datawiz-resolve" {
 		return queueDatawizResolve(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "relink-catalog" {
+		return relinkCatalog(ctx, args[1:])
 	}
 	if len(args) > 0 && args[0] == "read-datawiz-current" {
 		fs := flag.NewFlagSet("read-datawiz-current", flag.ContinueOnError)
@@ -264,6 +268,27 @@ func queueDatawizResolve(ctx context.Context, args []string) error {
 		}
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]any{"queued": *appliance, "reason": "admin", "requests_written": count})
+}
+
+// relinkCatalog is the one-time pass that links existing appliances to catalog products.
+func relinkCatalog(ctx context.Context, args []string) error {
+	if len(args) != 0 {
+		return errors.New("usage: energylens-cloud relink-catalog")
+	}
+	dsn := os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL")
+	if dsn == "" {
+		return errors.New("ENERGYLENS_CLOUD_DATABASE_URL required")
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	result, err := (inventory.PGStore{Pool: pool}).RelinkCatalog(ctx)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]int{"linked_exact": result.LinkedExact, "linked_family": result.LinkedFamily, "unresolved": result.Unresolved})
 }
 
 // Operational provisioning is intentionally outside the public HTTP surface.
