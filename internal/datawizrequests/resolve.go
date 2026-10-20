@@ -165,6 +165,14 @@ func (p Producer) resolveEntryFor(ctx context.Context, id string) (resolveCandid
 	return resolveCandidate{}, false, nil
 }
 
+var usageKeys = map[string]string{
+	".hours_per_week":      "hours_per_week",
+	".cycles_per_week":     "cycles_per_week",
+	".season_share":        "season_share",
+	".age_band":            "age_factor",
+	".unconditioned_space": "unconditioned_space",
+}
+
 func (p Producer) addUsage(ctx context.Context, c *resolveCandidate) error {
 	if c.demo {
 		return nil
@@ -186,17 +194,13 @@ func (p Producer) addUsage(ctx context.Context, c *resolveCandidate) error {
 		if strings.HasPrefix(id, "avoid.") || strings.HasPrefix(id, "faq-") || strings.Contains(id, ".reviewed_cycle.") {
 			continue
 		}
-		if strings.HasSuffix(id, ".hours_per_week") {
-			if c.entry.Usage == nil {
-				c.entry.Usage = map[string]float64{}
+		for suffix, key := range usageKeys {
+			if strings.HasSuffix(id, suffix) {
+				if c.entry.Usage == nil {
+					c.entry.Usage = map[string]float64{}
+				}
+				c.entry.Usage[key] = n
 			}
-			c.entry.Usage["hours_per_week"] = n
-		}
-		if strings.HasSuffix(id, ".cycles_per_week") {
-			if c.entry.Usage == nil {
-				c.entry.Usage = map[string]float64{}
-			}
-			c.entry.Usage["cycles_per_week"] = n
 		}
 	}
 	return rows.Err()

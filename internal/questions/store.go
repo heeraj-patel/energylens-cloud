@@ -110,9 +110,7 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 			return nil, err
 		}
 		found = true
-		if q, ok := questionForMapped(category, canonical, id, version, purpose); ok {
-			candidates = append(candidates, q)
-		}
+		candidates = append(candidates, questionsForMapped(category, canonical, id, version, purpose)...)
 		if purpose == "onboarding" {
 			cycleCandidates = append(cycleCandidates, applianceCandidate{id: id, category: category, canonical: canonical, version: version})
 		}
@@ -171,6 +169,18 @@ func validAnswer(in AnswerCreate, q Question, now time.Time) bool {
 	d := json.NewDecoder(bytes.NewReader(in.Value))
 	d.UseNumber()
 	if err = d.Decode(&raw); err != nil {
+		return false
+	}
+	if q.AnswerKind == "choice" {
+		v, err := strconv.ParseFloat(raw.String(), 64)
+		if err != nil {
+			return false
+		}
+		for _, o := range q.Options {
+			if o.Value == v {
+				return true
+			}
+		}
 		return false
 	}
 	if q.AnswerKind == "cycles_per_week" {

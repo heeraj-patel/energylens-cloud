@@ -107,7 +107,7 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO estimate_runs(id,home_id,appliance_id,appliance_version,period_start,period_end,timezone,formula_version,dependency_hash,dependency_snapshot,result_json) VALUES($1,$2,$3,1,'2026-10-01','2026-11-01','America/Chicago','reviewed-energy/v1',$4,'{}','{}')`, runID, home.ID, a.ID, bytes.Repeat([]byte{1}, 32)); err != nil {
 		t.Fatal(err)
 	}
-	unknown := AnswerCreate{QuestionID: q[0].ID, QuestionVersion: 1, ApplianceID: a.ID, IdentityRevision: 1, Status: "unknown", Value: json.RawMessage("null")}
+	unknown := AnswerCreate{QuestionID: q[0].ID, QuestionVersion: q[0].Version, ApplianceID: a.ID, IdentityRevision: 1, Status: "unknown", Value: json.RawMessage("null")}
 	key := uuid.NewString()
 	reqHash := sha256.Sum256([]byte("unknown"))
 	if _, err = store.Submit(ctx, other.ID, home.ID, []AnswerCreate{unknown}, key, reqHash[:]); !errors.Is(err, ErrNotFound) {
@@ -137,12 +137,12 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	}
 	confirmed := unknown
 	confirmed.Status = "confirmed"
-	confirmed.Value = json.RawMessage("0")
+	confirmed.Value = json.RawMessage("4")
 	now := time.Now().UTC().Format(time.RFC3339)
 	confirmed.ConfirmedAt = &now
 	confirmedKey := uuid.NewString()
 	answers, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{confirmed}, confirmedKey, reqHash[:])
-	if err != nil || answers[0].Revision != 2 || string(answers[0].Value) != "0" {
+	if err != nil || answers[0].Revision != 2 || string(answers[0].Value) != "4" {
 		t.Fatalf("confirmed zero: %+v %v", answers, err)
 	}
 	var queued string
@@ -165,7 +165,7 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	var request struct {
 		Usage map[string]float64 `json:"usage"`
 	}
-	if err = json.Unmarshal(body, &request); err != nil || request.Usage["cycles_per_week"] != 0 {
+	if err = json.Unmarshal(body, &request); err != nil || request.Usage["cycles_per_week"] != 4 {
 		t.Fatalf("queued usage: %s %v", body, err)
 	}
 	var pending int
@@ -179,7 +179,7 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 		t.Fatalf("replay queued resolve: %d %v", pending, err)
 	}
 	current, err = store.CurrentAnswers(ctx, owner.ID, home.ID, a.ID)
-	if err != nil || len(current) != 1 || current[0].Revision != 2 || current[0].Status != "confirmed" || string(current[0].Value) != "0" || current[0].ConfirmedAt == nil {
+	if err != nil || len(current) != 1 || current[0].Revision != 2 || current[0].Status != "confirmed" || string(current[0].Value) != "4" || current[0].ConfirmedAt == nil {
 		t.Fatalf("current confirmed zero: %+v %v", current, err)
 	}
 	bad := confirmed
@@ -271,5 +271,6 @@ func TestQuestionsOwnerUnknownZeroReplayAndInvalidation(t *testing.T) {
 	if _, err = store.Submit(ctx, owner.ID, home.ID, []AnswerCreate{cycleAnswer}, uuid.NewString(), reqHash[:]); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("retracted source still accepts answers: %v", err)
 	}
+	checkChoiceQuestions(t, ctx, pool, store, inv, owner.ID, home.ID, now)
 }
 func ptr(v string) *string { return &v }

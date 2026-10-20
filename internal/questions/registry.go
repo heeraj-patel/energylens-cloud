@@ -4,19 +4,20 @@ package questions
 import "strings"
 
 type Question struct {
-	ID               string `json:"id"`
-	Version          int64  `json:"version"`
-	Purpose          string `json:"purpose"`
-	ApplianceID      string `json:"appliance_id"`
-	IdentityRevision int64  `json:"identity_revision"`
-	Prompt           string `json:"prompt"`
-	AnswerKind       string `json:"answer_kind"`
-	Unit             string `json:"unit"`
-	Optional         bool   `json:"optional"`
-	SourceFactID     string `json:"source_fact_id,omitempty"`
-	CycleDefinition  string `json:"cycle_definition,omitempty"`
-	TestBasis        string `json:"test_basis,omitempty"`
-	SourceURL        string `json:"source_url,omitempty"`
+	ID               string   `json:"id"`
+	Version          int64    `json:"version"`
+	Purpose          string   `json:"purpose"`
+	ApplianceID      string   `json:"appliance_id"`
+	IdentityRevision int64    `json:"identity_revision"`
+	Prompt           string   `json:"prompt"`
+	AnswerKind       string   `json:"answer_kind"`
+	Unit             string   `json:"unit"`
+	Options          []Option `json:"options,omitempty"`
+	Optional         bool     `json:"optional"`
+	SourceFactID     string   `json:"source_fact_id,omitempty"`
+	CycleDefinition  string   `json:"cycle_definition,omitempty"`
+	TestBasis        string   `json:"test_basis,omitempty"`
+	SourceURL        string   `json:"source_url,omitempty"`
 }
 
 // ReviewedCycleQuestionID binds an answer to one immutable reviewed fact.
@@ -25,27 +26,84 @@ func ReviewedCycleQuestionID(category, factID string) string {
 	return category + ".reviewed_cycle." + strings.ToLower(factID) + ".cycles_per_week"
 }
 
-type definition struct {
-	Category, ID, Kind, Prompt, Unit string
+type Option struct {
+	Key   string  `json:"key"`
+	Value float64 `json:"value"`
 }
 
-var onboarding = map[string]definition{
-	"light":           {"light", "lighting.hours_per_week", "hours_per_week", "How many hours do you usually use this light each week?", "hours/week"},
-	"lighting":        {"lighting", "lighting.hours_per_week", "hours_per_week", "How many hours do you usually use this light each week?", "hours/week"},
-	"washer":          {"washer", "washer.cycles_per_week", "cycles_per_week", "How many wash cycles do you usually run each week?", "cycles/week"},
-	"dryer":           {"dryer", "dryer.cycles_per_week", "cycles_per_week", "How many dryer cycles do you usually run each week?", "cycles/week"},
-	"dishwasher":      {"dishwasher", "dishwasher.cycles_per_week", "cycles_per_week", "How many dishwasher cycles do you usually run each week?", "cycles/week"},
-	"computer":        {"computer", "computer.hours_per_week", "hours_per_week", "How many hours do you usually use this computer each week?", "hours/week"},
-	"television":      {"television", "television.hours_per_week", "hours_per_week", "How many hours do you usually watch this television each week?", "hours/week"},
-	"tv":              {"tv", "television.hours_per_week", "hours_per_week", "How many hours do you usually watch this television each week?", "hours/week"},
-	"space_heater":    {"space_heater", "space_heater.hours_per_week", "hours_per_week", "How many hours do you usually run this heater each week?", "hours/week"},
-	"air_conditioner": {"air_conditioner", "air_conditioner.hours_per_week", "hours_per_week", "How many hours do you usually run this air conditioner each week?", "hours/week"},
+type definition struct {
+	Category, ID, Kind, Prompt, Unit string
+	Options                          []Option
+}
+
+var (
+	hoursOptions = []Option{{"lt_1h", 3.5}, {"1_3h", 14}, {"3_5h", 28}, {"5_8h", 45.5}, {"gt_8h", 70}}
+	cycleOptions = []Option{{"0_2", 1.5}, {"3_5", 4}, {"6_8", 7}, {"9_plus", 10}}
+	seasonOpts   = []Option{{"all_year", 1}, {"6_months", 0.5}, {"3_months", 0.25}, {"1_month", 0.083}}
+	ageOptions   = []Option{{"2014_or_newer", 1}, {"2001_2013", 1.25}, {"before_2001", 1.75}}
+	spaceOptions = []Option{{"no", 0}, {"yes", 1}}
+)
+
+const (
+	hoursPrompt  = "About how many hours a day is this on?"
+	tvPrompt     = "About how many hours a day is this TV on?"
+	seasonPrompt = "How much of the year do you use it?"
+	loadsPrompt  = "About how many loads a week?"
+	agePrompt    = "About when was it made?"
+	garagePrompt = "Is it in a garage or unconditioned space?"
+	hoursUnit    = "hours/week"
+	cyclesUnit   = "cycles/week"
+	seasonUnit   = "fraction of year"
+	ageUnit      = "energy factor"
+	flagUnit     = "flag"
+)
+
+func hours(category, id, prompt string) definition {
+	return definition{category, id + ".hours_per_week", "choice", prompt, hoursUnit, hoursOptions}
+}
+
+func cycles(category, prompt string) definition {
+	return definition{category, category + ".cycles_per_week", "choice", prompt, cyclesUnit, cycleOptions}
+}
+
+func season(category string) definition {
+	return definition{category, category + ".season_share", "choice", seasonPrompt, seasonUnit, seasonOpts}
+}
+
+func fridge(category string) []definition {
+	return []definition{
+		{category, category + ".age_band", "choice", agePrompt, ageUnit, ageOptions},
+		{category, category + ".unconditioned_space", "choice", garagePrompt, flagUnit, spaceOptions},
+	}
+}
+
+const onboardingVersion = 2
+
+var onboarding = map[string][]definition{
+	"light":           {hours("light", "lighting", hoursPrompt)},
+	"lighting":        {hours("lighting", "lighting", hoursPrompt)},
+	"washer":          {cycles("washer", loadsPrompt)},
+	"dryer":           {cycles("dryer", loadsPrompt)},
+	"dishwasher":      {cycles("dishwasher", loadsPrompt)},
+	"computer":        {hours("computer", "computer", hoursPrompt)},
+	"monitor":         {hours("monitor", "monitor", hoursPrompt)},
+	"television":      {hours("television", "television", tvPrompt)},
+	"tv":              {hours("tv", "television", tvPrompt)},
+	"space_heater":    {hours("space_heater", "space_heater", hoursPrompt), season("space_heater")},
+	"air_conditioner": {hours("air_conditioner", "air_conditioner", hoursPrompt)},
+	"fan":             {hours("fan", "fan", hoursPrompt), season("fan")},
+	"dehumidifier":    {hours("dehumidifier", "dehumidifier", hoursPrompt), season("dehumidifier")},
+	"hvac":            {hours("hvac", "hvac", hoursPrompt), season("hvac")},
+	"refrigerator":    fridge("refrigerator"),
+	"freezer":         fridge("freezer"),
 }
 
 func isUsageQuestion(id string) bool {
-	for _, q := range onboarding {
-		if q.ID == id {
-			return true
+	for _, defs := range onboarding {
+		for _, q := range defs {
+			if q.ID == id {
+				return true
+			}
 		}
 	}
 	return false
@@ -54,55 +112,60 @@ func isUsageQuestion(id string) bool {
 // These are self-reported context prompts. Answers do not classify waste or
 // establish the cause of a bill, and they do not imply numeric savings.
 var avoid = map[string]definition{
-	"computer":   {"computer", "avoid.computer.unused_on_hours_per_week", "hours_per_week", "In a typical week, how many hours is this computer powered on when no one is using it?", "hours/week"},
-	"television": {"television", "avoid.television.unused_on_hours_per_week", "hours_per_week", "In a typical week, how many hours is this television powered on when no one is watching it?", "hours/week"},
+	"computer":   {"computer", "avoid.computer.unused_on_hours_per_week", "hours_per_week", "In a typical week, how many hours is this computer powered on when no one is using it?", "hours/week", nil},
+	"television": {"television", "avoid.television.unused_on_hours_per_week", "hours_per_week", "In a typical week, how many hours is this television powered on when no one is watching it?", "hours/week", nil},
 }
 
 // FAQ asks recent use rather than treating an annual rating or a usual-use
 // estimate as evidence of what happened to a customer's bill.
 var faq = map[string]definition{
-	"washer":          {"washer", "faq-contributors/v1.washer.recent_cycles", "cycles_per_week", "In the past 7 days, how many wash cycles did you run?", "cycles/week"},
-	"dryer":           {"dryer", "faq-contributors/v1.dryer.recent_cycles", "cycles_per_week", "In the past 7 days, how many dryer cycles did you run?", "cycles/week"},
-	"dishwasher":      {"dishwasher", "faq-contributors/v1.dishwasher.recent_cycles", "cycles_per_week", "In the past 7 days, how many dishwasher cycles did you run?", "cycles/week"},
-	"computer":        {"computer", "faq-contributors/v1.computer.recent_hours", "hours_per_week", "In the past 7 days, how many hours was this computer in use?", "hours/week"},
-	"television":      {"television", "faq-contributors/v1.television.recent_hours", "hours_per_week", "In the past 7 days, how many hours was this television in use?", "hours/week"},
-	"space_heater":    {"space_heater", "faq-contributors/v1.space_heater.recent_hours", "hours_per_week", "In the past 7 days, how many hours did you run this heater?", "hours/week"},
-	"air_conditioner": {"air_conditioner", "faq-contributors/v1.air_conditioner.recent_hours", "hours_per_week", "In the past 7 days, how many hours did you run this air conditioner?", "hours/week"},
+	"washer":          {"washer", "faq-contributors/v1.washer.recent_cycles", "cycles_per_week", "In the past 7 days, how many wash cycles did you run?", "cycles/week", nil},
+	"dryer":           {"dryer", "faq-contributors/v1.dryer.recent_cycles", "cycles_per_week", "In the past 7 days, how many dryer cycles did you run?", "cycles/week", nil},
+	"dishwasher":      {"dishwasher", "faq-contributors/v1.dishwasher.recent_cycles", "cycles_per_week", "In the past 7 days, how many dishwasher cycles did you run?", "cycles/week", nil},
+	"computer":        {"computer", "faq-contributors/v1.computer.recent_hours", "hours_per_week", "In the past 7 days, how many hours was this computer in use?", "hours/week", nil},
+	"television":      {"television", "faq-contributors/v1.television.recent_hours", "hours_per_week", "In the past 7 days, how many hours was this television in use?", "hours/week", nil},
+	"space_heater":    {"space_heater", "faq-contributors/v1.space_heater.recent_hours", "hours_per_week", "In the past 7 days, how many hours did you run this heater?", "hours/week", nil},
+	"air_conditioner": {"air_conditioner", "faq-contributors/v1.air_conditioner.recent_hours", "hours_per_week", "In the past 7 days, how many hours did you run this air conditioner?", "hours/week", nil},
 }
 
-func questionFor(category, appliance string, version int64, purpose string) (Question, bool) {
-	var registry map[string]definition
+func questionsFor(category, appliance string, version int64, purpose string) []Question {
+	var defs []definition
+	qversion := int64(1)
 	switch purpose {
 	case "onboarding":
-		registry = onboarding
+		defs, qversion = onboarding[category], onboardingVersion
 	case "avoid":
-		registry = avoid
+		if d, ok := avoid[category]; ok {
+			defs = []definition{d}
+		}
 	case "faq":
-		registry = faq
-	default:
-		return Question{}, false
+		if d, ok := faq[category]; ok {
+			defs = []definition{d}
+		}
 	}
-	d, ok := registry[category]
-	if !ok {
-		return Question{}, false
+	out := make([]Question, 0, len(defs))
+	for _, d := range defs {
+		out = append(out, Question{ID: d.ID, Version: qversion, Purpose: purpose, ApplianceID: appliance, IdentityRevision: version, Prompt: d.Prompt, AnswerKind: d.Kind, Unit: d.Unit, Options: d.Options, Optional: true})
 	}
-	return Question{ID: d.ID, Version: 1, Purpose: purpose, ApplianceID: appliance, IdentityRevision: version, Prompt: d.Prompt, AnswerKind: d.Kind, Unit: d.Unit, Optional: true}, true
+	return out
 }
 
 func questionByID(category, appliance string, version int64, id string) (Question, bool) {
 	for _, purpose := range []string{"onboarding", "avoid", "faq"} {
-		if q, ok := questionFor(category, appliance, version, purpose); ok && q.ID == id {
-			return q, true
+		for _, q := range questionsFor(category, appliance, version, purpose) {
+			if q.ID == id {
+				return q, true
+			}
 		}
 	}
 	return Question{}, false
 }
 
-func questionForMapped(raw, canonical, appliance string, version int64, purpose string) (Question, bool) {
-	if q, ok := questionFor(raw, appliance, version, purpose); ok {
-		return q, true
+func questionsForMapped(raw, canonical, appliance string, version int64, purpose string) []Question {
+	if qs := questionsFor(raw, appliance, version, purpose); len(qs) > 0 {
+		return qs
 	}
-	return questionFor(canonical, appliance, version, purpose)
+	return questionsFor(canonical, appliance, version, purpose)
 }
 
 func questionByIDMapped(raw, canonical, appliance string, version int64, id string) (Question, bool) {
