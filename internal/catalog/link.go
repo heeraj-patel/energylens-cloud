@@ -2,7 +2,10 @@ package catalog
 
 import (
 	"context"
+	"regexp"
+	"sort"
 	"strings"
+	"time"
 )
 
 // Link is the catalog product an appliance identity resolves to.
@@ -22,8 +25,8 @@ func lowerOrEmpty(s *string) string {
 }
 
 // FindLink returns the single exact product, else the single documented family
-// product, for q. Duplicate products count as one and resolve to the newest
-// active ENERGY STAR fact. Zero or several distinct products return false.
+// product, else a prefix-trim family product, for q. Duplicate products count
+// as one and resolve to the newest active ENERGY STAR fact.
 func FindLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, error) {
 	rows, err := db.Query(ctx, `SELECT p.id, `+brandKeySQL+`, p.full_model, p.variant, p.region
 	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
@@ -70,10 +73,126 @@ func FindLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, err
 	for _, c := range candidates {
 		distinct[c.group] = true
 	}
-	if len(distinct) != 1 {
+	if len(distinct) > 1 {
 		return Link{}, false, nil
 	}
-	return Link{candidates[0].id, "documented_variant_family"}, true, nil
+	if len(distinct) == 1 {
+		return Link{candidates[0].id, "documented_variant_family"}, true, nil
+	}
+	return findTrimLink(ctx, db, q)
+}
+
+const (
+	minTrimLength = 6
+	maxKWhSpread  = 1.15
+)
+
+var nonModelChars = regexp.MustCompile(`[^A-Za-z0-9*]`)
+
+type trimCandidate struct {
+	id, group, model string
+	kwh              float64
+	epa              bool
+	reviewed         time.Time
+}
+
+// findTrimLink links the same-brand products whose model starts with q's model
+// minus k trailing characters, for the smallest k that has any. Several
+// products link only when their annual kWh agree; computers and TVs never trim.
+func findTrimLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, error) {
+	if c := strings.ToLower(strings.TrimSpace(q.Category)); c == "computer" || c == "tv" {
+		return Link{}, false, nil
+	}
+	model := normalizedModel(q.Model)
+	if len(model) < minTrimLength {
+		return Link{}, false, nil
+	}
+	var re strings.Builder
+	re.WriteByte('^')
+	for i := 0; i < minTrimLength; i++ {
+		re.WriteString("[" + model[i:i+1] + "*]")
+	}
+	rows, err := db.Query(ctx, `SELECT DISTINCT ON (p.id) p.id, `+brandKeySQL+`, p.full_model, p.variant, p.region,
+	           f.value::float8, f.source_kind IN ('epa_exact','epa_family'), f.reviewed_at
+	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
+	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND p.fuel=$2
+	      AND (p.region IS NULL OR ($3::text IS NOT NULL AND lower(p.region)=lower($3)))
+	      AND ($4::text IS NULL OR p.variant IS NULL OR lower(p.variant)=lower($4))
+	      AND regexp_replace(upper(p.full_model), '[^A-Z0-9*]', '', 'g') ~ $5
+	    ORDER BY p.id, f.source_kind IN ('epa_exact','epa_family') DESC, f.reviewed_at DESC, f.id`,
+		BrandKeys(q.Brand), q.Fuel, q.Region, q.Variant, re.String())
+	if err != nil {
+		return Link{}, false, err
+	}
+	defer rows.Close()
+	var all []trimCandidate
+	for rows.Next() {
+		var c trimCandidate
+		var brandKey, full string
+		var variant, region *string
+		if err = rows.Scan(&c.id, &brandKey, &full, &variant, &region, &c.kwh, &c.epa, &c.reviewed); err != nil {
+			return Link{}, false, err
+		}
+		c.group = productGroup(brandKey, full, variant, region)
+		c.model = strings.ToUpper(nonModelChars.ReplaceAllString(full, ""))
+		all = append(all, c)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return Link{}, false, err
+	}
+	sort.Slice(all, func(i, j int) bool { return newerFact(all[i], all[j]) })
+	for n := len(model); n >= minTrimLength; n-- {
+		var found []trimCandidate
+		seen := map[string]bool{}
+		for _, c := range all {
+			if !seen[c.group] && trimPrefixMatches(model[:n], c.model) {
+				seen[c.group] = true
+				found = append(found, c)
+			}
+		}
+		if len(found) > 0 {
+			return medianLink(found)
+		}
+	}
+	return Link{}, false, nil
+}
+
+// newerFact orders ENERGY STAR facts first, then newest, then by id.
+func newerFact(a, b trimCandidate) bool {
+	if a.epa != b.epa {
+		return a.epa
+	}
+	if !a.reviewed.Equal(b.reviewed) {
+		return a.reviewed.After(b.reviewed)
+	}
+	return a.id < b.id
+}
+
+func trimPrefixMatches(prefix, model string) bool {
+	if len(model) < len(prefix) {
+		return false
+	}
+	for i := 0; i < len(prefix); i++ {
+		if model[i] != '*' && model[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func medianLink(found []trimCandidate) (Link, bool, error) {
+	sort.SliceStable(found, func(i, j int) bool {
+		if found[i].kwh != found[j].kwh {
+			return found[i].kwh < found[j].kwh
+		}
+		return newerFact(found[i], found[j])
+	})
+	lo, hi := found[0].kwh, found[len(found)-1].kwh
+	if len(found) > 1 && (lo <= 0 && hi > lo || lo > 0 && hi/lo > maxKWhSpread) {
+		return Link{}, false, nil
+	}
+	return Link{found[(len(found)-1)/2].id, "documented_variant_family"}, true, nil
 }
 
 // SendableLink returns the match quality to send for an appliance's linked

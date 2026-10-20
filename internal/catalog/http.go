@@ -27,6 +27,8 @@ type Search struct {
 	Region  *string `json:"region,omitempty"`
 	Variant *string `json:"variant,omitempty"`
 	Fuel    string  `json:"fuel,omitempty"`
+	// Category is the appliance category; FindLink uses it to skip prefix trimming.
+	Category string `json:"-"`
 }
 
 type Store interface {

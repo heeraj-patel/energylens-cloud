@@ -14,8 +14,8 @@
     {"brand": "LG Electronics", "model": "LT18S11001", "want": "LT18S1100*"},
     {"brand": "KitchenAid", "model": "KBFS19KCW", "want": "KB*S19KC*"},
     {"brand": "KitchenAid", "model": "KSSC42QVS12", "want": "KSSC42QVS**"},
-    {"brand": "KitchenAid", "model": "KSSC42QVS", "want": ""},
+    {"brand": "KitchenAid", "model": "KSSC42QVS", "want": "KSSC42QVS**"},
     {"brand": "KitchenAid", "model": "KSSC48QTX00", "want": "KSSC48QT*0*"},
-    {"brand": "KitchenAid", "model": "KRBL130SPSS0", "want": ""}
+    {"brand": "KitchenAid", "model": "KRBL130SPSS0", "want": "KRBL130SP***"}
   ]
 }

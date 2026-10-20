@@ -366,13 +366,13 @@ func checkCatalog(ctx context.Context, tx pgx.Tx, a Appliance) error {
 }
 
 // linkCatalog sets the catalog link for an identity that has none: the single
-// exact product, else the single documented family product.
+// exact product, else the single documented family product, else a prefix-trim family product.
 func linkCatalog(ctx context.Context, tx pgx.Tx, a *Appliance) error {
 	i := &a.Identity
 	if i.CatalogProductID != nil || i.Fuel != "electricity" || strings.TrimSpace(i.Brand) == "" || strings.TrimSpace(i.FullModel) == "" {
 		return nil
 	}
-	link, found, err := catalog.FindLink(ctx, tx, catalog.Search{Brand: i.Brand, Model: i.FullModel, Region: i.Region, Variant: i.Variant, Fuel: i.Fuel})
+	link, found, err := catalog.FindLink(ctx, tx, catalog.Search{Brand: i.Brand, Model: i.FullModel, Region: i.Region, Variant: i.Variant, Fuel: i.Fuel, Category: a.Category})
 	if err != nil || !found {
 		return err
 	}
