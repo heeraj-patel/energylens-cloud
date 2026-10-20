@@ -24,18 +24,36 @@ func lowerOrEmpty(s *string) string {
 	return strings.ToLower(*s)
 }
 
+// hasWattsOrStandbySQL holds when exact product p has an active rated-input or
+// standby usage fact, matched by normalized brand and model like Datawiz.
+const hasWattsOrStandbySQL = `(EXISTS (SELECT 1 FROM reviewed_rated_input_facts u
+	      WHERE u.unit='W' AND p.match_quality='confirmed_exact'
+	        AND regexp_replace(upper(u.manufacturer),'[^A-Z0-9]','','g')=regexp_replace(upper(p.brand),'[^A-Z0-9]','','g')
+	        AND regexp_replace(upper(u.model),'[^A-Z0-9]','','g')=regexp_replace(upper(p.full_model),'[^A-Z0-9]','','g')
+	        AND NOT EXISTS (SELECT 1 FROM reviewed_rated_input_revisions r WHERE r.prior_fact_id=u.id))
+	    OR EXISTS (SELECT 1 FROM reviewed_usage_facts u
+	      WHERE u.measurement_kind='standby_power' AND u.unit='W' AND u.fuel='electricity' AND u.match_quality='confirmed_exact'
+	        AND p.match_quality='confirmed_exact'
+	        AND regexp_replace(upper(u.manufacturer),'[^A-Z0-9]','','g')=regexp_replace(upper(p.brand),'[^A-Z0-9]','','g')
+	        AND regexp_replace(upper(u.model),'[^A-Z0-9]','','g')=regexp_replace(upper(p.full_model),'[^A-Z0-9]','','g')
+	        AND NOT EXISTS (SELECT 1 FROM reviewed_usage_fact_revisions r WHERE r.prior_fact_id=u.id)))`
+
 // FindLink returns the single exact product, else the single documented family
 // product, else a prefix-trim family product, for q. Duplicate products count
-// as one and resolve to the newest active ENERGY STAR fact.
+// as one and resolve to the newest active ENERGY STAR fact. An exact product
+// links with any active fact; a product with an annual fact outranks one with
+// only rated-input or standby facts. Family and trim links need annual facts.
 func FindLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, error) {
 	rows, err := db.Query(ctx, `SELECT p.id, `+brandKeySQL+`, p.full_model, p.variant, p.region
-	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
-	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1))
+	    FROM catalog_products p LEFT JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
+	    WHERE (f.id IS NOT NULL OR `+hasWattsOrStandbySQL+`)
+	      AND (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1))
 	      AND lower(btrim(p.full_model))=lower(btrim($2)) AND p.fuel=$3 AND p.match_quality='confirmed_exact'
 	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
 	      AND ($5::text IS NULL OR p.variant IS NULL OR lower(p.variant)=lower($5))
 	    GROUP BY p.id
-	    ORDER BY max(f.reviewed_at) FILTER (WHERE f.source_kind IN ('epa_exact','epa_family')) DESC NULLS LAST,
+	    ORDER BY (count(f.id)>0) DESC,
+	             max(f.reviewed_at) FILTER (WHERE f.source_kind IN ('epa_exact','epa_family')) DESC NULLS LAST,
 	             max(f.reviewed_at) DESC, p.id`, BrandKeys(q.Brand), q.Model, q.Fuel, q.Region, q.Variant)
 	if err != nil {
 		return Link{}, false, err
