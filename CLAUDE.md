@@ -11,13 +11,12 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   `householdenergy` (dashboard, trends), `catalog`/`catalogimport`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
   `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs` (+OEDI, source probe),
   `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `scenarioimport`, `designfixture`, `identityscan`, `migrate`, `apierror`.
-- `migrations/` embedded SQL 0016..0079 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
+- `migrations/` embedded SQL 0016..0082 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
 ## Build / test (verified 2026-10-16)
 - `go build ./...` passes (needs module download on first run).
-- `go test ./...` fails in exactly one package: `internal/programs` (2 OEDI ZIP tests) because
-  `../energylens-kb/tests/fixtures/iou_zipcodes_2024.csv` is missing (only `synthetic_manual.pdf` is there). All others pass.
+- `go test ./...` passes; OEDI ZIP tests read `internal/programs/testdata/`.
 - Postgres integration tests skip unless `ENERGYLENS_CLOUD_TEST_DATABASE_URL` is set.
 - Deploy build: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/energylens-cloud ./cmd/energylens-cloud`.
 
