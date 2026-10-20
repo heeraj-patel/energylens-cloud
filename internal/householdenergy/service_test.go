@@ -836,6 +836,43 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if err != nil || latestID == "" || latestRevision != 1 || selected != nil {
 		t.Fatalf("expired tariff was selected at exact 90-day boundary: id=%q revision=%d tariff=%+v err=%v", latestID, latestRevision, selected, err)
 	}
+	// A home whose only tariff is older than the max age is priced at the
+	// national rate; a younger tariff stays the home schedule.
+	flatNational := NationalRate(func(context.Context) (float64, error) { return 0.2, nil })
+	for _, test := range []struct {
+		name      string
+		age       time.Duration
+		wantBasis string
+		wantRate  *big.Rat
+	}{
+		{"91 days old", 91 * 24 * time.Hour, "us_average", big.NewRat(1, 5)},
+		{"89 days old", 89 * 24 * time.Hour, "", big.NewRat(3, 10)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ageHome, createErr := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: test.name, Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
+			if createErr != nil {
+				t.Fatal(createErr)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.30,'kWh','USD','user_tariff','owner bill',$2,false,$3)`, ageHome.ID, now.Add(-test.age), now.Add(-120*24*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback(ctx)
+			_, _, schedule, err := readMarginalTariff(ctx, tx, ageHome.ID, now, items)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if schedule == nil {
+				schedule = flatNational.scheduleFor(ctx, items)
+			}
+			if schedule == nil || schedule.nationalBasis() != test.wantBasis || len(schedule.Segments) == 0 || schedule.Segments[0].Rate.Cmp(test.wantRate) != 0 {
+				t.Fatalf("wrong schedule for tariff aged %s: %+v", test.age, schedule)
+			}
+		})
+	}
 	// A tariff that ended before the read can still conflict with a current
 	// tariff over the measured interval. Adjacent half-open intervals do not.
 	for _, test := range []struct {
