@@ -197,7 +197,6 @@ func purgeHomeTx(ctx context.Context, tx pgx.Tx, home string) error {
 		`UPDATE sensor_endpoints SET parent_sensor_id=NULL WHERE home_id=$1 AND parent_sensor_id IS NOT NULL`,
 		`DELETE FROM sensor_endpoints WHERE home_id=$1`,
 		`DELETE FROM appliance_revisions WHERE home_id=$1`,
-		`DELETE FROM identity_scan_requests WHERE home_id=$1`,
 		`DELETE FROM appliances WHERE home_id=$1`,
 		`DELETE FROM home_location_revisions WHERE home_id=$1`,
 		`DELETE FROM home_preference_revisions WHERE home_id=$1`,

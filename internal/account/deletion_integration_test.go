@@ -82,7 +82,6 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 		{`INSERT INTO attachments(id,home_id,sensor_id,appliance_id,identity_revision,started_at) VALUES($1,$2,$3,$4,1,now()-interval '20 days')`, []any{attachmentID, home, sensorID, applianceID}},
 		{`INSERT INTO interventions(id,home_id,appliance_id,attachment_id,rule_id,occurred_at,comparable_use,comparable_weather) VALUES($1,$2,$3,$4,'private-action',date_trunc('hour',now()-interval '8 days'),false,false)`, []any{interventionID, home, applianceID, attachmentID}},
 		{`INSERT INTO intervention_idempotency(owner_user_id,home_id,key,request_hash,intervention_id) VALUES($1,$2,$3,$4,$5)`, []any{owner.ID, home, uuid.NewString(), make([]byte, 32), interventionID}},
-		{`INSERT INTO identity_scan_requests(home_id,appliance_id,identity_key,category,manufacturer,model,fuel,status,candidate_report) VALUES($1,$2,$3,'dryer','Private','Sensitive123','natural_gas','review_pending','{"private":"candidate"}')`, []any{home, applianceID, make([]byte, 32)}},
 		{`INSERT INTO report_previews(id,owner_user_id,home_id,home_version,idempotency_key,request_hash,schema_version,payload,expires_at) VALUES($1,$2,$3,1,$4,$5,'manual-preview/v1','{"private":"report"}',now()+interval '1 hour')`, []any{previewID, owner.ID, home, uuid.NewString(), make([]byte, 32)}},
 		{`INSERT INTO report_delivery_requests(owner_user_id,home_id,preview_id,idempotency_key,request_hash,recipient_hash,recipients,approved_snapshot_sha256) VALUES($1,$2,$3,$4,$5,$5,ARRAY['private@example.test'],repeat('a',64))`, []any{owner.ID, home, previewID, uuid.NewString(), make([]byte, 32)}},
 		{`INSERT INTO account_home_idempotency(owner_user_id,operation,key,request_hash,response_json,response_status) VALUES($1,'create_home',$2,$3,$4,201)`, []any{owner.ID, uuid.NewString(), make([]byte, 32), `{"id":"` + home + `","postal_code":"60601"}`}},
@@ -278,7 +277,7 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	if err = store.PurgeHome(ctx, home, archive); err != nil {
 		t.Fatalf("repeat home purge: %v", err)
 	}
-	for _, table := range []string{"home_location_revisions", "report_previews", "report_delivery_requests", "account_home_idempotency", "tariff_revisions", "identity_scan_requests", "interventions", "intervention_idempotency"} {
+	for _, table := range []string{"home_location_revisions", "report_previews", "report_delivery_requests", "account_home_idempotency", "tariff_revisions", "interventions", "intervention_idempotency"} {
 		var count int
 		if err = pool.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("private table %s: count=%d err=%v", table, count, err)
