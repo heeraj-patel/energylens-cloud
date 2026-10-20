@@ -58,20 +58,19 @@ type BulbLabel struct {
 	CombinedInputWatts *float64 `json:"combined_input_watts,omitempty"`
 }
 type Appliance struct {
-	ID                  string         `json:"id"`
-	DemoDeviceID        string         `json:"demo_device_id,omitempty"`
-	DemoFixtureRevision string         `json:"-"`
-	HomeID              string         `json:"home_id"`
-	Name                string         `json:"name"`
-	Category            string         `json:"category"`
-	Room                *string        `json:"room,omitempty"`
-	Identity            Identity       `json:"identity"`
-	Version             int64          `json:"version"`
-	CreatedAt           time.Time      `json:"created_at,omitempty"`
-	UpdatedAt           time.Time      `json:"updated_at,omitempty"`
-	ArchivedAt          *time.Time     `json:"archived_at"`
-	KbWasteResult       *KbWasteResult `json:"kb_waste_result,omitempty"`
-	NearbyOrigin        *NearbyOrigin  `json:"nearby_origin,omitempty"`
+	ID                  string        `json:"id"`
+	DemoDeviceID        string        `json:"demo_device_id,omitempty"`
+	DemoFixtureRevision string        `json:"-"`
+	HomeID              string        `json:"home_id"`
+	Name                string        `json:"name"`
+	Category            string        `json:"category"`
+	Room                *string       `json:"room,omitempty"`
+	Identity            Identity      `json:"identity"`
+	Version             int64         `json:"version"`
+	CreatedAt           time.Time     `json:"created_at,omitempty"`
+	UpdatedAt           time.Time     `json:"updated_at,omitempty"`
+	ArchivedAt          *time.Time    `json:"archived_at"`
+	NearbyOrigin        *NearbyOrigin `json:"nearby_origin,omitempty"`
 }
 
 // Synthetic inventory has no creation or update event. Omit Go's zero-time
@@ -93,11 +92,6 @@ func (a Appliance) MarshalJSON() ([]byte, error) {
 	}{a.ID, a.DemoDeviceID, a.HomeID, a.Name, a.Category, a.Identity, a.Version, a.ArchivedAt})
 }
 
-// KbWasteResult is emitted only for an explicit terminal waste-specific KB finding.
-type KbWasteResult struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-}
 type CreateInput struct {
 	Name         string        `json:"name"`
 	Category     string        `json:"category"`
@@ -192,9 +186,6 @@ func (s PGStore) ListWithRevision(ctx context.Context, owner, home string) ([]Ap
 		return nil, "", err
 	}
 	rows.Close()
-	if err = s.attachKbWasteResultsTx(ctx, tx, owner, home, all); err != nil {
-		return nil, "", err
-	}
 	for _, a := range all {
 		if a.ArchivedAt == nil {
 			out = append(out, a)
@@ -255,64 +246,9 @@ func (s PGStore) Get(ctx context.Context, owner, home, id string) (Appliance, er
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Appliance{}, ErrNotFound
 	}
-	if err != nil {
-		return a, err
-	}
-	items := []Appliance{a}
-	if err = s.attachKbWasteResults(ctx, owner, home, items); err != nil {
-		return Appliance{}, err
-	}
-	return items[0], nil
+	return a, err
 }
 
-// Candidate reports currently describe annual energy, so their status alone
-// never establishes a waste finding. This optional field requires an explicit
-// waste-specific result in the report, a completed scan, and the current identity.
-func (s PGStore) attachKbWasteResults(ctx context.Context, owner, home string, appliances []Appliance) error {
-	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	if err = s.attachKbWasteResultsTx(ctx, tx, owner, home, appliances); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
-func (s PGStore) attachKbWasteResultsTx(ctx context.Context, tx pgx.Tx, owner, home string, appliances []Appliance) error {
-	if len(appliances) == 0 {
-		return nil
-	}
-	byID := make(map[string]*Appliance, len(appliances))
-	for i := range appliances {
-		byID[appliances[i].ID] = &appliances[i]
-	}
-	rows, err := tx.Query(ctx, `SELECT q.id,s.appliance_id,s.identity_key FROM identity_scan_subscriptions s
-JOIN identity_scan_requests q ON q.id=s.request_id
-JOIN homes h ON h.id=s.home_id
-WHERE s.home_id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL
-AND q.status IN ('missing_source','reviewed_present') AND q.next_attempt_at IS NULL
-AND (q.status='reviewed_present' OR q.attempt_count=5)
-AND q.candidate_report->'models'->0->'waste_evidence'->>'status'='not_found'
-AND q.candidate_report->'models'->0->'waste_evidence'->'checked_sources'='["epa","configured_site_search"]'::jsonb
-AND q.candidate_report->'models'->0->'waste_evidence'->'search'->>'status'='no_search_leads'`, home, owner)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, applianceID string
-		var key []byte
-		if err := rows.Scan(&id, &applianceID, &key); err != nil {
-			return err
-		}
-		if a := byID[applianceID]; a != nil && a.Identity.MatchQuality == "confirmed_exact" && bytes.Equal(key, scanKey(*a)) {
-			a.KbWasteResult = &KbWasteResult{ID: id, Status: "waste_evidence_unavailable_after_kb"}
-		}
-	}
-	return rows.Err()
-}
 func replay(ctx context.Context, tx pgx.Tx, owner, home, op, key string, hash []byte) (Appliance, bool, error) {
 	var previous, body []byte
 	err := tx.QueryRow(ctx, `SELECT request_hash,response_json FROM appliance_idempotency WHERE owner_user_id=$1 AND home_id=$2 AND operation=$3 AND key=$4`, owner, home, op, key).Scan(&previous, &body)
@@ -390,39 +326,6 @@ func snapshot(ctx context.Context, tx pgx.Tx, a Appliance) error {
 	_, err = tx.Exec(ctx, `INSERT INTO appliance_revisions(appliance_id,home_id,version,snapshot) VALUES($1,$2,$3,$4)`, a.ID, a.HomeID, a.Version, body)
 	return err
 }
-func scanKey(a Appliance) []byte {
-	parts := []string{a.Category, a.Identity.Brand, a.Identity.FullModel, a.Identity.Fuel}
-	for _, value := range []*string{a.Identity.Variant, a.Identity.Region} {
-		if value == nil {
-			parts = append(parts, "")
-		} else {
-			parts = append(parts, *value)
-		}
-	}
-	canonical := strings.ToLower(strings.Join(parts, "\x00"))
-	hash := sha256.Sum256([]byte(canonical))
-	return hash[:]
-}
-
-// enqueueScan is part of the appliance write transaction. This private request
-// stays home-scoped because a user-entered model might contain sensitive text.
-func enqueueScan(ctx context.Context, tx pgx.Tx, a Appliance) error {
-	if a.Identity.MatchQuality != "confirmed_exact" || len(a.Category) > 100 || len(a.Identity.Brand) > 100 || len(a.Identity.FullModel) > 100 || strings.EqualFold(a.Identity.Brand, "Unknown") || strings.EqualFold(a.Identity.FullModel, "Unknown") {
-		return nil
-	}
-	var requestID string
-	err := tx.QueryRow(ctx, `INSERT INTO identity_scan_requests(home_id,appliance_id,identity_key,category,manufacturer,model,fuel,variant,region)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-ON CONFLICT(home_id,identity_key) DO UPDATE SET identity_key=EXCLUDED.identity_key
-RETURNING id`, a.HomeID, a.ID, scanKey(a), a.Category, a.Identity.Brand, a.Identity.FullModel, a.Identity.Fuel, a.Identity.Variant, a.Identity.Region).Scan(&requestID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO identity_scan_subscriptions(appliance_id,home_id,request_id,identity_key)
-VALUES($1,$2,$3,$4)
-ON CONFLICT(appliance_id) DO UPDATE SET home_id=EXCLUDED.home_id,request_id=EXCLUDED.request_id,identity_key=EXCLUDED.identity_key,created_at=now()`, a.ID, a.HomeID, requestID, scanKey(a))
-	return err
-}
 func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput, key string, hash []byte) (Appliance, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -487,9 +390,6 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 		return Appliance{}, err
 	}
 	if err = snapshot(ctx, tx, a); err != nil {
-		return Appliance{}, err
-	}
-	if err = enqueueScan(ctx, tx, a); err != nil {
 		return Appliance{}, err
 	}
 	if err = saveReplay(ctx, tx, owner, home, "create_appliance", key, hash, a); err != nil {
@@ -558,14 +458,6 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 	}
 	if err = snapshot(ctx, tx, a); err != nil {
 		return Appliance{}, err
-	}
-	if in.Identity != nil || in.Category != nil {
-		if _, err = tx.Exec(ctx, `DELETE FROM identity_scan_subscriptions WHERE appliance_id=$1`, a.ID); err != nil {
-			return Appliance{}, err
-		}
-		if err = enqueueScan(ctx, tx, a); err != nil {
-			return Appliance{}, err
-		}
 	}
 	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {
 		return Appliance{}, err
@@ -658,9 +550,6 @@ func (s PGStore) Archive(ctx context.Context, owner, home, id string, version in
 	if err = snapshot(ctx, tx, a); err != nil {
 		return Appliance{}, err
 	}
-	if _, err = tx.Exec(ctx, `DELETE FROM identity_scan_subscriptions WHERE appliance_id=$1`, a.ID); err != nil {
-		return Appliance{}, err
-	}
 	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {
 		return Appliance{}, err
 	}
@@ -740,7 +629,7 @@ func validUUID(s string) bool { _, err := uuid.Parse(s); return err == nil && s 
 type RelinkResult struct{ LinkedExact, LinkedFamily, Unresolved int }
 
 // RelinkCatalog links active electricity appliances that have no catalog link,
-// writing each change like a Patch: version bump, snapshot and scan re-enqueue.
+// writing each change like a Patch: version bump and snapshot.
 func (s PGStore) RelinkCatalog(ctx context.Context) (RelinkResult, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT id FROM appliances WHERE catalog_product_id IS NULL AND archived_at IS NULL AND identity->>'fuel'='electricity' AND btrim(identity->>'brand')<>'' AND btrim(identity->>'full_model')<>'' ORDER BY created_at,id`)
 	if err != nil {
@@ -793,12 +682,6 @@ func (s PGStore) relinkOne(ctx context.Context, id string) (string, error) {
 		return "", err
 	}
 	if err = snapshot(ctx, tx, a); err != nil {
-		return "", err
-	}
-	if _, err = tx.Exec(ctx, `DELETE FROM identity_scan_subscriptions WHERE appliance_id=$1`, id); err != nil {
-		return "", err
-	}
-	if err = enqueueScan(ctx, tx, a); err != nil {
 		return "", err
 	}
 	return a.Identity.MatchQuality, tx.Commit(ctx)

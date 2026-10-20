@@ -78,11 +78,6 @@ type Config struct {
 	LocalAuthRegisterKey         string
 	LocalAuthLoginKey            string
 	LocalAuthRecoveryKey         string
-	KBScanPython                 string
-	KBScanSources                string
-	KBScanCandidateIndex         string
-	KBScanAllowEPA               bool
-	KBHelpOutputPath             string
 	DatawizRequestsDir           string
 	ProgramRefreshEnabled        bool
 	ProgramSourceProbeEnabled    bool
@@ -110,7 +105,6 @@ func LoadConfig(role string) (Config, error) {
 		SampleFixtureUserIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_USER_IDS"),
 		SampleFixtureHomeIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_HOME_IDS"),
 		OEDIIOUPath:          os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
-		KBScanPython: os.Getenv("ENERGYLENS_CLOUD_KB_PYTHON"), KBScanSources: os.Getenv("ENERGYLENS_CLOUD_KB_SOURCES"), KBScanCandidateIndex: os.Getenv("ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX"), KBHelpOutputPath: os.Getenv("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH"),
 		DatawizRequestsDir: os.Getenv("ENERGYLENS_CLOUD_DATAWIZ_REQUESTS_DIR"),
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED"); raw != "" {
@@ -133,13 +127,6 @@ func LoadConfig(role string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid OEDI retrieval timestamp: %w", err)
 		}
 		c.OEDIRetrievedAt = parsed.UTC()
-	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_KB_ALLOW_EPA"); raw != "" {
-		enabled, err := strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_KB_ALLOW_EPA: %w", err)
-		}
-		c.KBScanAllowEPA = enabled
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_METERED_ROLLUP_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -463,14 +450,6 @@ func (c Config) Validate() error {
 		}
 		if _, err := account.NewResendLocalSender(c.LocalAuthResendAPIKey, c.LocalAuthResendFrom, c.LocalAuthLinkOrigin); err != nil {
 			return err
-		}
-	}
-	if c.KBScanPython != "" || c.KBScanSources != "" || c.KBScanCandidateIndex != "" || c.KBScanAllowEPA || c.KBHelpOutputPath != "" {
-		if c.KBScanPython == "" || c.KBScanSources == "" || c.DatabaseURL == "" || c.Role == RoleAPI {
-			return errors.New("KB scan requires worker role, database, Python and sources")
-		}
-		if c.KBHelpOutputPath != "" && (!filepath.IsAbs(c.KBHelpOutputPath) || filepath.Base(c.KBHelpOutputPath) != "unresolved_device_help.jsonl") {
-			return errors.New("ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH must be an absolute unresolved_device_help.jsonl path")
 		}
 	}
 	if c.Environment == "production" && c.Role == RoleAll {

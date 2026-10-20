@@ -1,4 +1,4 @@
-package identityscan
+package helpexport
 
 import (
 	"encoding/json"

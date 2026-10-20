@@ -224,22 +224,8 @@ func TestPatchModelEditMatchesCreate(t *testing.T) {
 			if !sameOptional(want.CatalogProductID, got.CatalogProductID) || want.MatchQuality != got.MatchQuality {
 				t.Fatalf("patch identity (%v, %s), create identity (%v, %s)", got.CatalogProductID, got.MatchQuality, want.CatalogProductID, want.MatchQuality)
 			}
-			var requests int
-			if err = f.pool.QueryRow(f.ctx, `SELECT count(*) FROM identity_scan_subscriptions WHERE appliance_id IN ($1,$2)`, created.ID, patched.ID).Scan(&requests); err != nil {
-				t.Fatal(err)
-			}
-			if wantSubs := 2 * btoi(want.MatchQuality == "confirmed_exact"); requests != wantSubs {
-				t.Fatalf("scan subscriptions = %d, want %d", requests, wantSubs)
-			}
 		})
 	}
-}
-
-func btoi(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 func TestRelinkCatalogLinksUnlinkedAppliancesOnce(t *testing.T) {

@@ -1,4 +1,5 @@
-package identityscan
+// Package helpexport writes the private research-queue file for unresolved devices.
+package helpexport
 
 import (
 	"bufio"
@@ -70,10 +71,6 @@ ORDER BY a.id`)
 		return 0, err
 	}
 	return len(records), nil
-}
-
-func (s Store) ExportHelp(ctx context.Context, path string) (int, error) {
-	return ExportHelp(ctx, s.Pool, path)
 }
 
 func writeHelpAtomic(path string, records []HelpRecord) (err error) {

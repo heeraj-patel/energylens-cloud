@@ -30,7 +30,6 @@ import (
 	"energylens.local/cloud/internal/faq"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
-	"energylens.local/cloud/internal/identityscan"
 	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/kasaruntime"
 	"energylens.local/cloud/internal/meteredexport"
@@ -361,11 +360,6 @@ func Serve(ctx context.Context, c Config) error {
 			return err
 		}
 	}
-	if c.KBScanPython != "" {
-		if err := (identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA}).Validate(); err != nil {
-			return err
-		}
-	}
 	rt, err := Build(ctx, c)
 	if err != nil {
 		return err
@@ -393,7 +387,7 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
-	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.KBScanPython != "" || c.DatawizRequestsDir != "" {
+	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.DatawizRequestsDir != "" {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -443,14 +437,6 @@ func Serve(ctx context.Context, c Config) error {
 						worker.Probe = programs.HTTPSPageProbe{}
 					}
 					runProgramRefreshes(workerCtx, worker, 5*time.Second)
-				}()
-			}
-			if c.KBScanPython != "" {
-				finished := make(chan struct{})
-				jobs = append(jobs, finished)
-				go func() {
-					defer close(finished)
-					runIdentityScans(workerCtx, identityscan.Store{Pool: rt.Pool}, identityscan.KBScanner{Python: c.KBScanPython, Sources: c.KBScanSources, CandidateIndex: c.KBScanCandidateIndex, AllowEPA: c.KBScanAllowEPA}, 10*time.Second, c.KBHelpOutputPath)
 				}()
 			}
 			if c.DatawizRequestsDir != "" {

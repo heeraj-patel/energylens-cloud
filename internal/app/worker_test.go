@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"energylens.local/cloud/internal/identityscan"
 	"energylens.local/cloud/internal/meteredrollup"
 )
 
@@ -13,109 +12,6 @@ type waitingRollup struct {
 	started chan struct{}
 	stopped chan struct{}
 	t       *testing.T
-}
-
-type waitingIdentityScan struct {
-	started chan struct{}
-	stopped chan struct{}
-	t       *testing.T
-}
-
-type exportingIdentityScan struct{ exported chan string }
-
-func (j exportingIdentityScan) Run(context.Context, identityscan.Scanner, bool, int, time.Time) (int, error) {
-	return 1, nil
-}
-
-func (j exportingIdentityScan) ExportHelp(_ context.Context, path string) (int, error) {
-	j.exported <- path
-	return 1, nil
-}
-
-func TestIdentityScanAutomaticallyExportsHelp(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	job := exportingIdentityScan{exported: make(chan string, 1)}
-	done := make(chan struct{})
-	go func() {
-		runIdentityScans(ctx, job, nil, time.Minute, "/private/unresolved_device_help.jsonl")
-		close(done)
-	}()
-	select {
-	case path := <-job.exported:
-		if path != "/private/unresolved_device_help.jsonl" {
-			t.Fatalf("export path: %q", path)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("post-KB export did not run")
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("identity scheduler did not stop")
-	}
-}
-
-func (j waitingIdentityScan) Run(ctx context.Context, _ identityscan.Scanner, _ bool, limit int, _ time.Time) (int, error) {
-	if limit != 10 {
-		j.t.Errorf("unexpected identity batch limit %d", limit)
-	}
-	if _, ok := ctx.Deadline(); !ok {
-		j.t.Error("identity scan pass missing deadline")
-	}
-	close(j.started)
-	<-ctx.Done()
-	close(j.stopped)
-	return 0, ctx.Err()
-}
-
-func (j waitingIdentityScan) ExportHelp(context.Context, string) (int, error) { return 0, nil }
-
-func TestIdentityScanSchedulerStartsAndStops(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	job := waitingIdentityScan{started: make(chan struct{}), stopped: make(chan struct{}), t: t}
-	done := make(chan struct{})
-	go func() { runIdentityScans(ctx, job, nil, time.Minute, ""); close(done) }()
-	select {
-	case <-job.started:
-	case <-time.After(time.Second):
-		cancel()
-		t.Fatal("identity pass did not start")
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("identity pass did not stop")
-	}
-	select {
-	case <-job.stopped:
-	default:
-		t.Fatal("scheduler stopped before pass")
-	}
-}
-
-func TestNightlyRetryWindow(t *testing.T) {
-	now := time.Date(2026, 10, 2, 3, 0, 0, 0, time.UTC)
-	if !nightlyScanDue(now, "2026-10-01") || nightlyScanDue(now, "2026-10-02") || nightlyScanDue(now.Add(-time.Hour), "") {
-		t.Fatal("nightly retry window incorrect")
-	}
-}
-
-func TestKBScanRequiresWorkerConfiguration(t *testing.T) {
-	base := Config{Role: RoleAPI, Environment: "dev", APIListen: "127.0.0.1:0", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=disable", KBScanPython: "/usr/bin/python3", KBScanSources: "/private/sources"}
-	if err := base.Validate(); err == nil {
-		t.Fatal("API role accepted private KB worker")
-	}
-	base.Role = RoleWorker
-	if err := base.Validate(); err != nil {
-		t.Fatalf("worker config rejected: %v", err)
-	}
-	base.KBScanSources = ""
-	if err := base.Validate(); err == nil {
-		t.Fatal("partial KB config accepted")
-	}
 }
 
 func (j waitingRollup) RunOnce(ctx context.Context, now time.Time, batches, buckets, purge int) (meteredrollup.Stats, error) {

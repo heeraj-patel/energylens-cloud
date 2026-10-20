@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 
-	"energylens.local/cloud/internal/identityscan"
+	"energylens.local/cloud/internal/helpexport"
 )
 
 func identityHelpExport(ctx context.Context, args []string) error {
@@ -23,7 +23,7 @@ func identityHelpExport(ctx context.Context, args []string) error {
 		return err
 	}
 	defer pool.Close()
-	count, err := identityscan.ExportHelp(ctx, pool, *output)
+	count, err := helpexport.ExportHelp(ctx, pool, *output)
 	if err != nil {
 		return err
 	}
