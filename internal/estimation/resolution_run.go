@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
 	"fmt"
 	"math"
@@ -72,7 +73,7 @@ func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a appliance
 		err = tx.QueryRow(ctx, `SELECT id,revision,rate::text,currency,rate_kind FROM tariff_revisions
       WHERE home_id=$1 AND fuel='electricity' AND rate_unit='kWh' AND effective_from<=$2
         AND (effective_to IS NULL OR effective_to>=$3) AND source_as_of<=$4
-        AND source_as_of>$4::timestamptz-interval '1440 hours'
+        AND source_as_of>$4::timestamptz-`+tariffpkg.ElectricityMaxAgeInterval+`
       ORDER BY CASE rate_kind WHEN 'user_tariff' THEN 0 WHEN 'official_tariff' THEN 1 ELSE 2 END,
                effective_from DESC,revision DESC,id DESC LIMIT 1`, home, startTime, endTime, now).Scan(&rate.ID, &rate.Revision, &rate.Rate, &rate.Currency, &rate.Kind)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {

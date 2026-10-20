@@ -54,9 +54,9 @@ func TestOfficialElectricitySourceExpiryBoundary(t *testing.T) {
 		age  time.Duration
 		ok   bool
 	}{
-		{name: "before expiry", age: 60*24*time.Hour - time.Second, ok: true},
-		{name: "exact expiry", age: 60 * 24 * time.Hour, ok: false},
-		{name: "after expiry", age: 60*24*time.Hour + time.Second, ok: false},
+		{name: "before expiry", age: ElectricityMaxAge - time.Second, ok: true},
+		{name: "exact expiry", age: ElectricityMaxAge, ok: false},
+		{name: "after expiry", age: ElectricityMaxAge + time.Second, ok: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := makeImport(now.Add(-tt.age)).validate(snapshot, "operator", now)

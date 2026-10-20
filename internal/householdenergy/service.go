@@ -436,7 +436,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		efficiency = syntheticEfficiencyMonthToDate(a)
 	}
 	// Tariff eligibility can change as time passes, without a new tariff
-	// revision (for example, at source_as_of + 1440 hours). Include the
+	// revision (for example, at source_as_of + the electricity max age). Include the
 	// customer-visible allocation in the identity so a newly priced or newly
 	// unpriced response cannot reuse the prior snapshot ID.
 	allocationState := allocationSnapshotState(a)

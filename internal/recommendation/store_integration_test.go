@@ -2,6 +2,7 @@ package recommendation
 
 import (
 	"context"
+	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
 	"os"
 	"strings"
@@ -128,8 +129,8 @@ func TestCurrentRecommendationEvidenceOwnerAndRevisions(t *testing.T) {
 			}
 		}
 	}
-	readLifecycle(now.Add(60*24*time.Hour-time.Nanosecond), "accepted", true)
-	readLifecycle(now.Add(60*24*time.Hour), "expired", false)
+	readLifecycle(now.Add(tariffpkg.ElectricityMaxAge-time.Nanosecond), "accepted", true)
+	readLifecycle(now.Add(tariffpkg.ElectricityMaxAge), "expired", false)
 	var retained int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM recommendation_events WHERE home_id=$1`, home).Scan(&retained); err != nil || retained != 1 {
 		t.Fatalf("historical recommendation event count = %d, %v", retained, err)

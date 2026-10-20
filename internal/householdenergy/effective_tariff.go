@@ -1,6 +1,6 @@
 package householdenergy
 
-import (
+import (\n\ttariffpkg "energylens.local/cloud/internal/tariff"
 	"context"
 	"errors"
 	"fmt"
@@ -96,7 +96,7 @@ func selectTariffSchedule(now time.Time, items []interval, segments []marginalTa
 		}
 		for i := 0; i+1 < len(cuts); i++ {
 			selected := tariffAt(cuts[i], segments)
-			if selected == nil || selected.SourceAsOf.After(now) || !selected.SourceAsOf.After(now.Add(-1440*time.Hour)) {
+			if selected == nil || selected.SourceAsOf.After(now) || !selected.SourceAsOf.After(now.Add(-tariffpkg.ElectricityMaxAge)) {
 				return nil
 			}
 			if currency == "" {

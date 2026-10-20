@@ -54,9 +54,9 @@ func TestElectricityTariffSourceExpiryBoundary(t *testing.T) {
 		asOf time.Time
 		want bool
 	}{
-		{name: "before expiry", asOf: now.Add(-60*24*time.Hour + time.Second), want: true},
-		{name: "exactly 60 days old", asOf: now.Add(-60 * 24 * time.Hour), want: false},
-		{name: "older than 60 days", asOf: now.Add(-60*24*time.Hour - time.Second), want: false},
+		{name: "before expiry", asOf: now.Add(-ElectricityMaxAge + time.Second), want: true},
+		{name: "exactly 90 days old", asOf: now.Add(-ElectricityMaxAge), want: false},
+		{name: "older than 90 days", asOf: now.Add(-ElectricityMaxAge - time.Second), want: false},
 		{name: "future source", asOf: now.Add(time.Second), want: false},
 	}
 	for _, tt := range tests {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/datawizfacts"
+	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
 	"fmt"
 	"time"
@@ -98,7 +99,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	err = tx.QueryRow(ctx, `SELECT id,revision,rate::text FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity'
 	 AND rate_unit='kWh' AND currency='USD'
 	 AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2)
-	 AND source_as_of <= $2 AND source_as_of > $2::timestamptz - interval '1440 hours'
+	 AND source_as_of <= $2 AND source_as_of > $2::timestamptz - `+tariffpkg.ElectricityMaxAgeInterval+`
 	 ORDER BY is_fallback ASC,revision DESC LIMIT 1`, home, now).Scan(&tariffID, &tariffRevision, &tariffRate)
 	if err == nil {
 		tariff = &Evidence{ID: tariffID, Kind: "tariff", Revision: tariffRevision}

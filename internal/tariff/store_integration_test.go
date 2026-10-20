@@ -252,8 +252,8 @@ func TestTariffListElectricitySourceExpiry(t *testing.T) {
 		return id
 	}
 
-	// A source checked just before the 60-day limit remains visible.
-	freshID := insert(freshHome, "electricity", 1, "now()-interval '1440 hours'+interval '1 minute'")
+	// A source checked just before the 90-day limit remains visible.
+	freshID := insert(freshHome, "electricity", 1, "now()-"+ElectricityMaxAgeInterval+"+interval '1 minute'")
 	listed, err := store.List(ctx, owner.ID, freshHome)
 	if err != nil || len(listed) != 1 || listed[0].ID != freshID {
 		t.Fatalf("electricity just before expiry: %+v, %v", listed, err)
@@ -261,8 +261,8 @@ func TestTariffListElectricitySourceExpiry(t *testing.T) {
 
 	// At the exact boundary the electricity source expires; natural gas keeps
 	// its existing 18-month source window.
-	exactID := insert(boundaryHome, "electricity", 1, "now()-interval '1440 hours'")
-	gasID := insert(boundaryHome, "natural_gas", 1, "now()-interval '61 days'")
+	exactID := insert(boundaryHome, "electricity", 1, "now()-"+ElectricityMaxAgeInterval)
+	gasID := insert(boundaryHome, "natural_gas", 1, "now()-interval '100 days'")
 	listed, err = store.List(ctx, owner.ID, boundaryHome)
 	if err != nil || len(listed) != 1 || listed[0].Fuel != "natural_gas" || listed[0].ID != gasID {
 		t.Fatalf("exact-boundary electricity / unchanged gas: %+v, %v", listed, err)
@@ -288,7 +288,7 @@ func TestTariffListElectricitySourceExpiry(t *testing.T) {
 	}
 
 	// A future-dated source is never listed, even though it is within the
-	// nominal 60-day interval.
+	// nominal 90-day interval.
 	futureID := insert(futureHome, "electricity", 1, "now()+interval '1 minute'")
 	listed, err = store.List(ctx, owner.ID, futureHome)
 	if err != nil || len(listed) != 0 {

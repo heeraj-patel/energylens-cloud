@@ -62,7 +62,7 @@ func (in OfficialImport) validate(snapshot []byte, actor string, now time.Time) 
 	from, e2 := time.Parse(time.RFC3339, c.EffectiveFrom)
 	tooOld := asOf.Before(now.AddDate(-1, -6, 0))
 	if c.Fuel == "electricity" {
-		tooOld = !asOf.After(now.Add(-60 * 24 * time.Hour))
+		tooOld = !asOf.After(now.Add(-ElectricityMaxAge))
 	}
 	if e1 != nil || e2 != nil || c.SourceAsOf != normalizedTime(c.SourceAsOf) || c.EffectiveFrom != normalizedTime(c.EffectiveFrom) || asOf.After(now) || tooOld {
 		return "", errors.New("official source date must be current and within its fuel-specific freshness window")

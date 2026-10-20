@@ -1,6 +1,7 @@
 package householdenergy
 
 import (
+	tariffpkg "energylens.local/cloud/internal/tariff"
 	"math/big"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestEffectiveTariffCoverageAndExactSplit(t *testing.T) {
 	}{
 		{"gap", []marginalTariff{first}},
 		{"overlap", []marginalTariff{first, {Rate: second.Rate, Currency: "USD", From: middle.Add(-time.Minute), SourceAsOf: fresh}}},
-		{"stale", []marginalTariff{first, {Rate: second.Rate, Currency: "USD", From: middle, SourceAsOf: now.Add(-1440 * time.Hour)}}},
+		{"stale", []marginalTariff{first, {Rate: second.Rate, Currency: "USD", From: middle, SourceAsOf: now.Add(-tariffpkg.ElectricityMaxAge)}}},
 		{"currency conflict", []marginalTariff{first, {Rate: second.Rate, Currency: "EUR", From: middle, SourceAsOf: fresh}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

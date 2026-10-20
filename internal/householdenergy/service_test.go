@@ -1,6 +1,6 @@
 package householdenergy
 
-import (
+import (\n\ttariffpkg "energylens.local/cloud/internal/tariff"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -788,17 +788,17 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 			t.Fatalf("effective tariff cost or classification mismatch: %+v", response)
 		}
 	}
-	// The tariff expires at exactly 60*24 hours; test the strict freshness
+	// The tariff expires at exactly the electricity max age; test the strict freshness
 	// boundary directly so DST cannot turn it into calendar-day arithmetic.
 	staleHome, err := accounts.Create(ctx, owner.ID, account.HomeCreate{Name: "Stale tariff", Timezone: "America/Chicago", Location: account.Location{CountryCode: "US", PostalCode: "78732", Precision: "postal_code", Source: "user_entered"}}, uuid.NewString(), make([]byte, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundary := now.Add(-60 * 24 * time.Hour)
+	boundary := now.Add(-tariffpkg.ElectricityMaxAge)
 	if _, err = pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.20,'kWh','USD','user_tariff','expired bill',$2,false,$3)`, staleHome.ID, boundary, now.Add(-30*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	// The strict 1440-hour freshness window includes the instant before the
+	// The strict 90-day freshness window includes the instant before the
 	// boundary and excludes the exact boundary.
 	before := now.Add(-time.Microsecond)
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
@@ -809,7 +809,7 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	latestID, latestRevision, selected, err := readMarginalTariff(ctx, tx, staleHome.ID, before, items)
 	_ = tx.Rollback(ctx)
 	if err != nil || latestID == "" || latestRevision != 1 || selected == nil {
-		t.Fatalf("tariff was not selected before 60-day boundary: id=%q revision=%d tariff=%+v err=%v", latestID, latestRevision, selected, err)
+		t.Fatalf("tariff was not selected before 90-day boundary: id=%q revision=%d tariff=%+v err=%v", latestID, latestRevision, selected, err)
 	}
 	tx, err = pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -818,7 +818,7 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	latestID, latestRevision, selected, err = readMarginalTariff(ctx, tx, staleHome.ID, now, items)
 	_ = tx.Rollback(ctx)
 	if err != nil || latestID == "" || latestRevision != 1 || selected != nil {
-		t.Fatalf("expired tariff was selected at exact 60-day boundary: id=%q revision=%d tariff=%+v err=%v", latestID, latestRevision, selected, err)
+		t.Fatalf("expired tariff was selected at exact 90-day boundary: id=%q revision=%d tariff=%+v err=%v", latestID, latestRevision, selected, err)
 	}
 	// A tariff that ended before the read can still conflict with a current
 	// tariff over the measured interval. Adjacent half-open intervals do not.
