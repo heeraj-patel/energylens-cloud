@@ -2,54 +2,16 @@ package catalog
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
-
-	"energylens.local/cloud/internal/migrate"
-	"energylens.local/cloud/migrations"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestFamilySearchAndLinkAtBulkScale(t *testing.T) {
-	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
-	}
+	pool := migratedCatalogPool(t, "catalog_scale_")
 	ctx := context.Background()
-	schema := "catalog_scale_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	admin, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
-	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.ConnConfig.RuntimeParams["search_path"] = schema
-	cfg.MaxConns = 1
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close(ctx)
-	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
-		t.Fatal(err)
-	}
 	hash := strings.Repeat("c", 64)
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',0,0)`, hash); err != nil {
+	_, err := pool.Exec(ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',0,0)`, hash)
+	if err != nil {
 		t.Fatal(err)
 	}
 	// 1100 same-length decoys sort before the one product whose pattern matches.

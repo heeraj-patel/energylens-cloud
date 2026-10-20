@@ -1,0 +1,21 @@
+{
+  "products": [
+    {"category": "clothes_washer", "brand": "LG", "pattern": "WM3085C*", "source_kind": "epa_family", "annual_kwh": 90},
+    {"category": "refrigerator", "brand": "LG", "pattern": "LRMVC2306*", "source_kind": "epa_family", "annual_kwh": 716},
+    {"category": "refrigerator", "brand": "LG", "pattern": "LT18S1100*", "source_kind": "epa_family", "annual_kwh": 344},
+    {"category": "refrigerator", "brand": "KitchenAid", "pattern": "KB*S19KC*", "source_kind": "epa_family", "annual_kwh": 553},
+    {"category": "refrigerator", "brand": "KitchenAid", "pattern": "KRBL130SP***", "source_kind": "epa_family", "annual_kwh": 553},
+    {"category": "refrigerator", "brand": "KitchenAid", "pattern": "KSSC42QVS**", "source_kind": "epa_family", "annual_kwh": 752},
+    {"category": "refrigerator", "brand": "KitchenAid", "pattern": "KSSC48QT*0*", "source_kind": "other_official", "annual_kwh": 659}
+  ],
+  "appliances": [
+    {"brand": "LG", "model": "WM3085CW", "want": "WM3085C*"},
+    {"brand": "LG", "model": "LRMVC2306S", "want": "LRMVC2306*"},
+    {"brand": "LG Electronics", "model": "LT18S11001", "want": "LT18S1100*"},
+    {"brand": "KitchenAid", "model": "KBFS19KCW", "want": "KB*S19KC*"},
+    {"brand": "KitchenAid", "model": "KSSC42QVS12", "want": "KSSC42QVS**"},
+    {"brand": "KitchenAid", "model": "KSSC42QVS", "want": ""},
+    {"brand": "KitchenAid", "model": "KSSC48QTX00", "want": "KSSC48QT*0*"},
+    {"brand": "KitchenAid", "model": "KRBL130SPSS0", "want": ""}
+  ]
+}
