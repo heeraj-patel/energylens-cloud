@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/householdenergy"
 	"github.com/google/uuid"
@@ -363,6 +364,21 @@ func checkCatalog(ctx context.Context, tx pgx.Tx, a Appliance) error {
 	}
 	return nil
 }
+
+// linkCatalog sets the catalog link for an identity that has none: the single
+// exact product, else the single documented family product.
+func linkCatalog(ctx context.Context, tx pgx.Tx, a *Appliance) error {
+	i := &a.Identity
+	if i.CatalogProductID != nil || i.Fuel != "electricity" || strings.TrimSpace(i.Brand) == "" || strings.TrimSpace(i.FullModel) == "" {
+		return nil
+	}
+	link, found, err := catalog.FindLink(ctx, tx, catalog.Search{Brand: i.Brand, Model: i.FullModel, Region: i.Region, Variant: i.Variant, Fuel: i.Fuel})
+	if err != nil || !found {
+		return err
+	}
+	i.CatalogProductID, i.MatchQuality = &link.ProductID, link.MatchQuality
+	return nil
+}
 func sameOptional(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -462,6 +478,9 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 	if err = checkCatalog(ctx, tx, a); err != nil {
 		return Appliance{}, err
 	}
+	if err = linkCatalog(ctx, tx, &a); err != nil {
+		return Appliance{}, err
+	}
 	identity, _ := json.Marshal(a.Identity)
 	var nearbyHub any
 	var nearbyEpoch any
@@ -517,7 +536,12 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 		return Appliance{}, err
 	}
 	if in.Identity != nil {
+		previous := a.Identity
 		a.Identity = *in.Identity
+		modelEdited := a.Identity.Brand != previous.Brand || a.Identity.FullModel != previous.FullModel
+		if modelEdited && previous.CatalogProductID != nil && (a.Identity.CatalogProductID == nil || sameOptional(a.Identity.CatalogProductID, previous.CatalogProductID)) {
+			a.Identity.CatalogProductID, a.Identity.MatchQuality = nil, "unresolved"
+		}
 	}
 	if in.Room != nil {
 		if bytes.Equal(bytes.TrimSpace(in.Room), []byte("null")) {
@@ -531,6 +555,9 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 		}
 	}
 	if err = checkCatalog(ctx, tx, a); err != nil {
+		return Appliance{}, err
+	}
+	if err = linkCatalog(ctx, tx, &a); err != nil {
 		return Appliance{}, err
 	}
 	identity, _ := json.Marshal(a.Identity)
