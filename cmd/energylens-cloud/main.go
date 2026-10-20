@@ -4,16 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/account"
-	"energylens.local/cloud/internal/catalogimport"
 	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/datawizrequests"
 	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/hubtrust"
 	"energylens.local/cloud/internal/inventory"
-	"energylens.local/cloud/internal/ratedinputimport"
-	"energylens.local/cloud/internal/scenarioimport"
-	"energylens.local/cloud/internal/usagefactimport"
 	"errors"
 	"flag"
 	"fmt"
@@ -133,7 +129,7 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "deletion-journal" {
 		return deletionJournalOperator(ctx, args[1:])
 	}
-	if len(args) > 0 && (args[0] == "adopt-dev-account-username" || args[0] == "unlock-dev-username-login" || args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-reviewed-catalog" || args[0] == "import-reviewed-usage-facts" || args[0] == "import-reviewed-rated-input" || args[0] == "import-reviewed-action-scenarios" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
+	if len(args) > 0 && (args[0] == "adopt-dev-account-username" || args[0] == "unlock-dev-username-login" || args[0] == "provision-hub" || args[0] == "issue-hub-enroll-nonce" || args[0] == "import-official-tariff" || args[0] == "import-reviewed-program" || args[0] == "import-demo-cost-snapshot") {
 		return operator(ctx, args)
 	}
 	if len(args) > 0 && args[0] == "migrate" {
@@ -394,94 +390,6 @@ func operator(ctx context.Context, args []string) error {
 			return err
 		}
 		result = map[string]string{"user_id": *userID, "status": "unlocked"}
-	}
-	if args[0] == "import-reviewed-catalog" {
-		artifact := fs.String("artifact", "", "signed reviewed fact publication JSON")
-		actor := fs.String("imported-by", "", "administrator identifier")
-		if e = fs.Parse(args[1:]); e != nil {
-			return e
-		}
-		if fs.NArg() != 0 || *artifact == "" || strings.TrimSpace(*actor) == "" {
-			return errors.New("artifact and imported-by required")
-		}
-		keyPath := os.Getenv("ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE")
-		if keyPath == "" {
-			return errors.New("pinned ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE required")
-		}
-		verified, err := catalogimport.ReadAndVerify(*artifact, keyPath)
-		if err != nil {
-			return err
-		}
-		result, err = catalogimport.Import(ctx, pool, verified, *actor)
-		if err != nil {
-			return err
-		}
-	}
-	if args[0] == "import-reviewed-usage-facts" {
-		artifact := fs.String("artifact", "", "signed reviewed usage-fact publication JSON")
-		actor := fs.String("imported-by", "", "administrator identifier")
-		if e = fs.Parse(args[1:]); e != nil {
-			return e
-		}
-		if fs.NArg() != 0 || *artifact == "" || strings.TrimSpace(*actor) == "" {
-			return errors.New("artifact and imported-by required")
-		}
-		keyPath := os.Getenv("ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE")
-		if keyPath == "" {
-			return errors.New("pinned ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE required")
-		}
-		verified, err := usagefactimport.ReadAndVerify(*artifact, keyPath)
-		if err != nil {
-			return err
-		}
-		result, err = usagefactimport.Import(ctx, pool, verified, *actor)
-		if err != nil {
-			return err
-		}
-	}
-	if args[0] == "import-reviewed-rated-input" {
-		artifact := fs.String("artifact", "", "signed reviewed rated-input publication JSON")
-		actor := fs.String("imported-by", "", "administrator identifier")
-		if e = fs.Parse(args[1:]); e != nil {
-			return e
-		}
-		if fs.NArg() != 0 || *artifact == "" || strings.TrimSpace(*actor) == "" {
-			return errors.New("artifact and imported-by required")
-		}
-		keyPath := os.Getenv("ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE")
-		if keyPath == "" {
-			return errors.New("pinned ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE required")
-		}
-		verified, err := ratedinputimport.ReadAndVerify(*artifact, keyPath)
-		if err != nil {
-			return err
-		}
-		result, err = ratedinputimport.Import(ctx, pool, verified, *actor)
-		if err != nil {
-			return err
-		}
-	}
-	if args[0] == "import-reviewed-action-scenarios" {
-		artifact := fs.String("artifact", "", "signed reviewed action-scenario publication JSON")
-		actor := fs.String("imported-by", "", "administrator identifier")
-		if e = fs.Parse(args[1:]); e != nil {
-			return e
-		}
-		if fs.NArg() != 0 || *artifact == "" || strings.TrimSpace(*actor) == "" {
-			return errors.New("artifact and imported-by required")
-		}
-		keyPath := os.Getenv("ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE")
-		if keyPath == "" {
-			return errors.New("pinned ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE required")
-		}
-		verified, err := scenarioimport.ReadAndVerify(*artifact, keyPath)
-		if err != nil {
-			return err
-		}
-		result, err = scenarioimport.Import(ctx, pool, verified, *actor)
-		if err != nil {
-			return err
-		}
 	}
 	if args[0] == "import-official-tariff" {
 		result, e = importOfficialTariff(ctx, pool, fs, args[1:])

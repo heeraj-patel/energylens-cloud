@@ -124,7 +124,7 @@ func TestLocalMigrationEndpointBoundary(t *testing.T) {
 		"postgres://never-print-this:%zz@localhost/db",
 	} {
 		t.Setenv("ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL", dsn)
-		for _, args := range [][]string{{"check-config", "migrate"}, {"migrate"}, {"provision-hub"}, {"import-reviewed-catalog"}} {
+		for _, args := range [][]string{{"check-config", "migrate"}, {"migrate"}, {"provision-hub"}, {"import-reviewed-program"}} {
 			err := run(context.Background(), args)
 			if err == nil || strings.Contains(err.Error(), "never-print-this") || strings.Contains(err.Error(), "connect migration database") {
 				t.Fatalf("migration boundary did not reject safely before connecting: %v", err)
