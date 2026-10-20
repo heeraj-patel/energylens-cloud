@@ -155,7 +155,7 @@ func vettedEstimate(raw []byte, applianceID, start, end string, asOf time.Time) 
 		(r.Quality.Source != "reviewed_exact" && r.Quality.Source != "datawiz_resolution") {
 		return nil
 	}
-	hasFact, hasResolution, hasTariff := false, false, false
+	hasFact, hasResolution, hasRate := false, false, false
 	for _, ref := range r.EvidenceRefs {
 		if _, err := uuid.Parse(ref.ID); err != nil || ref.Revision < 1 {
 			return nil
@@ -168,13 +168,13 @@ func vettedEstimate(raw []byte, applianceID, start, end string, asOf time.Time) 
 				return nil
 			}
 			hasResolution = true
-		case "tariff":
-			hasTariff = true
+		case "tariff", "national_rate":
+			hasRate = true
 		default:
 			return nil
 		}
 	}
-	if !hasTariff || len(r.EvidenceRefs) > 4 ||
+	if !hasRate || len(r.EvidenceRefs) > 4 ||
 		(r.Quality.Source == "reviewed_exact" && (!hasFact || hasResolution)) ||
 		(r.Quality.Source == "datawiz_resolution" && (!hasResolution || hasFact || r.Quality.Consumption != "resolved" || len(r.EvidenceRefs) != 2)) {
 		return nil

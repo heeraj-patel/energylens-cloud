@@ -43,17 +43,22 @@ func TestVettedDatawizEstimateRequiresCurrentApplianceAndCompatibleEvidence(t *t
 	if got := vettedEstimate([]byte(raw), appliance, "2026-10-01", "2026-11-01", now); got == nil || got.EnergyKWh != "0.248000" || got.CostUSD != "0.049600" || len(got.SourceRefs) != 2 {
 		t.Fatalf("valid Datawiz estimate: %+v", got)
 	}
+	national := strings.Replace(raw, `"kind":"tariff"`, `"kind":"national_rate"`, 1)
+	if got := vettedEstimate([]byte(national), appliance, "2026-10-01", "2026-11-01", now); got == nil || len(got.SourceRefs) != 2 {
+		t.Fatalf("national_rate Datawiz estimate dropped: %+v", got)
+	}
 	for name, changed := range map[string]string{
-		"foreign appliance": appliance,
-		"missing tariff":    strings.Replace(raw, `"kind":"tariff"`, `"kind":"catalog_fact"`, 1),
-		"mixed legacy fact": strings.Replace(raw, `"kind":"datawiz_resolution"`, `"kind":"catalog_fact"`, 1),
-		"wrong unit":        strings.Replace(raw, `"unit":"kWh"`, `"unit":"therm"`, 1),
-		"zero energy":       strings.Replace(raw, `"value":"0.248000"`, `"value":"0"`, 1),
-		"malformed cost":    strings.Replace(raw, `"value":"0.049600"`, `"value":"NaN"`, 1),
-		"foreign evidence":  strings.Replace(raw, `"id":"`+appliance+`","kind":"datawiz_resolution"`, `"id":"`+uuid.NewString()+`","kind":"datawiz_resolution"`, 1),
-		"unavailable":       strings.Replace(raw, `"estimated_operating_cost"`, `"unavailable"`, 1),
-		"wrong formula":     strings.Replace(raw, `"datawiz-resolution/v1"`, `"other"`, 1),
-		"unresolved":        strings.Replace(raw, `"consumption":"resolved"`, `"consumption":"unavailable"`, 1),
+		"foreign appliance":            appliance,
+		"national rate with extra ref": strings.Replace(national, `"revision":1}]`, `"revision":1},{"id":"`+uuid.NewString()+`","kind":"national_rate","revision":1}]`, 1),
+		"missing tariff":               strings.Replace(raw, `"kind":"tariff"`, `"kind":"catalog_fact"`, 1),
+		"mixed legacy fact":            strings.Replace(raw, `"kind":"datawiz_resolution"`, `"kind":"catalog_fact"`, 1),
+		"wrong unit":                   strings.Replace(raw, `"unit":"kWh"`, `"unit":"therm"`, 1),
+		"zero energy":                  strings.Replace(raw, `"value":"0.248000"`, `"value":"0"`, 1),
+		"malformed cost":               strings.Replace(raw, `"value":"0.049600"`, `"value":"NaN"`, 1),
+		"foreign evidence":             strings.Replace(raw, `"id":"`+appliance+`","kind":"datawiz_resolution"`, `"id":"`+uuid.NewString()+`","kind":"datawiz_resolution"`, 1),
+		"unavailable":                  strings.Replace(raw, `"estimated_operating_cost"`, `"unavailable"`, 1),
+		"wrong formula":                strings.Replace(raw, `"datawiz-resolution/v1"`, `"other"`, 1),
+		"unresolved":                   strings.Replace(raw, `"consumption":"resolved"`, `"consumption":"unavailable"`, 1),
 	} {
 		id := appliance
 		if name == "foreign appliance" {

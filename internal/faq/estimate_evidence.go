@@ -76,7 +76,7 @@ func OperatingCostFromEstimate(raw json.RawMessage, applianceID string) (*Operat
 				return nil, false
 			}
 			hasResolution = true
-		case "tariff":
+		case "tariff", "national_rate":
 			hasRate = true
 		default:
 			return nil, false
