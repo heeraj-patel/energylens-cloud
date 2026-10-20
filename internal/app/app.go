@@ -166,7 +166,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				accounts.Deletion = account.PGStore{Pool: rt.Pool}
 			}
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
-			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID}
+			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID, NationalRate: rates.NationalUSDPerKWh}
 			modules = append(modules, Module{Name: "live-household-energy", Mount: liveEnergy.Routes})
 			deviceStates := devicestate.Service{Store: devicestate.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-device-states", Mount: deviceStates.Routes})
@@ -196,7 +196,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "reviewed-usage-facts", Mount: usageFacts.Routes})
 			tariffs := tariff.Service{Store: tariff.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-tariffs", Mount: tariffs.Routes})
-			estimates := estimation.Service{Store: estimation.PGRunStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			estimates := estimation.Service{Store: estimation.PGRunStore{Pool: rt.Pool, NationalRate: rates.NationalUSDPerKWh}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-estimates", Mount: estimates.Routes})
 			answersFAQ := faq.Service{Store: faq.PGStore{Pool: rt.Pool}, Recommendations: recommendation.PGStore{Pool: rt.Pool}, Programs: programs.PGOwnerStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			if c.WeatherOpenMeteoAPIKey != "" {
