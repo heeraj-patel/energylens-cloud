@@ -182,7 +182,7 @@ func TestCreateLinksExactAndFamilyCatalogProducts(t *testing.T) {
 	f.wantLink(f.create("Delta", "DX1234C", "electricity"), exactWins, "confirmed_exact")
 }
 
-func TestPatchModelEditClearsAndRelinks(t *testing.T) {
+func TestPatchModelEditMatchesCreate(t *testing.T) {
 	f := newLinkFixture(t)
 	now := time.Now().UTC()
 	first := f.product("Acme", "acme", "A1", "confirmed_exact", nil, nil)
@@ -191,38 +191,59 @@ func TestPatchModelEditClearsAndRelinks(t *testing.T) {
 	for _, p := range []string{first, second, picked} {
 		f.fact(p, "epa_exact", "", now)
 	}
-	a := f.create("Acme", "A1", "electricity")
-	f.wantLink(a, first, "confirmed_exact")
-	hash := sha256.Sum256([]byte("patch"))
-	patch := func(version int64, identity Identity) Appliance {
-		t.Helper()
-		out, err := f.store.Patch(f.ctx, f.owner, f.home, a.ID, PatchInput{Identity: &identity}, version, uuid.NewString(), hash[:])
-		if err != nil {
-			t.Fatal(err)
-		}
-		return out
+	cases := []struct {
+		name  string
+		model string
+		id    func(old string) *string
+		MQ    string
+		stale bool
+	}{
+		{"old id echoed, no catalog match", "NOPE9", func(old string) *string { return &old }, "confirmed_exact", true},
+		{"old id echoed, unresolved", "NOPE9", func(old string) *string { return &old }, "unresolved", true},
+		{"old id echoed, exact match exists", "A2", func(old string) *string { return &old }, "confirmed_exact", true},
+		{"new picked id", "ZZZ1", func(string) *string { return &picked }, "confirmed_exact", false},
+		{"no id, confirmed_exact, no match", "NOPE9", func(string) *string { return nil }, "confirmed_exact", false},
+		{"no id, unresolved, no match", "NOPE9", func(string) *string { return nil }, "unresolved", false},
+		{"no id, exact match exists", "A2", func(string) *string { return nil }, "unresolved", false},
 	}
-	edited := a.Identity
-	edited.FullModel = "A2"
-	a = patch(a.Version, edited)
-	f.wantLink(a, second, "confirmed_exact")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			base := f.create("Acme", "A1", "electricity")
+			f.wantLink(base, first, "confirmed_exact")
+			identity := Identity{Brand: "Acme", FullModel: c.model, Fuel: "electricity", MatchQuality: c.MQ, CatalogProductID: c.id(first)}
+			hash := sha256.Sum256([]byte("parity" + c.name))
+			createIdentity := identity
+			if c.stale {
+				createIdentity.CatalogProductID = nil
+			}
+			created, err := f.store.Create(f.ctx, f.owner, f.home, CreateInput{Name: "Fridge", Category: "refrigerator", Identity: createIdentity}, uuid.NewString(), hash[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			patched, err := f.store.Patch(f.ctx, f.owner, f.home, base.ID, PatchInput{Identity: &identity}, base.Version, uuid.NewString(), hash[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, got := created.Identity, patched.Identity
+			if !sameOptional(want.CatalogProductID, got.CatalogProductID) || want.MatchQuality != got.MatchQuality {
+				t.Fatalf("patch identity (%v, %s), create identity (%v, %s)", got.CatalogProductID, got.MatchQuality, want.CatalogProductID, want.MatchQuality)
+			}
+			var requests int
+			if err = f.pool.QueryRow(f.ctx, `SELECT count(*) FROM identity_scan_subscriptions WHERE appliance_id IN ($1,$2)`, created.ID, patched.ID).Scan(&requests); err != nil {
+				t.Fatal(err)
+			}
+			if wantSubs := 2 * btoi(want.MatchQuality == "confirmed_exact"); requests != wantSubs {
+				t.Fatalf("scan subscriptions = %d, want %d", requests, wantSubs)
+			}
+		})
+	}
+}
 
-	edited = a.Identity
-	edited.FullModel = "NOPE9"
-	a = patch(a.Version, edited)
-	f.wantLink(a, "", "unresolved")
-
-	edited = a.Identity
-	edited.FullModel = "A1"
-	edited.CatalogProductID = nil
-	a = patch(a.Version, edited)
-	f.wantLink(a, first, "confirmed_exact")
-
-	edited = a.Identity
-	edited.FullModel = "ZZZ1"
-	edited.CatalogProductID = &picked
-	a = patch(a.Version, edited)
-	f.wantLink(a, picked, "confirmed_exact")
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func TestRelinkCatalogLinksUnlinkedAppliancesOnce(t *testing.T) {

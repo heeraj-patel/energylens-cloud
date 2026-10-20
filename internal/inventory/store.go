@@ -379,6 +379,15 @@ func linkCatalog(ctx context.Context, tx pgx.Tx, a *Appliance) error {
 	i.CatalogProductID, i.MatchQuality = &link.ProductID, link.MatchQuality
 	return nil
 }
+
+// linkIdentity validates a picked catalog product, then links an unlinked
+// identity. Create and Patch share it so an edited model is a new device entry.
+func linkIdentity(ctx context.Context, tx pgx.Tx, a *Appliance) error {
+	if err := checkCatalog(ctx, tx, *a); err != nil {
+		return err
+	}
+	return linkCatalog(ctx, tx, a)
+}
 func sameOptional(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -475,10 +484,7 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 	if _, err = energycategories.Ensure(ctx, tx, a.Category); err != nil {
 		return Appliance{}, err
 	}
-	if err = checkCatalog(ctx, tx, a); err != nil {
-		return Appliance{}, err
-	}
-	if err = linkCatalog(ctx, tx, &a); err != nil {
+	if err = linkIdentity(ctx, tx, &a); err != nil {
 		return Appliance{}, err
 	}
 	identity, _ := json.Marshal(a.Identity)
@@ -539,8 +545,8 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 		previous := a.Identity
 		a.Identity = *in.Identity
 		modelEdited := a.Identity.Brand != previous.Brand || a.Identity.FullModel != previous.FullModel
-		if modelEdited && previous.CatalogProductID != nil && (a.Identity.CatalogProductID == nil || sameOptional(a.Identity.CatalogProductID, previous.CatalogProductID)) {
-			a.Identity.CatalogProductID, a.Identity.MatchQuality = nil, "unresolved"
+		if modelEdited && sameOptional(a.Identity.CatalogProductID, previous.CatalogProductID) {
+			a.Identity.CatalogProductID = nil
 		}
 	}
 	if in.Room != nil {
@@ -554,10 +560,7 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 			a.Room = &room
 		}
 	}
-	if err = checkCatalog(ctx, tx, a); err != nil {
-		return Appliance{}, err
-	}
-	if err = linkCatalog(ctx, tx, &a); err != nil {
+	if err = linkIdentity(ctx, tx, &a); err != nil {
 		return Appliance{}, err
 	}
 	identity, _ := json.Marshal(a.Identity)
