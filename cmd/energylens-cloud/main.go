@@ -86,6 +86,9 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "relink-catalog" {
 		return relinkCatalog(ctx, args[1:])
 	}
+	if len(args) > 0 && args[0] == "requeue-datawiz-schema" {
+		return requeueDatawizSchema(ctx, args[1:])
+	}
 	if len(args) > 0 && args[0] == "read-datawiz-current" {
 		fs := flag.NewFlagSet("read-datawiz-current", flag.ContinueOnError)
 		route := fs.String("route", "", "device, zip, savings, or efficiency")
@@ -289,6 +292,27 @@ func relinkCatalog(ctx context.Context, args []string) error {
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]int{"linked_exact": result.LinkedExact, "linked_family": result.LinkedFamily, "unresolved": result.Unresolved})
+}
+
+// requeueDatawizSchema is the one-time wave (R6) that re-resolves appliances whose record is older than v2.
+func requeueDatawizSchema(ctx context.Context, args []string) error {
+	if len(args) != 0 {
+		return errors.New("usage: energylens-cloud requeue-datawiz-schema")
+	}
+	dsn := os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL")
+	if dsn == "" {
+		return errors.New("ENERGYLENS_CLOUD_DATABASE_URL required")
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	queued, err := (datawizrequests.Requeuer{DB: pool}).SchemaWave(ctx)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]int{"queued": queued})
 }
 
 // Operational provisioning is intentionally outside the public HTTP surface.

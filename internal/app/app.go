@@ -461,6 +461,14 @@ func Serve(ctx context.Context, c Config) error {
 					runDatawizRequests(workerCtx, datawizrequests.Producer{DB: rt.Pool, Dir: c.DatawizRequestsDir}, 5*time.Second)
 				}()
 			}
+			if c.DatawizRequestsDir != "" {
+				finished := make(chan struct{})
+				jobs = append(jobs, finished)
+				go func() {
+					defer close(finished)
+					runDatawizRequests(workerCtx, datawizrequests.Requeuer{DB: rt.Pool}, time.Hour)
+				}()
+			}
 			for _, finished := range jobs {
 				<-finished
 			}

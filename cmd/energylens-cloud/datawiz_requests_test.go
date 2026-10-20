@@ -136,3 +136,13 @@ func TestRelinkCatalogRequiresNoArgsAndDatabase(t *testing.T) {
 		t.Fatalf("database gate: %v", err)
 	}
 }
+
+func TestRequeueDatawizSchemaRequiresNoArgsAndDatabase(t *testing.T) {
+	t.Setenv("ENERGYLENS_CLOUD_DATABASE_URL", "")
+	if err := requeueDatawizSchema(context.Background(), []string{"extra"}); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("args: %v", err)
+	}
+	if err := requeueDatawizSchema(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "ENERGYLENS_CLOUD_DATABASE_URL required") {
+		t.Fatalf("database gate: %v", err)
+	}
+}

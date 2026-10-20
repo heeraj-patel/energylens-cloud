@@ -203,7 +203,7 @@ func runDatawizRequests(ctx context.Context, job datawizRequestJob, interval tim
 		if err != nil && ctx.Err() == nil {
 			slog.Error("Datawiz request pass failed", "error", err)
 		} else if count > 0 {
-			slog.Info("Datawiz requests written", "count", count)
+			slog.Info("Datawiz job queued or wrote requests", "count", count)
 		}
 		select {
 		case <-ctx.Done():
