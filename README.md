@@ -74,21 +74,9 @@ on each check. If access fails after a claim, verify certificate renewal and
 ownership sync, then explicitly re-pair Mobile at the current epoch. A pairing
 token alone cannot authorize a claimed home's customer routes.
 
-## Reviewed KB import
+## Catalog data
 
-After migration 0021, an operator can import a KB publication signed by the pinned Ed25519 key:
-
-```sh
-ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL='postgres://...' \
-ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE=/secure/path/reviewed-facts-public.pem \
-energylens-cloud import-reviewed-catalog --artifact /secure/path/reviewed-facts.json --imported-by '<administrator-id>'
-```
-
-The command verifies canonical JSON, payload digest, key identity and signature before writing. It accepts an identical replay, rejects conflicting product or fact IDs, and imports all rows in one transaction. The artifact supplies `reviewed_at` and source hashes but no source retrieval time, so imported `source_fetched_at` stays null. Import remains operator-only; read routes are described below.
-
-Migration 0033 adds a separate import for reviewed per-cycle and per-hour usage facts. With the same dedicated operator database role and pinned KB public key, run `energylens-cloud import-reviewed-usage-facts --artifact /secure/path/usage-facts.json --imported-by '<administrator-id>'`. It verifies signed v1 publications and the v2 revision lifecycle, which supports superseding or retracting a prior fact while preserving publication and review provenance. The signed payload records exact or documented family scope, units, included energy, source and review hashes. This import is separate from annual catalog facts.
-
-Signed annual catalog v2 publications support reviewed fact supersession and retraction through the existing `import-reviewed-catalog` operator command. Both import commands use `ENERGYLENS_CLOUD_KB_PUBLIC_KEY_FILE`, verify canonical JSON, the pinned Ed25519 key, payload digest and signature, then persist the publication transactionally. A replay is idempotent; conflicting or invalid revisions are rejected.
+Datawiz writes the catalog, usage-fact, rated-input and scenario tables directly (migration 0082); Cloud has no signed-publication import. `import-official-tariff` and `import-reviewed-program` remain as operator commands (`runbooks/reviewed-program-offline-import.md`).
 
 ## Reviewed catalog and usage reads
 
@@ -100,9 +88,7 @@ Active reviewed usage facts are available to authenticated owners at `GET /v1/us
 
 After migration 0022, authenticated owners can list, create, read and patch appliances under `/v1/homes/{home}/appliances`. Mutations use UUID `Idempotency-Key` headers; PATCH also uses the current strong version `If-Match` ETag. Each version records an immutable appliance snapshot. Identity may include FCC ID, IC ID, serial number, UPC, build year, and a bulb label. After migration 0077, a selected existing catalog product can remain linked through user edits without an exact identity match. Archive, sensors, answers and estimates are separate later routes.
 
-Migration 0041 adds a private, home-scoped candidate scan outbox. Saving a confirmed exact make/model with no linked reviewed catalog product queues one scan per normalized model per home; unresolved or edited names do not queue. The worker role polls pending requests every 10 seconds when both `ENERGYLENS_CLOUD_KB_PYTHON` and `ENERGYLENS_CLOUD_KB_SOURCES` point to an installed KB Python and reviewed source directory. `ENERGYLENS_CLOUD_KB_CANDIDATE_INDEX` may point to a recorded public candidate index. Default operation is offline (`scan-energy --skip-epa`); `ENERGYLENS_CLOUD_KB_ALLOW_EPA=true` enables the KB's bounded official EPA lookup only after source terms and network policy review. Each pass claims at most 10 models; at 03:00 UTC only, one pass also retries due missing-source rows after 24 hours, up to five attempts. Scanner/provider failures retry with bounded backoff outside that missing-source schedule. Reports remain private review candidates and never enter the customer catalog automatically. Physical home purge deletes the requests and their reports. The worker is disabled when KB paths are absent. Set `ENERGYLENS_CLOUD_KB_HELP_OUTPUT_PATH` to an absolute private server path ending in `unresolved_device_help.jsonl` to have the worker atomically refresh a 0600 human research queue after KB passes and at startup. The queue lists live appliance IDs and model identities whose stored Datawiz resolution is unresolved or category-typical, minus models with manual research (the rows behind `datawiz write-research-todo`). An operator can refresh the same file with `energylens-cloud export-unresolved-device-help -output /private/path/unresolved_device_help.jsonl`.
-
-A waste-specific miss covers only the completed EPA model check. It is not a claim that no source exists elsewhere. Standby ratings remain private review candidates and are not published as measured waste findings. The optional appliance-list miss result appears only after the scan reaches its terminal state. A verified device waste interval is still required before the hourly dummy rate can be allocated.
+`energylens-cloud export-unresolved-device-help -output /private/path/unresolved_device_help.jsonl` atomically writes a 0600 research queue: live appliance IDs and model identities whose stored Datawiz resolution is unresolved or category-typical, minus models with manual research. These are the `no_data` rows behind `datawiz write-research-todo`.
 
 Program discovery refresh (migration 0051): authenticated clients can POST
 `/v1/homes/{home}/programs/discovery-refresh` with `{"appliance_id":"<uuid>"}`

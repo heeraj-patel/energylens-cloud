@@ -4,13 +4,13 @@ Go 1.24 service (module `energylens.local/cloud`): one binary, one TLS listener,
 plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 
 ## Layout
-- `cmd/energylens-cloud/` main.go (flags, subcommands), operator tools (program/tariff import, deletion journal, identity help export).
+- `cmd/energylens-cloud/` main.go (flags, subcommands), operator tools (program/tariff import, deletion journal, unresolved-device help export).
 - `internal/app/` config (`config.go`), module mounting + router (`app.go`), `/v1/auth/config` (`auth_capabilities.go`).
 - `internal/account` (OIDC verifier, local auth, homes, prefs, deletion, dev auth), `hubtrust` (enroll, claim, certs, epochs),
   `sensors`/`attachments`/`telemetry`/`kasaruntime` (hub sync + owner reads), `meteredhistory|summary|export|rollup`,
-  `householdenergy` (dashboard, trends), `catalog`/`catalogimport`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
+  `householdenergy` (dashboard, trends), `catalog`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
   `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs` (+OEDI, source probe),
-  `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `scenarioimport`, `designfixture`, `identityscan`, `migrate`, `apierror`.
+  `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `designfixture`, `helpexport`, `migrate`, `apierror`.
 - `migrations/` embedded SQL 0016..0082 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
@@ -24,7 +24,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 - Launcher (preferred): `../energylens-dev-bash-scripts/run-energylens-cloud.sh {migrate|api|worker} [envfile] [--check]`.
   Uses `go run` unless `ENERGYLENS_CLOUD_BIN` is set. Templates in `../energylens-dev-bash-scripts/templates/cloud-local-*.env.example`.
 - Direct: `go run ./cmd/energylens-cloud --role=api|worker|all`; subcommands: `migrate`, `check-config`, `check-local-auth-keys`,
-  `provision-hub`, `issue-hub-enroll-nonce`, `import-reviewed-{catalog,usage-facts,program,rated-input,action-scenarios}`,
+  `provision-hub`, `issue-hub-enroll-nonce`, `import-reviewed-program`,
   `import-official-tariff`, `import-demo-cost-snapshot`, `export-datawiz-requests`, `read-datawiz-current`, `export-energy-categories`,
   `adopt-dev-account-username`, `unlock-dev-username-login`, `deletion-journal`, `export-unresolved-device-help`.
 - Migrate with a separate DDL role (`ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL`) before serving; serving never runs DDL.
@@ -44,7 +44,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   PRIVATE_KEY_FILE, PUBLIC_KEY_FILES JSON, AUDIENCE, RUNTIME_LOCAL_AUTH_AUDIENCE, LINK_ORIGIN, *_RATE_KEY_FILE, MAIL_ENABLED,
   RESEND_API_KEY/FROM, TRUSTED_PROXY_CIDRS), legacy `..._DEV_AUTH_*`. Production API needs OIDC or enabled local auth.
 - Optional jobs/features all default off: METERED_ROLLUP, PROGRAM_REFRESH (+OEDI CSV/SHA vars), PROGRAM_SOURCE_PROBE, REPORT_*,
-  ACCOUNT_DELETION (non-prod), SAMPLE_FIXTURES (dev/test only, allowlists), KB_* scan worker, DATAWIZ_REQUESTS_DIR, `EIA_API_KEY`.
+  ACCOUNT_DELETION (non-prod), SAMPLE_FIXTURES (dev/test only, allowlists), DATAWIZ_REQUESTS_DIR, `EIA_API_KEY`.
 
 ## Auth modes
 - `RUNTIME_ENV=local`: username/password. `/v1/auth/config` -> methods `["username_password"]`; no email, OIDC or mail allowed
