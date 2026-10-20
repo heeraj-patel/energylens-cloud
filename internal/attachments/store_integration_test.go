@@ -93,7 +93,7 @@ func TestOwnerAttachmentMoveCloseAndHistory(t *testing.T) {
 		}
 	}
 	store := Store{Pool: pool}
-	start := time.Now().UTC().Add(time.Second)
+	start := time.Now().UTC().Add(time.Second).Truncate(time.Microsecond)
 	hash := sha256.Sum256([]byte("create"))
 	key := uuid.NewString()
 	in := CreateInput{SensorID: sensor, ApplianceID: appliance1, IdentityRevision: 1, StartedAt: start}
