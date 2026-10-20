@@ -77,13 +77,13 @@ func (s PGStore) Search(ctx context.Context, q Search) ([]json.RawMessage, error
 // Search never contacts an external provider. An absent region matches only
 // region-neutral records; a specified region also includes neutral records.
 func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage, error) {
-	rows, err := s.db.Query(ctx, `SELECT id FROM catalog_products
-	        WHERE ($1::text='' OR lower(brand)=lower($1)) AND lower(full_model)=lower($2) AND ($3::text='' OR fuel=$3)
-          AND (region IS NULL OR ($4::text IS NOT NULL AND lower(region)=lower($4)))
-	      AND ($5::text IS NULL OR variant IS NULL OR lower(variant)=lower($5))
-	    ORDER BY CASE match_quality WHEN 'confirmed_exact' THEN 0 ELSE 1 END,
-	             CASE WHEN $4::text IS NOT NULL AND lower(region)=lower($4) THEN 0 ELSE 1 END, id
-	    LIMIT 25`, q.Brand, q.Model, q.Fuel, q.Region, q.Variant)
+	rows, err := s.db.Query(ctx, `SELECT p.id FROM catalog_products p
+	        WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND lower(p.full_model)=lower($2) AND ($3::text='' OR p.fuel=$3)
+          AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
+	      AND ($5::text IS NULL OR p.variant IS NULL OR lower(p.variant)=lower($5))
+	    ORDER BY CASE p.match_quality WHEN 'confirmed_exact' THEN 0 ELSE 1 END,
+	             CASE WHEN $4::text IS NOT NULL AND lower(p.region)=lower($4) THEN 0 ELSE 1 END, p.id
+	    LIMIT 25`, BrandKeys(q.Brand), q.Model, q.Fuel, q.Region, q.Variant)
 	if err != nil {
 		return nil, err
 	}
@@ -114,46 +114,13 @@ func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage,
 	if len(products) == 25 || normalizedModel(q.Model) == "" {
 		return products, nil
 	}
-	rows, err = s.db.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model'
-	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id
-	    WHERE ($1::text='' OR lower(p.brand)=lower($1)) AND ($2::text='' OR p.fuel=$2)
-	      AND p.match_quality='documented_variant_family'
-	      AND f.source_kind IN ('oem_family', 'other_official')
-	      AND (p.variant IS NULL OR $3::text IS NULL OR lower(p.variant)=lower($3))
-	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
-	      AND length(regexp_replace(upper(p.full_model), '[^A-Z0-9]', '', 'g'))=$5
-	    ORDER BY CASE WHEN $4::text IS NOT NULL AND lower(p.region)=lower($4) THEN 0 ELSE 1 END,
-	             p.id, f.reviewed_at DESC, f.id
-	    LIMIT 1000`, q.Brand, q.Fuel, q.Variant, q.Region, len(normalizedModel(q.Model)))
+	candidates, err := s.familyCandidates(ctx, q, ids, 25-len(products))
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	seen := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		seen[id] = true
-	}
-	candidateIDs := []string{}
-	for rows.Next() {
-		var id string
-		var pattern *string
-		if err = rows.Scan(&id, &pattern); err != nil {
-			return nil, err
-		}
-		if seen[id] || pattern == nil || !documentedPatternMatches(*pattern, q.Model) {
-			continue
-		}
-		seen[id] = true
-		candidateIDs = append(candidateIDs, id)
-		if len(products)+len(candidateIDs) == 25 {
-			break
-		}
-	}
-	// A bounded search may stop before exhausting rows. Release that connection
-	// before Get acquires another, including when the pool has only one slot.
-	rows.Close()
-	if err = rows.Err(); err != nil {
-		return nil, err
+	candidateIDs := make([]string, len(candidates))
+	for i, c := range candidates {
+		candidateIDs[i] = c.id
 	}
 	for _, id := range candidateIDs {
 		p, err := s.Get(ctx, id)
@@ -227,4 +194,52 @@ func (s catalogReader) Get(ctx context.Context, id string) (json.RawMessage, err
 		}
 	}
 	return json.Marshal(result)
+}
+
+type familyCandidate struct{ id, group string }
+
+// familyCandidates lists documented_variant_family products whose reviewed
+// pattern covers the requested model, skipping exclude. limit <= 0 is no cap.
+func (s catalogReader) familyCandidates(ctx context.Context, q Search, exclude []string, limit int) ([]familyCandidate, error) {
+	if normalizedModel(q.Model) == "" {
+		return nil, nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model', `+brandKeySQL+`, p.full_model, p.variant, p.region
+	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id
+	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND ($2::text='' OR p.fuel=$2)
+	      AND p.match_quality='documented_variant_family'
+	      AND f.source_kind IN ('oem_family', 'other_official', 'epa_family')
+	      AND (p.variant IS NULL OR $3::text IS NULL OR lower(p.variant)=lower($3))
+	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
+	      AND length(regexp_replace(upper(p.full_model), '[^A-Z0-9]', '', 'g'))=$5
+	    ORDER BY CASE WHEN $4::text IS NOT NULL AND lower(p.region)=lower($4) THEN 0 ELSE 1 END,
+	             p.id, f.reviewed_at DESC, f.id`, BrandKeys(q.Brand), q.Fuel, q.Variant, q.Region, len(normalizedModel(q.Model)))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := make(map[string]bool, len(exclude))
+	for _, id := range exclude {
+		seen[id] = true
+	}
+	var found []familyCandidate
+	for rows.Next() {
+		var id, brandKey, model string
+		var pattern, variant, region *string
+		if err = rows.Scan(&id, &pattern, &brandKey, &model, &variant, &region); err != nil {
+			return nil, err
+		}
+		if seen[id] || pattern == nil || !documentedPatternMatches(*pattern, q.Model) {
+			continue
+		}
+		seen[id] = true
+		found = append(found, familyCandidate{id, productGroup(brandKey, model, variant, region)})
+		if limit > 0 && len(found) == limit {
+			break
+		}
+	}
+	// A bounded search may stop before exhausting rows. Release that connection
+	// before the caller acquires another, including when the pool has one slot.
+	rows.Close()
+	return found, rows.Err()
 }
