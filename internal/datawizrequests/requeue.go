@@ -212,7 +212,7 @@ func (r requeueRow) catalogChanged() bool {
 	var identity inventory.Identity
 	sendable := false
 	if r.catalogID != nil && json.Unmarshal(r.identity, &identity) == nil {
-		_, sendable = catalog.SendableLink(identity.Brand, identity.FullModel, catalog.LinkedProduct{Brand: deref(r.pBrand), FullModel: deref(r.pModel), MatchQuality: deref(r.pQuality)})
+		_, sendable = catalog.SendableLink(identity.Brand, identity.FullModel, identity.MatchQuality, catalog.LinkedProduct{Brand: deref(r.pBrand), FullModel: deref(r.pModel), MatchQuality: deref(r.pQuality)})
 	}
 	if !sendable {
 		return r.tier == "catalog"

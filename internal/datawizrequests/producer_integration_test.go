@@ -350,3 +350,25 @@ func TestProducerExactLinkNeedsActiveFactToSkipDevice(t *testing.T) {
 		}
 	}
 }
+
+func TestProducerTrimLinkIsSent(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home, product, appliance := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'H','America/Chicago')`, []any{home, owner}},
+		{`INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'refrigerator','KitchenAid','KRMF706EBS','electricity','confirmed_exact','{}')`, []any{product}},
+		{`INSERT INTO appliances(id,home_id,name,category,catalog_product_id,identity) VALUES($1,$2,'Fridge','refrigerator',$3,'{"brand":"KitchenAid","full_model":"KRMF706XYZ","fuel":"electricity","match_quality":"documented_variant_family"}')`, []any{appliance, home, product}},
+	} {
+		if _, err := pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entry, found, err := (Producer{DB: pool, Dir: t.TempDir()}).resolveEntryFor(ctx, appliance)
+	if err != nil || !found || entry.entry.CatalogProductID != product || entry.entry.MatchQuality != "documented_variant_family" {
+		t.Fatalf("trim link in resolve entry: %+v %t %v", entry.entry, found, err)
+	}
+}

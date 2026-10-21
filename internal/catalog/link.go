@@ -215,8 +215,12 @@ func medianLink(found []trimCandidate) (Link, bool, error) {
 
 // SendableLink returns the match quality to send for an appliance's linked
 // product. An exact link must match the appliance brand and model; a family
-// link need not.
-func SendableLink(brand, model string, p LinkedProduct) (string, bool) {
+// link need not. A prefix-trim link keeps an exact product row, so the
+// appliance identity's own family quality decides.
+func SendableLink(brand, model, identityQuality string, p LinkedProduct) (string, bool) {
+	if identityQuality == "documented_variant_family" {
+		return identityQuality, true
+	}
 	switch p.MatchQuality {
 	case "documented_variant_family":
 		return p.MatchQuality, true

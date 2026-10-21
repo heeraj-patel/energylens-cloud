@@ -95,7 +95,7 @@ func (p Producer) resolveCandidates(ctx context.Context) ([]resolveCandidate, er
 		c.entry.Model = identity.FullModel
 		c.entry.Label = identity.BulbLabel
 		if linkID != nil {
-			if quality, ok := catalog.SendableLink(identity.Brand, identity.FullModel, catalog.LinkedProduct{Brand: deref(pBrand), FullModel: deref(pModel), MatchQuality: deref(pQuality)}); ok {
+			if quality, ok := catalog.SendableLink(identity.Brand, identity.FullModel, identity.MatchQuality, catalog.LinkedProduct{Brand: deref(pBrand), FullModel: deref(pModel), MatchQuality: deref(pQuality)}); ok {
 				c.entry.CatalogProductID, c.entry.MatchQuality = *linkID, quality
 			}
 		}
