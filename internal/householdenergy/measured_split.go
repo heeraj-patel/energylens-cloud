@@ -41,8 +41,9 @@ func readSplitSpecs(ctx context.Context, tx pgx.Tx, home string) (map[string]spl
 
 // specForFuel keeps a gas appliance off the electric floor and off typical
 // standby; only a per-model standby figure may split its measured draw.
+// An empty fuel is electricity, as in datawizfacts.ForFuel.
 func specForFuel(fuel, tier string, s splitSpec) splitSpec {
-	if fuel == "electricity" {
+	if fuel == "" || fuel == "electricity" {
 		return s
 	}
 	s.FloorUSDPerDay = 0

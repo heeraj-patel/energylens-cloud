@@ -286,3 +286,10 @@ func TestSpecForFuelKeepsGasOffFloorAndTypicalStandby(t *testing.T) {
 		t.Fatalf("gas catalog spec: %+v", got)
 	}
 }
+
+func TestSpecForFuelTreatsEmptyFuelAsElectricity(t *testing.T) {
+	in := splitSpec{StandbyWatts: 3, FloorUSDPerDay: 0.01}
+	if got := specForFuel("", "category_typical", in); got != in {
+		t.Fatalf("empty fuel treated as gas: %+v", got)
+	}
+}
