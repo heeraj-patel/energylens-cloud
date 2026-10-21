@@ -27,6 +27,8 @@ type Service struct {
 	Now    func() time.Time
 	// NationalRate prices homes without a tariff; nil leaves them unpriced.
 	NationalRate NationalRate
+	// GasRate resolves the gas rate for US homes without a gas tariff.
+	GasRate GasRateResolver
 }
 
 type quantity struct {

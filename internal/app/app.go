@@ -178,7 +178,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				accounts.Deletion = account.PGStore{Pool: rt.Pool}
 			}
 			modules = append(modules, Module{Name: "account-homes", Mount: accounts.Routes})
-			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID, NationalRate: rates.NationalUSDPerKWh}
+			liveEnergy := householdenergy.Service{Pool: rt.Pool, Auth: accounts.Auth, UserID: account.UserID, NationalRate: rates.NationalUSDPerKWh, GasRate: rates.ResolveGas}
 			modules = append(modules, Module{Name: "live-household-energy", Mount: liveEnergy.Routes})
 			deviceStates := devicestate.Service{Store: devicestate.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-device-states", Mount: deviceStates.Routes})

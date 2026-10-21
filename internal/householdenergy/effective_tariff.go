@@ -2,13 +2,16 @@ package householdenergy
 
 import (
 	"context"
+	"energylens.local/cloud/internal/energyrate"
 	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
+	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -294,4 +297,63 @@ func priceAttributedDevices(buckets []bucket, rows [][]deviceAllocation, periodR
 		periodRows[i].Allocation.UnclassifiedCost = cost
 		periodRows[i].Allocation.EvidenceBasis = "mixed"
 	}
+}
+
+// GasRateBasisUserTariff is the gas_rate_basis of the home's own gas tariff.
+// The other bases are the energyrate.GasBasis* values.
+const GasRateBasisUserTariff = "user_tariff"
+
+// GasRateResolver is the fallback gas rate for a US ZIP ("" means national).
+type GasRateResolver func(ctx context.Context, zip string) (energyrate.GasResolved, error)
+
+// GasRate is a home's effective gas price in USD per therm. Basis is the
+// gas_rate_basis for L13 to serialise; no rate means a null basis.
+type GasRate struct {
+	USDPerTherm *big.Rat
+	Basis       string
+}
+
+var usZIPRe = regexp.MustCompile(`^([0-9]{5})(?:-?[0-9]{4})?$`)
+
+// readEffectiveGasRate returns the home's current user natural_gas tariff, else
+// the resolver rate for a US home, else nil. A resolver error means no rate.
+func readEffectiveGasRate(ctx context.Context, tx pgx.Tx, home string, now time.Time, resolve GasRateResolver) (*GasRate, error) {
+	var rate string
+	err := tx.QueryRow(ctx, `SELECT rate::text FROM tariff_revisions
+ WHERE home_id=$1 AND fuel='natural_gas' AND rate_unit='therm' AND currency='USD'
+ AND rate_kind='user_tariff' AND NOT is_fallback AND source_as_of<=$2
+ AND effective_from<=$2 AND (effective_to IS NULL OR effective_to>$2)
+ ORDER BY effective_from DESC,revision DESC,id DESC LIMIT 1`, home, now).Scan(&rate)
+	if err == nil {
+		value, ok := new(big.Rat).SetString(rate)
+		if !ok {
+			return nil, fmt.Errorf("invalid persisted tariff rate")
+		}
+		return &GasRate{USDPerTherm: value, Basis: GasRateBasisUserTariff}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if resolve == nil {
+		return nil, nil
+	}
+	var country, postal string
+	err = tx.QueryRow(ctx, `SELECT country_code,postal_code FROM home_location_revisions WHERE home_id=$1 ORDER BY revision DESC LIMIT 1`, home).Scan(&country, &postal)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if country != "US" {
+		return nil, nil
+	}
+	zip := ""
+	if m := usZIPRe.FindStringSubmatch(strings.TrimSpace(postal)); m != nil {
+		zip = m[1]
+	}
+	resolved, err := resolve(ctx, zip)
+	if err != nil || resolved.USDPerTherm <= 0 || math.IsNaN(resolved.USDPerTherm) || math.IsInf(resolved.USDPerTherm, 0) {
+		return nil, nil
+	}
+	return &GasRate{USDPerTherm: mustDecimal(strconv.FormatFloat(resolved.USDPerTherm, 'f', 9, 64)), Basis: resolved.Basis}, nil
 }
