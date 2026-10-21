@@ -176,10 +176,12 @@ func centsToUSD(v float64, units string) float64 {
 // scrub removes the API key from an error's text. *url.Error carries the full
 // request URL (including api_key=...), so it is unwrapped to its cause, and
 // any remaining occurrence of the key is masked as a belt-and-braces measure.
-func (c *EIAClient) scrub(err error) error {
+func (c *EIAClient) scrub(err error) error { return c.scrubPath(err, eiaRetailSalesPath) }
+
+func (c *EIAClient) scrubPath(err error, path string) error {
 	var ue *url.Error
 	if errors.As(err, &ue) {
-		err = fmt.Errorf("%s %s: %w", ue.Op, c.BaseURL+eiaRetailSalesPath, ue.Err)
+		err = fmt.Errorf("%s %s: %w", ue.Op, c.BaseURL+path, ue.Err)
 	}
 	if c.APIKey != "" && strings.Contains(err.Error(), c.APIKey) {
 		return errors.New(strings.ReplaceAll(err.Error(), c.APIKey, "REDACTED"))

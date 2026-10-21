@@ -86,7 +86,10 @@ type Options struct {
 	CacheTTL     time.Duration
 	Static       StaticRate
 	StaticStates map[string]StaticRate
-	Now          func() time.Time
+	GasFetcher   GasRateFetcher // nil or keyless → cache-only
+	GasCache     *GasCache
+	GasStatic    GasStaticRate
+	Now         func() time.Time
 	Logger       *slog.Logger
 }
 
@@ -99,7 +102,11 @@ type Service struct {
 	ttl          time.Duration
 	static       StaticRate
 	staticStates map[string]StaticRate
-	now          func() time.Time
+	gasFetcher   GasRateFetcher
+	gasCache     *GasCache
+	gasStatic    GasStaticRate
+	gasHasKey    bool
+	now         func() time.Time
 	log          *slog.Logger
 
 	mu             sync.Mutex
@@ -119,6 +126,9 @@ type call struct {
 func NewService(o Options) *Service {
 	if o.Cache == nil {
 		o.Cache = NewMemCache()
+	}
+	if o.GasCache == nil {
+		o.GasCache = NewGasCache()
 	}
 	if o.CacheTTL <= 0 {
 		o.CacheTTL = DefaultCacheTTL
@@ -140,7 +150,11 @@ func NewService(o Options) *Service {
 		ttl:          o.CacheTTL,
 		static:       o.Static,
 		staticStates: o.StaticStates,
-		now:          o.Now,
+		gasFetcher:   o.GasFetcher,
+		gasCache:     o.GasCache,
+		gasStatic:    o.GasStatic,
+		gasHasKey:    o.HasKey && o.GasFetcher != nil,
+		now:         o.Now,
 		log:          o.Logger,
 		failUntil:    map[string]time.Time{},
 		inflight:     map[string]*call{},

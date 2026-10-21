@@ -120,8 +120,10 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			}
 		}
 		var fetcher energyrate.RateFetcher
+		var gasFetcher energyrate.GasRateFetcher
 		if c.EIAAPIKey != "" {
-			fetcher = energyrate.NewEIAClient("", c.EIAAPIKey)
+			eia := energyrate.NewEIAClient("", c.EIAAPIKey)
+			fetcher, gasFetcher = eia, eia
 		}
 		var rateResearch *datawizfacts.Store
 		if rt.Pool != nil {
@@ -130,6 +132,12 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		rates := energyrate.NewService(energyrate.Options{
 			Research: rateResearch,
 			Fetcher:  fetcher, HasKey: c.EIAAPIKey != "", Cache: cache,
+			GasFetcher: gasFetcher,
+			GasStatic: energyrate.GasStaticRate{
+				USDPerTherm: 1.481, // EIA 2025 annual residential $15.34/Mcf / 10.36 Mcf-to-therm divisor
+				AsOf:        time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC),
+				SourceURL:   "https://www.eia.gov/dnav/ng/NG_PRI_SUM_DCU_NUS_A.htm",
+			},
 			Static: energyrate.StaticRate{
 				USDPerKWh: 0.1831,
 				AsOf:      time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
