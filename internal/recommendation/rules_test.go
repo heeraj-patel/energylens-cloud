@@ -60,6 +60,17 @@ func TestEvaluateCategoryAndFuelBoundary(t *testing.T) {
 	}
 }
 
+func TestGasAppliancesGetNoElectricStandbyOrOperatingRules(t *testing.T) {
+	for _, category := range []string{"water_heater", "boiler", "furnace", "space_heater"} {
+		for _, fuel := range []string{"natural_gas", "propane"} {
+			got := Evaluate(Appliance{Category: category, Fuel: fuel, Identity: "confirmed_exact", Facts: []Evidence{{ID: "f", Kind: "annual_energy", Revision: 1}}, Tariff: &Evidence{ID: "rate", Kind: "tariff", Revision: 1}})
+			if len(got) != 1 || got[0].RuleID != "general.gather_information" || got[0].State != "candidate" {
+				t.Fatalf("%s/%s got an electric rule: %+v", category, fuel, got)
+			}
+		}
+	}
+}
+
 func TestTipCategoryIsExplicitPerSourceRule(t *testing.T) {
 	for _, r := range initial {
 		want := TipGeneral
