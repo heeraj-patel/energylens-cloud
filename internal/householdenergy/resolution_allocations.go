@@ -208,19 +208,13 @@ func nonNegative(v *big.Rat) *big.Rat {
 }
 
 // wasteKWhPerDay is the record's own waste figure, else its dollar floor
-// converted at rate; it is unknown for a floor record without a rate. A v1
-// record with neither has no waste.
+// converted at rate. A v1 record with neither leaves waste unassessed.
 func (r resolvedEnergy) wasteKWhPerDay(daily, rate float64) (float64, bool) {
-	if r.Values.WasteKWhPerDay != nil {
-		return *r.Values.WasteKWhPerDay, true
+	var floor *float64
+	if r.WasteFloor != nil {
+		floor = r.WasteFloor.USDPerDay
 	}
-	if r.WasteFloor == nil || r.WasteFloor.USDPerDay == nil {
-		return 0, true
-	}
-	if rate <= 0 {
-		return 0, false
-	}
-	return energyrate.WasteFloorKWh(*r.WasteFloor.USDPerDay, rate, daily), true
+	return energyrate.ResolutionWasteKWh(daily, rate, r.Values.WasteKWhPerDay, floor)
 }
 
 func (r resolvedEnergy) wasteBasis() string {

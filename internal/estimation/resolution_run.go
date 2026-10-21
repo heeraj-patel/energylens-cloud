@@ -33,13 +33,11 @@ type energyResolution struct {
 // wasteKWh is the record's own waste figure, else its dollar floor converted
 // at rate. It is unknown for a v1 record with neither.
 func (r energyResolution) wasteKWh(daily, rate float64) (float64, bool) {
-	if r.Values.WasteKWhPerDay != nil {
-		return *r.Values.WasteKWhPerDay, true
+	var floor *float64
+	if r.WasteFloor != nil {
+		floor = r.WasteFloor.USDPerDay
 	}
-	if r.WasteFloor == nil || r.WasteFloor.USDPerDay == nil || rate <= 0 {
-		return 0, false
-	}
-	return energyrate.WasteFloorKWh(*r.WasteFloor.USDPerDay, rate, daily), true
+	return energyrate.ResolutionWasteKWh(daily, rate, r.Values.WasteKWhPerDay, floor)
 }
 
 // NationalRate returns the US average residential rate in $/kWh.
