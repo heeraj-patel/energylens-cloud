@@ -296,7 +296,11 @@ func linkCatalog(ctx context.Context, tx pgx.Tx, a *Appliance) error {
 	if i.CatalogProductID != nil || i.Fuel != "electricity" || strings.TrimSpace(i.Brand) == "" || strings.TrimSpace(i.FullModel) == "" {
 		return nil
 	}
-	link, found, err := catalog.FindLink(ctx, tx, catalog.Search{Brand: i.Brand, Model: i.FullModel, Region: i.Region, Variant: i.Variant, Fuel: i.Fuel, Category: a.Category})
+	category, err := energycategories.Ensure(ctx, tx, a.Category)
+	if err != nil {
+		return err
+	}
+	link, found, err := catalog.FindLink(ctx, tx, catalog.Search{Brand: i.Brand, Model: i.FullModel, Region: i.Region, Variant: i.Variant, Fuel: i.Fuel, Category: category})
 	if err != nil || !found {
 		return err
 	}

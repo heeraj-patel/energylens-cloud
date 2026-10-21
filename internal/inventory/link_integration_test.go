@@ -263,3 +263,29 @@ func TestRelinkCatalogLinksUnlinkedAppliancesOnce(t *testing.T) {
 		t.Fatalf("second pass %+v %v", got, err)
 	}
 }
+
+func TestCreateAndPatchNeverTrimComputerAndTVAliases(t *testing.T) {
+	f := newLinkFixture(t)
+	product := f.product("Acme", "acme", "KRMF706EBS", "confirmed_exact", nil, nil)
+	f.fact(product, "epa_exact", "", time.Now().UTC())
+	create := func(category string) Appliance {
+		f.t.Helper()
+		hash := sha256.Sum256([]byte("alias" + category))
+		a, err := f.store.Create(f.ctx, f.owner, f.home, CreateInput{Name: "Device", Category: category, Identity: Identity{Brand: "Acme", FullModel: "KRMF706XYZ", Fuel: "electricity", MatchQuality: "unresolved"}}, uuid.NewString(), hash[:])
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		return a
+	}
+	f.wantLink(create("refrigerator"), product, "documented_variant_family")
+	for _, category := range []string{"tv", "Television", "TVs", "computer", "Laptop"} {
+		f.wantLink(create(category), "", "unresolved")
+	}
+	base := create("Television")
+	renamed := "Tv"
+	patched, err := f.store.Patch(f.ctx, f.owner, f.home, base.ID, PatchInput{Category: &renamed}, base.Version, uuid.NewString(), make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.wantLink(patched, "", "unresolved")
+}
