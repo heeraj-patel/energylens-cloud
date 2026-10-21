@@ -134,7 +134,7 @@ func TestEstimatedWasteFromRecordOrConvertedFloor(t *testing.T) {
 		t.Fatal("floor waste without a rate must be unknown")
 	}
 	v1 := parse(`{"values":{"kwh_per_day":0.5}}`)
-	if _, waste, known := resolutionKWhForPeriod(v1, start, end, 0.17); !known || waste != 0 {
+	if _, waste, known := resolutionKWhForPeriod(v1, start, end, 0.17); known || waste != 0 {
 		t.Fatalf("v1 waste without a figure = %f (%v)", waste, known)
 	}
 }

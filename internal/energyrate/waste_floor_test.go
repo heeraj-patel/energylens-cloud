@@ -23,6 +23,34 @@ func TestWasteFloorKWhConvertsAndCaps(t *testing.T) {
 	}
 }
 
+func TestResolutionWasteKWh(t *testing.T) {
+	ptr := func(v float64) *float64 { return &v }
+	for _, tc := range []struct {
+		name            string
+		daily, rate     float64
+		reported, floor *float64
+		want            float64
+		known           bool
+	}{
+		{"reported overrides floor", 1, .2, ptr(.3), ptr(.01), .3, true},
+		{"reported zero overrides floor", 1, .2, ptr(0), ptr(.01), 0, true},
+		{"reported without rate", 1, 0, ptr(.3), nil, .3, true},
+		{"large floor", 1.32, .17, nil, ptr(.01), .01 / .17, true},
+		{"small floor", .274, .17, nil, ptr(.001), .001 / .17, true},
+		{"floor capped", .0008, .17, nil, ptr(.001), .0008, true},
+		{"floor without rate", 1, 0, nil, ptr(.01), 0, false},
+		{"floor with negative rate", 1, -.2, nil, ptr(.01), 0, false},
+		{"no fields", 1, .2, nil, nil, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, known := ResolutionWasteKWh(tc.daily, tc.rate, tc.reported, tc.floor)
+			if known != tc.known || math.Abs(got-tc.want) > 1e-9 {
+				t.Fatalf("got (%f, %v), want (%f, %v)", got, known, tc.want, tc.known)
+			}
+		})
+	}
+}
+
 func TestNationalUSDPerKWhIgnoresStateAndUsesNationalRow(t *testing.T) {
 	now := time.Date(2026, time.October, 7, 12, 0, 0, 0, time.UTC)
 	cache := NewMemCache()
