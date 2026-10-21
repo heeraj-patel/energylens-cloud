@@ -688,5 +688,14 @@ func (s PGStore) relinkOne(ctx context.Context, id string) (string, error) {
 	if err = snapshot(ctx, tx, a); err != nil {
 		return "", err
 	}
+	// Brand and model are unchanged, so earlier usage answers carry to the new version.
+	_, err = tx.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at)
+	 SELECT p.home_id,p.appliance_id,$3::bigint,p.question_id,p.question_version,
+	  (SELECT max(m.revision) FROM question_answers m WHERE m.home_id=p.home_id AND m.appliance_id=p.appliance_id AND m.question_id=p.question_id)+1,
+	  p.status,p.answer_value,p.confirmed_at
+	 FROM (SELECT DISTINCT ON (question_id) * FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND appliance_version=$4 ORDER BY question_id,revision DESC) p`, a.HomeID, id, a.Version, a.Version-1)
+	if err != nil {
+		return "", err
+	}
 	return a.Identity.MatchQuality, tx.Commit(ctx)
 }

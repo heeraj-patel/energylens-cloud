@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -288,4 +289,44 @@ func TestCreateAndPatchNeverTrimComputerAndTVAliases(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.wantLink(patched, "", "unresolved")
+}
+
+func TestRelinkCarriesUsageAnswersToTheNewVersion(t *testing.T) {
+	f := newLinkFixture(t)
+	a := f.create("Acme", "A123", "electricity")
+	insert := func(question, status string, value any, revision int, version int64) {
+		t.Helper()
+		var confirmed any
+		if status == "confirmed" {
+			confirmed = time.Now().UTC()
+		}
+		if _, err := f.pool.Exec(f.ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,$3,$4,2,$5,$6,$7::jsonb,$8)`, f.home, a.ID, version, question, revision, status, value, confirmed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("refrigerator.hours_per_week", "confirmed", "3.5", 1, 1)
+	insert("refrigerator.hours_per_week", "confirmed", "45.5", 2, 1)
+	insert("refrigerator.age_band", "unknown", nil, 1, 1)
+	product := f.product("Acme", "acme", "A123", "confirmed_exact", nil, nil)
+	f.fact(product, "epa_exact", "", time.Now().UTC())
+	if got, err := f.store.RelinkCatalog(f.ctx); err != nil || got.LinkedExact != 1 {
+		t.Fatalf("relink %+v %v", got, err)
+	}
+	rows, err := f.pool.Query(f.ctx, `SELECT DISTINCT ON (question_id) question_id,status,COALESCE(answer_value::text,''),revision FROM question_answers WHERE appliance_id=$1 AND appliance_version=2 ORDER BY question_id,revision DESC`, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	got := map[string]string{}
+	for rows.Next() {
+		var question, status, value string
+		var revision int
+		if err = rows.Scan(&question, &status, &value, &revision); err != nil {
+			t.Fatal(err)
+		}
+		got[question] = fmt.Sprintf("%s/%s/%d", status, value, revision)
+	}
+	if len(got) != 2 || got["refrigerator.hours_per_week"] != "confirmed/45.5/3" || got["refrigerator.age_band"] != "unknown//2" {
+		t.Fatalf("carried answers: %v", got)
+	}
 }
