@@ -107,8 +107,13 @@ func TestGasBoilerStandbyUpperBound(t *testing.T) {
 	isNil(t, "therms", e.GasTherms)
 	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(4), OffModeW: fp(9)}})
 	near(t, "max of standby and off", e.ElectricKWh, 78.84, 1e-9)
+	near(t, "standby kWh follows the same bound", e.StandbyKWh, 78.84, 1e-9)
+	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(9)}})
+	near(t, "off-mode only still estimates electric", e.ElectricKWh, 78.84, 1e-9)
+	isNil(t, "off-mode only is not a standby fact", e.StandbyKWh)
 	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas"})
 	isNil(t, "no facts", e.ElectricKWh)
+	isNil(t, "no facts standby", e.StandbyKWh)
 }
 
 func TestGasFurnaceAndSpaceHeaterElectricOnlyWhenFact(t *testing.T) {

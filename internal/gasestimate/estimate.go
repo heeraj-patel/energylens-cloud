@@ -67,8 +67,10 @@ type Estimate struct {
 	GasKWhEq         *float64
 	TotalKWhEq       *float64
 	AnnualFuelGallon *float64
-	GasBasis         string
-	ElectricBasis    string
+	// StandbyKWh is set only from a per-model standby_power fact (boilers).
+	StandbyKWh    *float64
+	GasBasis      string
+	ElectricBasis string
 }
 
 // ClassOf maps a raw appliance category to a class. Tankless is true for a
@@ -168,6 +170,9 @@ func Compute(in Input) (Estimate, bool) {
 	case ClassBoiler:
 		if w, ok := maxPresent(f.StandbyW, f.OffModeW); ok {
 			e.setElectric(ptr(w*standbyHoursPerYear), 0)
+			if f.StandbyW != nil {
+				e.StandbyKWh = ptr(w * standbyHoursPerYear)
+			}
 		}
 		e.electricOnlyTotal()
 	case ClassFurnace, ClassSpaceHeater:
