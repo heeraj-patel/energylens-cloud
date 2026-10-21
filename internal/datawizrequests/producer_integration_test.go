@@ -356,6 +356,41 @@ func TestProducerExactLinkNeedsActiveFactToSkipDevice(t *testing.T) {
 	}
 }
 
+func TestProducerOnlyAnnualEnergyCountsAsAFact(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home, product, appliance := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	hash := strings.Repeat("b", 64)
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'H','America/Chicago')`, []any{home, owner}},
+		{`INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',1,1)`, []any{hash}},
+		{`INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'boiler','Acme','GasBoil-1','natural_gas','confirmed_exact','{}')`, []any{product}},
+		{`INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES(gen_random_uuid(),$1,$2,'standby_power',4,'W','{}','{}','epa_exact','https://example.org/fact',$2,'reviewed_row_manifest','m',now(),1,'{}')`, []any{product, hash}},
+		{`INSERT INTO appliances(id,home_id,name,category,catalog_product_id,identity) VALUES($1,$2,'Boiler','boiler',$3,'{"brand":"Acme","full_model":"GasBoil-1","fuel":"natural_gas","match_quality":"confirmed_exact"}')`, []any{appliance, home, product}},
+	} {
+		if _, err := pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := t.TempDir()
+	if _, err := (Producer{DB: pool, Dir: dir}).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	paths, _ := filepath.Glob(filepath.Join(dir, "device", "*.json"))
+	for _, path := range paths {
+		if body, _ := os.ReadFile(path); strings.Contains(string(body), "GasBoil-1") {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Fatalf("a standby_power fact must not count as an annual_energy fact: %d device requests", found)
+	}
+}
+
 func TestProducerTrimLinkIsSent(t *testing.T) {
 	ctx, pool := testPool(t)
 	owner, home, product, appliance := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()

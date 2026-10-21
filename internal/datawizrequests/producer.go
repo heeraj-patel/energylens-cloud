@@ -37,7 +37,7 @@ func subjectID(subject string) string {
 
 func (p Producer) candidates(ctx context.Context) ([]candidate, error) {
 	rows, err := p.DB.Query(ctx, `SELECT a.identity->>'brand',a.identity->>'full_model',a.identity->>'match_quality',a.category,pr.brand,pr.full_model,pr.match_quality,
-  EXISTS(SELECT 1 FROM active_catalog_facts f WHERE f.product_id=a.catalog_product_id),COALESCE(a.identity->>'fuel','electricity'),pr.fuel
+  EXISTS(SELECT 1 FROM active_catalog_facts f WHERE f.product_id=a.catalog_product_id AND f.kind='annual_energy'),COALESCE(a.identity->>'fuel','electricity'),pr.fuel
 FROM appliances a JOIN homes h ON h.id=a.home_id LEFT JOIN catalog_products pr ON pr.id=a.catalog_product_id
 WHERE a.archived_at IS NULL AND h.deleted_at IS NULL AND NULLIF(btrim(a.identity->>'brand'),'') IS NOT NULL
 ORDER BY a.updated_at,a.id`)
