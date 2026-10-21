@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"energylens.local/cloud/internal/datawizfacts"
@@ -370,5 +371,56 @@ func TestProducerTrimLinkIsSent(t *testing.T) {
 	entry, found, err := (Producer{DB: pool, Dir: t.TempDir()}).resolveEntryFor(ctx, appliance)
 	if err != nil || !found || entry.entry.CatalogProductID != product || entry.entry.MatchQuality != "documented_variant_family" {
 		t.Fatalf("trim link in resolve entry: %+v %t %v", entry.entry, found, err)
+	}
+}
+
+type scanCounter struct{ scans atomic.Int32 }
+
+func (c *scanCounter) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	if strings.Contains(data.SQL, "FROM appliances a JOIN homes h") && strings.Contains(data.SQL, "LEFT JOIN LATERAL") {
+		c.scans.Add(1)
+	}
+	return ctx
+}
+
+func (c *scanCounter) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+func TestDrainQueueScansInventoryOncePerBatch(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home := uuid.NewString(), uuid.NewString()
+	for _, q := range []string{
+		`INSERT INTO users(id) VALUES('` + owner + `')`,
+		`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES('` + home + `','` + owner + `','H','America/Chicago')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 5; i++ {
+		id := uuid.NewString()
+		if _, err := pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'A','light','{}')`, id, home); err != nil {
+			t.Fatal(err)
+		}
+		if err := Queue(ctx, pool, id, "admin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counter := &scanCounter{}
+	cfg := pool.Config()
+	cfg.ConnConfig.Tracer = counter
+	traced, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traced.Close()
+	dir := t.TempDir()
+	if n, err := (Producer{DB: traced, Dir: dir}).drainQueue(ctx); err != nil || n != 5 {
+		t.Fatalf("drain: %d %v", n, err)
+	}
+	if got := counter.scans.Load(); got != 1 {
+		t.Fatalf("inventory scans per drain: %d", got)
+	}
+	if paths, _ := filepath.Glob(filepath.Join(dir, "resolve", "*.json")); len(paths) != 5 {
+		t.Fatalf("resolve files: %d", len(paths))
 	}
 }

@@ -313,12 +313,24 @@ func (p Producer) drainQueueFiltered(ctx context.Context, applianceID string) (i
 	if err != nil {
 		return 0, err
 	}
+	// One scan serves the whole batch; a scan per queued item exhausts the worker timeout.
+	var byID map[string]resolveCandidate
+	if len(items) > 0 {
+		all, e := p.resolveCandidates(ctx)
+		if e != nil {
+			return 0, e
+		}
+		byID = make(map[string]resolveCandidate, len(all))
+		for _, c := range all {
+			if _, seen := byID[c.applianceID]; !seen {
+				byID[c.applianceID] = c
+			}
+		}
+	}
 	count := 0
 	for _, x := range items {
-		c, found, e := p.resolveEntryFor(ctx, x.id)
-		if e != nil {
-			return count, e
-		}
+		c, found := byID[x.id]
+		var e error
 		if found {
 			if e = p.emitResolve(ctx, c, true); e != nil {
 				return count, e
