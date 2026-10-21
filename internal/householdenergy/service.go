@@ -48,6 +48,20 @@ type allocation struct {
 	EvidenceBasis      string    `json:"evidence_basis"`
 	WasteBasis         string    `json:"waste_basis,omitempty"`
 	RateBasis          string    `json:"rate_basis,omitempty"`
+	// Gas fields are additive: omitted for electric appliances and homes.
+	Fuel             string        `json:"fuel,omitempty"`
+	GasEnergy        *fuelQuantity `json:"gas_energy,omitempty"`
+	GasEnergyKWhEq   *quantity     `json:"gas_energy_kwh_eq,omitempty"`
+	TotalEnergyKWhEq *quantity     `json:"total_energy_kwh_eq,omitempty"`
+	GasCost          any           `json:"gas_cost,omitempty"`
+	TotalCost        any           `json:"total_cost,omitempty"`
+	StandbyCost      any           `json:"standby_cost,omitempty"`
+	GasRateBasis     string        `json:"gas_rate_basis,omitempty"`
+	GasBasis         string        `json:"gas_basis,omitempty"`
+}
+type fuelQuantity struct {
+	Value string `json:"value"`
+	Unit  string `json:"unit"`
 }
 type money struct {
 	Amount   string `json:"amount"`
@@ -384,6 +398,10 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 			a.RateBasis = tariff.nationalBasis()
 		}
 	}
+	gas, err := loadGasContext(ctx, tx, home, now, s.GasRate)
+	if err != nil {
+		return nil, err
+	}
 	// Real appliance rows are derived from the same observations as the home
 	// total. A bucket with overlapping observations has no safe allocation.
 	if !seededTotals {
@@ -402,6 +420,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 			national = s.NationalRate.schedule(ctx)
 		}
 		applyMeasuredSplit(buckets, realRows, periodRows, items, selectedItems, specs, tariff, national)
+		gas.decorate(buckets, realRows, periodRows)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)
 		}
@@ -423,6 +442,18 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, resolvedBuckets[i]...)
 	}
 	sampleDeviceRows = append(sampleDeviceRows, resolvedPeriod...)
+	gasBuckets, gasPeriod, err := gasDeviceRows(ctx, tx, gas, home, buckets, now, s.NationalRate)
+	if err != nil {
+		return nil, err
+	}
+	for i := range buckets {
+		buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, gasBuckets[i]...)
+	}
+	sampleDeviceRows = append(sampleDeviceRows, gasPeriod...)
+	// T1: totals stay metered electric; gas is the separate gas_cost line.
+	if gasLine := gasCostTotal(sampleDeviceRows); gasLine != nil {
+		a.GasCost = *gasLine
+	}
 	b := base{SchemaRevision: "household_energy_v1", ContentRevision: "household_energy_backend_v1", HomeID: home, DataMode: "household", GeneratedAt: now, AsOf: asOf, Timezone: tz, Period: p, Scope: "attributed_devices", Availability: a.Availability, EvidenceBasis: a.EvidenceBasis}
 	if sample {
 		b.DataMode = "sample"

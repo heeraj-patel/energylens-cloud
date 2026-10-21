@@ -43,6 +43,10 @@ func (s Service) DeviceMonthlyWaste(ctx context.Context, owner, home string) ([]
 			if key == "" {
 				key = "device:" + d.DeviceID
 			}
+			// Standby tips are electric; a gas appliance's figure never counts.
+			if d.Allocation.Fuel != "" && d.Allocation.Fuel != "electricity" {
+				continue
+			}
 			waste, ok := d.Allocation.WasteCost.(money)
 			if !ok {
 				continue

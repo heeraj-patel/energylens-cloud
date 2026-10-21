@@ -66,17 +66,9 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 		return byBucket, period, nil
 	}
 	electricity := "electricity"
-	probe := interval{Start: buckets[0].Start, End: buckets[len(buckets)-1].End, Wh: big.NewRat(1, 1), Fuel: &electricity}
-	_, _, tariff, err := readEffectiveTariff(ctx, tx, home, now, []interval{probe})
+	tariff, rateBasis, err := estimateElectricSchedule(ctx, tx, home, now, buckets, national)
 	if err != nil {
 		return nil, nil, err
-	}
-	rateBasis := "home_tariff"
-	if tariff == nil {
-		tariff, rateBasis = national.schedule(ctx), "us_average"
-	}
-	if tariff == nil {
-		rateBasis = ""
 	}
 	for _, d := range devices {
 		var total, allWaste, totalCost, allWasteCost big.Rat
@@ -152,6 +144,25 @@ func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets [
 		period = append(period, deviceAllocation{ApplianceID: d.id, Allocation: a})
 	}
 	return byBucket, period, nil
+}
+
+// estimateElectricSchedule is the electricity schedule that prices estimated
+// rows: the home tariff, else the national rate; rateBasis is empty when neither.
+func estimateElectricSchedule(ctx context.Context, tx pgx.Tx, home string, now time.Time, buckets []bucket, national NationalRate) (*marginalTariff, string, error) {
+	electricity := "electricity"
+	probe := interval{Start: buckets[0].Start, End: buckets[len(buckets)-1].End, Wh: big.NewRat(1, 1), Fuel: &electricity}
+	_, _, tariff, err := readEffectiveTariff(ctx, tx, home, now, []interval{probe})
+	if err != nil {
+		return nil, "", err
+	}
+	rateBasis := "home_tariff"
+	if tariff == nil {
+		tariff, rateBasis = national.schedule(ctx), "us_average"
+	}
+	if tariff == nil {
+		rateBasis = ""
+	}
+	return tariff, rateBasis, nil
 }
 
 // resolutionKWhForPeriod returns the period's usage and waste; waste is not
