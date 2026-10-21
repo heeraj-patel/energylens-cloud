@@ -114,7 +114,7 @@ func (s catalogReader) Search(ctx context.Context, q Search) ([]json.RawMessage,
 	if len(products) == 25 || normalizedModel(q.Model) == "" {
 		return products, nil
 	}
-	candidates, err := s.familyCandidates(ctx, q, ids, 25-len(products))
+	candidates, err := s.familyCandidates(ctx, q, ids, 25-len(products), false)
 	if err != nil {
 		return nil, err
 	}
@@ -201,20 +201,22 @@ type familyCandidate struct{ id, group string }
 // familyCandidates lists documented_variant_family products whose reviewed
 // pattern covers the requested model, skipping exclude. limit <= 0 is no cap.
 // The length filter keeps patterns no longer than the model, as each * takes at least one character.
-func (s catalogReader) familyCandidates(ctx context.Context, q Search, exclude []string, limit int) ([]familyCandidate, error) {
+// With linking set, a non-electric product without a fact matches by its own model pattern.
+func (s catalogReader) familyCandidates(ctx context.Context, q Search, exclude []string, limit int, linking bool) ([]familyCandidate, error) {
 	if normalizedModel(q.Model) == "" {
 		return nil, nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT p.id, f.test_basis->>'matched_model', `+brandKeySQL+`, p.full_model, p.variant, p.region
-	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id
+	rows, err := s.db.Query(ctx, `SELECT p.id, COALESCE(f.test_basis->>'matched_model', CASE WHEN f.id IS NULL THEN p.full_model END), `+brandKeySQL+`, p.full_model, p.variant, p.region
+	    FROM catalog_products p LEFT JOIN active_catalog_facts f ON f.product_id=p.id
+	      AND f.source_kind IN ('oem_family', 'other_official', 'epa_family', 'doe_ccd', 'oem_search', 'manual_research')
 	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND ($2::text='' OR p.fuel=$2)
 	      AND p.match_quality='documented_variant_family'
-	      AND f.source_kind IN ('oem_family', 'other_official', 'epa_family', 'doe_ccd', 'oem_search', 'manual_research')
+	      AND (f.id IS NOT NULL OR ($6::boolean AND p.fuel<>'electricity'))
 	      AND (p.variant IS NULL OR $3::text IS NULL OR lower(p.variant)=lower($3))
 	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
-	      AND length(regexp_replace(upper(f.test_basis->>'matched_model'), '[^A-Z0-9*?]', '', 'g'))<=$5
+	      AND length(regexp_replace(upper(COALESCE(f.test_basis->>'matched_model', p.full_model)), '[^A-Z0-9*?]', '', 'g'))<=$5
 	    ORDER BY CASE WHEN $4::text IS NOT NULL AND lower(p.region)=lower($4) THEN 0 ELSE 1 END,
-	             p.id, f.reviewed_at DESC, f.id`, BrandKeys(q.Brand), q.Fuel, q.Variant, q.Region, len(normalizedModel(q.Model)))
+	             p.id, f.reviewed_at DESC, f.id`, BrandKeys(q.Brand), q.Fuel, q.Variant, q.Region, len(normalizedModel(q.Model)), linking)
 	if err != nil {
 		return nil, err
 	}

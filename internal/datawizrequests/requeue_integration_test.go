@@ -346,3 +346,16 @@ func TestRequeueKeepsOwnerRefreshQueuedBetweenCheckAndInsert(t *testing.T) {
 		t.Fatalf("queue row: %q attempts=%d %v", reason, attempts, err)
 	}
 }
+
+func TestRequeueFactlessGasLinkIsNotRequeuedForever(t *testing.T) {
+	f := newRequeueFixture(t)
+	product := uuid.NewString()
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'dryer','Acme','G1','natural_gas','confirmed_exact','{}')`, product); err != nil {
+		t.Fatal(err)
+	}
+	linked := `{"brand":"Acme","full_model":"G1","fuel":"natural_gas","match_quality":"confirmed_exact"}`
+	id := f.appliance(t, &product, linked, resolved("device", map[string]any{"record_key": "device:acme:g1"}), 2*day)
+	if n := f.run(t); n != 0 || f.queued(t, id) != "" {
+		t.Fatalf("fact-less gas link requeued: %d %q", n, f.queued(t, id))
+	}
+}

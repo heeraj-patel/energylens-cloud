@@ -149,7 +149,7 @@ func TestFamilyCandidatesFollowAsteriskAndQuestionMark(t *testing.T) {
 		"ABCDE1": "ABCDE*", "ABCDE123": "ABCDE*", "ABCDE": "",
 		"FGHIJ1": "FGHIJ?", "FGHIJ12": "", "FGHIJ": "",
 	} {
-		found, err := (catalogReader{pool}).familyCandidates(context.Background(), Search{Brand: "Acme", Model: model, Fuel: "electricity"}, nil, 0)
+		found, err := (catalogReader{pool}).familyCandidates(context.Background(), Search{Brand: "Acme", Model: model, Fuel: "electricity"}, nil, 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}

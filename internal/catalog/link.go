@@ -43,10 +43,11 @@ const hasWattsOrStandbySQL = `(EXISTS (SELECT 1 FROM reviewed_rated_input_facts 
 // as one and resolve to the newest active ENERGY STAR fact. An exact product
 // links with any active fact; a product with an annual fact outranks one with
 // only rated-input or standby facts. Family and trim links need annual facts.
+// Gas-fuel products (not electricity) link without any fact.
 func FindLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, error) {
 	rows, err := db.Query(ctx, `SELECT p.id, `+brandKeySQL+`, p.full_model, p.variant, p.region
 	    FROM catalog_products p LEFT JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
-	    WHERE (f.id IS NOT NULL OR `+hasWattsOrStandbySQL+`)
+	    WHERE (f.id IS NOT NULL OR p.fuel<>'electricity' OR `+hasWattsOrStandbySQL+`)
 	      AND (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1))
 	      AND lower(btrim(p.full_model))=lower(btrim($2)) AND p.fuel=$3 AND p.match_quality='confirmed_exact'
 	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
@@ -83,7 +84,7 @@ func FindLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, err
 	if len(groups) > 1 {
 		return Link{}, false, nil
 	}
-	candidates, err := (catalogReader{db}).familyCandidates(ctx, q, nil, 0)
+	candidates, err := (catalogReader{db}).familyCandidates(ctx, q, nil, 0, true)
 	if err != nil {
 		return Link{}, false, err
 	}
@@ -110,6 +111,7 @@ var nonModelChars = regexp.MustCompile(`[^A-Za-z0-9*?]`)
 type trimCandidate struct {
 	id, group, model string
 	kwh              float64
+	hasKWh           bool
 	epa              bool
 	reviewed         time.Time
 }
@@ -117,6 +119,7 @@ type trimCandidate struct {
 // findTrimLink links the same-brand products whose model starts with q's model
 // minus k trailing characters, for the smallest k that has any. Several
 // products link only when their annual kWh agree; computers and TVs never trim.
+// Gas products need no fact, so several of them cannot agree and never link.
 func findTrimLink(ctx context.Context, db catalogQueries, q Search) (Link, bool, error) {
 	if c := strings.ToLower(strings.TrimSpace(q.Category)); c == "computer" || c == "tv" {
 		return Link{}, false, nil
@@ -128,13 +131,13 @@ func findTrimLink(ctx context.Context, db catalogQueries, q Search) (Link, bool,
 	// A * spans several characters, so only the first position can be tested in SQL.
 	re := "^[" + model[:1] + "*?]"
 	rows, err := db.Query(ctx, `SELECT DISTINCT ON (p.id) p.id, `+brandKeySQL+`, p.full_model, p.variant, p.region,
-	           f.value::float8, f.source_kind IN ('epa_exact','epa_family'), f.reviewed_at
-	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
-	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND p.fuel=$2
+	           f.value::float8, COALESCE(f.source_kind IN ('epa_exact','epa_family'), false), COALESCE(f.reviewed_at, 'epoch'::timestamptz)
+	    FROM catalog_products p LEFT JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
+	    WHERE (f.id IS NOT NULL OR p.fuel<>'electricity') AND (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND p.fuel=$2
 	      AND (p.region IS NULL OR ($3::text IS NOT NULL AND lower(p.region)=lower($3)))
 	      AND ($4::text IS NULL OR p.variant IS NULL OR lower(p.variant)=lower($4))
 	      AND regexp_replace(upper(p.full_model), '[^A-Z0-9*?]', '', 'g') ~ $5
-	    ORDER BY p.id, f.source_kind IN ('epa_exact','epa_family') DESC, f.reviewed_at DESC, f.id`,
+	    ORDER BY p.id, f.source_kind IN ('epa_exact','epa_family') DESC NULLS LAST, f.reviewed_at DESC NULLS LAST, f.id`,
 		BrandKeys(q.Brand), q.Fuel, q.Region, q.Variant, re)
 	if err != nil {
 		return Link{}, false, err
@@ -143,10 +146,14 @@ func findTrimLink(ctx context.Context, db catalogQueries, q Search) (Link, bool,
 	var all []trimCandidate
 	for rows.Next() {
 		var c trimCandidate
+		var kwh *float64
 		var brandKey, full string
 		var variant, region *string
-		if err = rows.Scan(&c.id, &brandKey, &full, &variant, &region, &c.kwh, &c.epa, &c.reviewed); err != nil {
+		if err = rows.Scan(&c.id, &brandKey, &full, &variant, &region, &kwh, &c.epa, &c.reviewed); err != nil {
 			return Link{}, false, err
+		}
+		if kwh != nil {
+			c.kwh, c.hasKWh = *kwh, true
 		}
 		c.group = productGroup(brandKey, full, variant, region)
 		c.model = strings.ToUpper(nonModelChars.ReplaceAllString(full, ""))
@@ -195,6 +202,11 @@ func medianLink(found []trimCandidate) (Link, bool, error) {
 		}
 		return newerFact(found[i], found[j])
 	})
+	for _, c := range found {
+		if !c.hasKWh && len(found) > 1 {
+			return Link{}, false, nil
+		}
+	}
 	lo, hi := found[0].kwh, found[len(found)-1].kwh
 	if len(found) > 1 && (lo <= 0 && hi > lo || lo > 0 && hi/lo > maxKWhSpread) {
 		return Link{}, false, nil

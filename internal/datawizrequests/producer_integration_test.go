@@ -474,3 +474,32 @@ func TestProducerSkipsDeviceLookupOnlyForSameFuelFactLink(t *testing.T) {
 		}
 	}
 }
+
+func TestProducerGasLinkWithoutFactsStillSendsDeviceLookup(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home, product := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	for _, q := range []string{
+		`INSERT INTO users(id) VALUES('` + owner + `')`,
+		`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES('` + home + `','` + owner + `','Home','America/Chicago')`,
+		`INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES('` + product + `','dryer','Acme','Gas-Bare-1','natural_gas','confirmed_exact','{}')`,
+		`INSERT INTO appliances(id,home_id,name,category,identity,catalog_product_id) VALUES('` + uuid.NewString() + `','` + home + `','Dryer','dryer','{"brand":"Acme","full_model":"Gas-Bare-1","fuel":"natural_gas","match_quality":"confirmed_exact"}','` + product + `')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := t.TempDir()
+	if _, err := (Producer{DB: pool, Dir: dir}).RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := filepath.Glob(filepath.Join(dir, "device", "*.json"))
+	found := 0
+	for _, path := range paths {
+		if body, _ := os.ReadFile(path); strings.Contains(string(body), "Gas-Bare-1") {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Fatalf("fact-less gas link device requests: got %d want 1", found)
+	}
+}
