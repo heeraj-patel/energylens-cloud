@@ -86,9 +86,10 @@ type Action struct {
 type TipCategory string
 
 const (
-	TipGeneral TipCategory = "general"
-	TipCare    TipCategory = "care"
-	TipUpgrade TipCategory = "upgrade"
+	TipGeneral                  TipCategory = "general"
+	TipCare                     TipCategory = "care"
+	TipUpgrade                  TipCategory = "upgrade"
+	maxResearchTipsPerAppliance             = 3
 )
 
 func tipCategory(ruleID string) TipCategory {
@@ -208,9 +209,22 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 			Explanation:  "Add the appliance model and reviewed guidance to see whether a specific action applies.",
 			NextQuestion: "confirm_model", BenefitGroup: "information", TipCategory: TipGeneral, EvidenceRefs: []Evidence{}})
 	}
-	for i := range out {
+	attachResearchTips(a, out)
+	return rankActions(ApplyBenefitScenarios(out, a.Scenarios))
+}
+
+func attachResearchTips(a Appliance, actions []Action) {
+	attached := 0
+	seen := make(map[string]struct{})
+	for i := range actions {
 		for _, tip := range a.ResearchTips {
-			if tip.Field != "efficiency_tip" {
+			if attached == maxResearchTipsPerAppliance {
+				return
+			}
+			if tip.Field != "efficiency_tip" || tip.ID == "" {
+				continue
+			}
+			if _, exists := seen[tip.ID]; exists {
 				continue
 			}
 			var value struct {
@@ -218,14 +232,15 @@ func evaluate(a Appliance, gasEnabled bool) []Action {
 				Applicable []string `json:"applicable_categories"`
 				Excluded   []string `json:"excluded_categories"`
 			}
-			if json.Unmarshal(tip.Value, &value) != nil || !tipApplies(value.Context, a.Category, out[i].RuleID, value.Applicable, value.Excluded) {
+			if json.Unmarshal(tip.Value, &value) != nil || !tipApplies(value.Context, a.Category, actions[i].RuleID, value.Applicable, value.Excluded) {
 				continue
 			}
-			out[i].ResearchEvidence = append(out[i].ResearchEvidence, tip)
-			out[i].EvidenceRefs = append(out[i].EvidenceRefs, Evidence{ID: tip.ID, Kind: "datawiz_efficiency_tip", Revision: 1})
+			actions[i].ResearchEvidence = append(actions[i].ResearchEvidence, tip)
+			actions[i].EvidenceRefs = append(actions[i].EvidenceRefs, Evidence{ID: tip.ID, Kind: "datawiz_efficiency_tip", Revision: 1})
+			seen[tip.ID] = struct{}{}
+			attached++
 		}
 	}
-	return rankActions(ApplyBenefitScenarios(out, a.Scenarios))
 }
 
 // Source guidance can support an existing action without asserting that its
