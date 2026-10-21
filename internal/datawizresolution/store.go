@@ -108,5 +108,20 @@ func resolution(ctx context.Context, db pgx.Tx, appliance string, version int64)
 	if errors.Is(err, datawizfacts.ErrNoResolution) {
 		return nil, ErrNotFound
 	}
-	return data, err
+	if err != nil {
+		return nil, err
+	}
+	var fuel string
+	err = db.QueryRow(ctx, `SELECT COALESCE(identity->>'fuel','electricity') FROM appliances WHERE id=$1`, appliance).Scan(&fuel)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	data, ok, err := datawizfacts.ForFuel(fuel, data)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return data, nil
 }

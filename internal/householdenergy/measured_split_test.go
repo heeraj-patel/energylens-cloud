@@ -273,3 +273,16 @@ func TestNationalRatePricesMeteredRowsAndSplit(t *testing.T) {
 		assertSplit(t, a, "0.003896", "0.000104")
 	}
 }
+
+func TestSpecForFuelKeepsGasOffFloorAndTypicalStandby(t *testing.T) {
+	in := splitSpec{StandbyWatts: 3, FloorUSDPerDay: 0.01}
+	if got := specForFuel("electricity", "category_typical", in); got != in {
+		t.Fatalf("electric changed: %+v", got)
+	}
+	if got := specForFuel("natural_gas", "category_typical", in); got != (splitSpec{}) {
+		t.Fatalf("gas typical spec: %+v", got)
+	}
+	if got := specForFuel("natural_gas", "catalog", in); got != (splitSpec{StandbyWatts: 3}) {
+		t.Fatalf("gas catalog spec: %+v", got)
+	}
+}

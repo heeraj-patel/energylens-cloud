@@ -115,3 +115,32 @@ func Resolution(ctx context.Context, db interface {
 	}
 	return body, at, err
 }
+
+// ForFuel withholds electric typicals and floors from a non-electric appliance.
+// A category-typical record is dropped (false); any other loses its waste floor.
+func ForFuel(fuel string, record json.RawMessage) (json.RawMessage, bool, error) {
+	if fuel == "" || fuel == "electricity" {
+		return record, true, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(record, &fields); err != nil {
+		return nil, false, err
+	}
+	var source struct {
+		Tier string `json:"tier"`
+	}
+	if raw, ok := fields["source"]; ok {
+		if err := json.Unmarshal(raw, &source); err != nil {
+			return nil, false, err
+		}
+	}
+	if source.Tier == "category_typical" {
+		return nil, false, nil
+	}
+	if _, ok := fields["waste_floor"]; !ok {
+		return record, true, nil
+	}
+	delete(fields, "waste_floor")
+	out, err := json.Marshal(fields)
+	return out, true, err
+}

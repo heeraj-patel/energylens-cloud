@@ -21,7 +21,7 @@ type splitSpec struct{ StandbyWatts, FloorUSDPerDay float64 }
 
 // readSplitSpecs returns the current datawiz record's split inputs per appliance.
 func readSplitSpecs(ctx context.Context, tx pgx.Tx, home string) (map[string]splitSpec, error) {
-	rows, err := tx.Query(ctx, `SELECT a.id::text,r.record->'values'->>'standby_watts',r.record->'waste_floor'->>'usd_per_day' FROM appliances a JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id::text AND r.record->'appliance_version'=to_jsonb(a.version) WHERE a.home_id=$1 AND a.archived_at IS NULL`, home)
+	rows, err := tx.Query(ctx, `SELECT a.id::text,r.record->'values'->>'standby_watts',r.record->'waste_floor'->>'usd_per_day',COALESCE(a.identity->>'fuel','electricity'),COALESCE(r.record->'source'->>'tier','') FROM appliances a JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id::text AND r.record->'appliance_version'=to_jsonb(a.version) WHERE a.home_id=$1 AND a.archived_at IS NULL`, home)
 	if err != nil {
 		return nil, err
 	}
@@ -30,12 +30,26 @@ func readSplitSpecs(ctx context.Context, tx pgx.Tx, home string) (map[string]spl
 	for rows.Next() {
 		var id string
 		var standby, floor *string
-		if err = rows.Scan(&id, &standby, &floor); err != nil {
+		var fuel, tier string
+		if err = rows.Scan(&id, &standby, &floor, &fuel, &tier); err != nil {
 			return nil, err
 		}
-		specs[id] = splitSpec{positiveFloat(standby), positiveFloat(floor)}
+		specs[id] = specForFuel(fuel, tier, splitSpec{positiveFloat(standby), positiveFloat(floor)})
 	}
 	return specs, rows.Err()
+}
+
+// specForFuel keeps a gas appliance off the electric floor and off typical
+// standby; only a per-model standby figure may split its measured draw.
+func specForFuel(fuel, tier string, s splitSpec) splitSpec {
+	if fuel == "electricity" {
+		return s
+	}
+	s.FloorUSDPerDay = 0
+	if tier == "category_typical" {
+		s.StandbyWatts = 0
+	}
+	return s
 }
 
 func positiveFloat(raw *string) float64 {
