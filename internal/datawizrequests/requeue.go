@@ -35,6 +35,7 @@ type requeueRow struct {
 	pQuality            *string
 	schema, status      string
 	tier, recordKey     string
+	recordURL           string
 	datasetID, basis    string
 	fingerprint         string
 	resolvedAt          time.Time
@@ -138,11 +139,18 @@ func (q Requeuer) enqueue(ctx context.Context, r requeueRow, reason string) (boo
 func (q Requeuer) load(ctx context.Context) ([]requeueRow, error) {
 	rows, err := q.DB.Query(ctx, `SELECT a.id::text,a.home_id::text,a.identity,a.catalog_product_id::text,pr.brand,pr.full_model,pr.match_quality,
   COALESCE(r.record->>'schema_version',''),COALESCE(r.record->>'status',''),COALESCE(r.record->'source'->>'tier',''),
-  COALESCE(r.record->'source'->>'record_key',''),COALESCE(r.record->'source'->>'dataset_id',''),COALESCE(r.record->'values'->>'waste_basis',''),
+  COALESCE(r.record->'source'->>'record_key',''),COALESCE(r.record->'source'->>'url',''),COALESCE(r.record->'source'->>'dataset_id',''),COALESCE(r.record->'values'->>'waste_basis',''),
   COALESCE(r.record->>'source_fingerprint',''),r.resolved_at,
   (SELECT max(t.queued_at) FROM datawiz_resolve_attempts t WHERE t.appliance_id=a.id),
   (SELECT count(*) FROM datawiz_resolve_attempts t WHERE t.appliance_id=a.id AND t.reason='low_tier' AND t.queued_at>a.updated_at),
-  COALESCE((SELECT array_agg('catalog:'||f.product_id||':'||f.revision) FROM active_catalog_facts f WHERE f.product_id=a.catalog_product_id AND f.kind='annual_energy'),'{}')
+  COALESCE((SELECT array_agg(k) FROM (
+    SELECT 'catalog:'||f.product_id||':'||f.revision||' '||f.source_url AS k FROM active_catalog_facts f WHERE f.product_id=a.catalog_product_id AND f.kind='annual_energy'
+    UNION ALL
+    SELECT 'catalog:'||pr.id||':rated:'||u.id||' '||u.source_url FROM reviewed_rated_input_facts u
+     WHERE pr.match_quality='confirmed_exact' AND u.unit='W'
+       AND regexp_replace(upper(u.manufacturer),'[^A-Z0-9]','','g')=regexp_replace(upper(pr.brand),'[^A-Z0-9]','','g')
+       AND regexp_replace(upper(u.model),'[^A-Z0-9]','','g')=regexp_replace(upper(pr.full_model),'[^A-Z0-9]','','g')
+       AND NOT EXISTS (SELECT 1 FROM reviewed_rated_input_revisions r WHERE r.prior_fact_id=u.id)) x),'{}')
  FROM appliances a JOIN homes h ON h.id=a.home_id
  JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id AND r.record->'appliance_version'=to_jsonb(a.version)
  LEFT JOIN catalog_products pr ON pr.id=a.catalog_product_id
@@ -156,7 +164,7 @@ func (q Requeuer) load(ctx context.Context) ([]requeueRow, error) {
 	for rows.Next() {
 		var r requeueRow
 		if err = rows.Scan(&r.applianceID, &r.homeID, &r.identity, &r.catalogID, &r.pBrand, &r.pModel, &r.pQuality,
-			&r.schema, &r.status, &r.tier, &r.recordKey, &r.datasetID, &r.basis, &r.fingerprint, &r.resolvedAt,
+			&r.schema, &r.status, &r.tier, &r.recordKey, &r.recordURL, &r.datasetID, &r.basis, &r.fingerprint, &r.resolvedAt,
 			&r.lastAttempt, &r.lowTierAttempts, &r.activeFacts); err != nil {
 			return nil, err
 		}
@@ -223,5 +231,14 @@ func (r requeueRow) catalogChanged() bool {
 	if r.tier != "catalog" && r.tier != "category_typical" && r.status != "unresolved" {
 		return false
 	}
-	return !slices.Contains(r.activeFacts, r.recordKey)
+	return !r.recordFactActive()
+}
+
+// recordFactActive reports whether the fact behind the stored record is still active.
+// Facts of one product can share a revision number, so the source URL tells them apart.
+func (r requeueRow) recordFactActive() bool {
+	if r.recordURL == "" {
+		return slices.ContainsFunc(r.activeFacts, func(k string) bool { return strings.HasPrefix(k, r.recordKey+" ") })
+	}
+	return slices.Contains(r.activeFacts, r.recordKey+" "+r.recordURL)
 }

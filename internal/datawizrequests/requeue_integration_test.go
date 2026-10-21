@@ -240,3 +240,69 @@ func TestRequeueSchemaWave(t *testing.T) {
 		t.Fatalf("rerun: %d %v", n, err)
 	}
 }
+
+func (f requeueFixture) catalogProduct(t *testing.T, model string) string {
+	t.Helper()
+	id := uuid.NewString()
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'light','Acme',$2,'electricity','confirmed_exact','{}')`, id, model); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func (f requeueFixture) annualFact(t *testing.T, product, kind, url string) string {
+	t.Helper()
+	hash := strings.Repeat("d", 64)
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',1,1) ON CONFLICT DO NOTHING`, hash); err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.NewString()
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',20,'kWh','{}','{}',$4,$5,md5($5)||md5($5),'reviewed_row_manifest','s.json',now(),1,'{}')`, id, product, hash, kind, url); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestRequeueRatedOnlyCatalogRecordIsNotRequeuedForever(t *testing.T) {
+	f := newRequeueFixture(t)
+	product := f.catalogProduct(t, "R1")
+	hash, fact := strings.Repeat("e", 64), uuid.NewString()
+	for _, s := range []string{
+		`INSERT INTO reviewed_rated_input_publications(payload_sha256,key_id,envelope_sha256,imported_by,fact_count) VALUES('` + hash + `','` + hash + `','` + hash + `','test',1)`,
+		`INSERT INTO reviewed_rated_input_facts(id,publication_sha256,category,manufacturer,model,source_kind,matched_model,rated_input_watts,unit,source_url,manufacturer_source_url,source_sha256,review_sha256,reviewer,reviewed_at,usage_basis,source_manifest,fact_json) VALUES('` + fact + `','` + hash + `','light','Acme','R1','oem_rated_input','R1',60,'W','https://example.org/r','https://example.org/r','` + hash + `','` + hash + `','t',now(),'b','m','{}')`,
+	} {
+		if _, err := f.pool.Exec(f.ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	linked := `{"brand":"Acme","full_model":"R1","fuel":"electricity","match_quality":"confirmed_exact"}`
+	id := f.appliance(t, &product, linked, resolved("catalog", map[string]any{"record_key": "catalog:" + product + ":rated:" + fact, "url": "https://example.org/r", "scope": "exact"}), 2*day)
+	if n := f.run(t); n != 0 || f.queued(t, id) != "" {
+		t.Fatalf("watts-only record requeued: %d %q", n, f.queued(t, id))
+	}
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO reviewed_rated_input_revisions(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','r','t',now(),$2)`, uuid.NewString(), hash, fact); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.run(t); n != 1 || f.queued(t, id) != "catalog_change" {
+		t.Fatalf("retracted rated fact must requeue: %d %q", n, f.queued(t, id))
+	}
+}
+
+func TestRequeueDetectsRetractedFactSharingARevision(t *testing.T) {
+	f := newRequeueFixture(t)
+	product := f.catalogProduct(t, "S1")
+	used := f.annualFact(t, product, "epa_exact", "https://example.org/epa")
+	f.annualFact(t, product, "oem_exact", "https://example.org/oem")
+	linked := `{"brand":"Acme","full_model":"S1","fuel":"electricity","match_quality":"confirmed_exact"}`
+	id := f.appliance(t, &product, linked, resolved("catalog", map[string]any{"record_key": "catalog:" + product + ":1", "url": "https://example.org/epa", "scope": "exact"}), 2*day)
+	if n := f.run(t); n != 0 {
+		t.Fatalf("both facts active, queued %d", n)
+	}
+	hash := strings.Repeat("d", 64)
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_fact_changes(id,publication_sha256,prior_fact_id,action,reason,reviewer,reviewed_at,review_sha256) VALUES($1,$2,$3,'retract','r','t',now(),$2)`, uuid.NewString(), hash, used); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.run(t); n != 1 || f.queued(t, id) != "catalog_change" {
+		t.Fatalf("retracted fact with a surviving same-revision fact: %d %q", n, f.queued(t, id))
+	}
+}
