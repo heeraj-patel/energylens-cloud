@@ -188,7 +188,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				fixtureService := designfixture.Service{Homes: account.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID, AllowedUsers: allowed, AllowedHomes: allowedHomes}
 				modules = append(modules, Module{Name: "isolated-mobile-design-fixtures", Mount: fixtureService.Routes})
 			}
-			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			appliances := inventory.Service{Store: inventory.PGStore{Pool: rt.Pool, AnswerApplies: questions.Applies}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "appliance-inventory", Mount: appliances.Routes})
 			categories := energycategories.Service{Store: energycategories.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
 			modules = append(modules, Module{Name: "energy-categories", Mount: categories.Routes})

@@ -44,8 +44,8 @@ type Store interface {
 type PGStore struct{ Pool *pgxpool.Pool }
 
 // CurrentAnswers returns only answers for the appliance's current revision.
-// Prior answers remain immutable evidence, but cannot silently prefill a
-// changed appliance identity.
+// Edits and relinks copy still-applicable answers to the new revision; earlier
+// revisions stay immutable evidence.
 func (s PGStore) CurrentAnswers(ctx context.Context, owner, home, appliance string) ([]Answer, error) {
 	var version int64
 	err := s.Pool.QueryRow(ctx, `SELECT a.version FROM appliances a JOIN homes h ON h.id=a.home_id WHERE a.id=$1 AND a.home_id=$2 AND a.archived_at IS NULL AND h.owner_user_id=$3 AND h.deleted_at IS NULL`, appliance, home, owner).Scan(&version)

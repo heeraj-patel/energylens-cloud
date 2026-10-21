@@ -175,3 +175,9 @@ func questionByIDMapped(raw, canonical, appliance string, version int64, id stri
 	}
 	return questionByID(canonical, appliance, version, id)
 }
+
+// Applies reports whether the question still exists for an appliance of this category.
+func Applies(raw, canonical, questionID string) bool {
+	_, ok := questionByIDMapped(raw, canonical, "", 0, questionID)
+	return ok
+}

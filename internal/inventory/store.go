@@ -113,7 +113,13 @@ type Store interface {
 	Patch(context.Context, string, string, string, PatchInput, int64, string, []byte) (Appliance, error)
 	Archive(context.Context, string, string, string, int64, string, []byte) (Appliance, error)
 }
-type PGStore struct{ Pool *pgxpool.Pool }
+
+// AnswerApplies reports whether a saved usage answer still applies to an appliance
+// of the given raw and canonical category; Patch carries no answer without it.
+type PGStore struct {
+	Pool          *pgxpool.Pool
+	AnswerApplies func(category, canonical, questionID string) bool
+}
 
 const selectAppliance = `SELECT a.id,a.home_id,a.name,a.category,a.room,a.identity,a.version,a.created_at,a.updated_at,a.archived_at,a.nearby_hub_id,a.nearby_ownership_epoch,a.nearby_protocol_device_id FROM appliances a`
 
@@ -430,7 +436,8 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 	if in.Category != nil {
 		a.Category = *in.Category
 	}
-	if _, err = energycategories.Ensure(ctx, tx, a.Category); err != nil {
+	canonical, err := energycategories.Ensure(ctx, tx, a.Category)
+	if err != nil {
 		return Appliance{}, err
 	}
 	if in.Identity != nil {
@@ -461,6 +468,11 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 		return Appliance{}, err
 	}
 	if err = snapshot(ctx, tx, a); err != nil {
+		return Appliance{}, err
+	}
+	if err = carryAnswers(ctx, tx, a, func(question string) bool {
+		return s.AnswerApplies != nil && s.AnswerApplies(a.Category, canonical, question)
+	}); err != nil {
 		return Appliance{}, err
 	}
 	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {
@@ -688,14 +700,41 @@ func (s PGStore) relinkOne(ctx context.Context, id string) (string, error) {
 	if err = snapshot(ctx, tx, a); err != nil {
 		return "", err
 	}
-	// Brand and model are unchanged, so earlier usage answers carry to the new version.
+	// Brand, model and category are unchanged, so every answer carries over.
+	if err = carryAnswers(ctx, tx, a, nil); err != nil {
+		return "", err
+	}
+	return a.Identity.MatchQuality, tx.Commit(ctx)
+}
+
+// carryAnswers copies each question's latest answer from the previous appliance
+// version to the current one. A nil keep carries every question.
+func carryAnswers(ctx context.Context, tx pgx.Tx, a Appliance, keep func(questionID string) bool) error {
+	rows, err := tx.Query(ctx, `SELECT DISTINCT question_id FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND appliance_version=$3`, a.HomeID, a.ID, a.Version-1)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			break
+		}
+		if keep == nil || keep(id) {
+			ids = append(ids, id)
+		}
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil || len(ids) == 0 {
+		return err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at)
 	 SELECT p.home_id,p.appliance_id,$3::bigint,p.question_id,p.question_version,
 	  (SELECT max(m.revision) FROM question_answers m WHERE m.home_id=p.home_id AND m.appliance_id=p.appliance_id AND m.question_id=p.question_id)+1,
 	  p.status,p.answer_value,p.confirmed_at
-	 FROM (SELECT DISTINCT ON (question_id) * FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND appliance_version=$4 ORDER BY question_id,revision DESC) p`, a.HomeID, id, a.Version, a.Version-1)
-	if err != nil {
-		return "", err
-	}
-	return a.Identity.MatchQuality, tx.Commit(ctx)
+	 FROM (SELECT DISTINCT ON (question_id) * FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND appliance_version=$4 AND question_id=ANY($5) ORDER BY question_id,revision DESC) p`, a.HomeID, a.ID, a.Version, a.Version-1, ids)
+	return err
 }
