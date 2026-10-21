@@ -1,9 +1,117 @@
 package recommendation
 
 import (
+	"encoding/json"
+	"energylens.local/cloud/internal/datawizfacts"
+	"fmt"
 	"reflect"
 	"testing"
 )
+
+func researchTip(id, context string) datawizfacts.Fact {
+	return datawizfacts.Fact{
+		ID: id, Route: "efficiency", SubjectKey: "efficiency:" + context,
+		Field: "efficiency_tip", RecordKey: id,
+		Value:  json.RawMessage(fmt.Sprintf(`{"context":%q,"applicable_categories":["hvac"],"text":"source guidance"}`, context)),
+		Source: json.RawMessage(`{"url":"https://example.com/guidance"}`), CollectedAt: "2026-10-21T00:00:00Z",
+	}
+}
+
+func assertTipAttachments(t *testing.T, action Action, want []datawizfacts.Fact) {
+	t.Helper()
+	if len(action.ResearchEvidence) != len(want) {
+		t.Fatalf("research evidence: got %+v, want %+v", action.ResearchEvidence, want)
+	}
+	for i, fact := range want {
+		if !reflect.DeepEqual(action.ResearchEvidence[i], fact) {
+			t.Fatalf("research evidence %d: got %+v, want %+v", i, action.ResearchEvidence[i], fact)
+		}
+	}
+	var refs []Evidence
+	for _, ref := range action.EvidenceRefs {
+		if ref.Kind == "datawiz_efficiency_tip" {
+			refs = append(refs, ref)
+		}
+	}
+	if len(refs) != len(want) {
+		t.Fatalf("tip refs: got %+v, want %d", refs, len(want))
+	}
+	for i, fact := range want {
+		if refs[i] != (Evidence{ID: fact.ID, Kind: "datawiz_efficiency_tip", Revision: 1}) {
+			t.Fatalf("tip ref %d: %+v", i, refs[i])
+		}
+	}
+}
+
+func TestResearchTipAttachmentBoundaryAndFiltering(t *testing.T) {
+	contexts := []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"}
+	valid := make([]datawizfacts.Fact, len(contexts))
+	for i, context := range contexts {
+		valid[i] = researchTip(fmt.Sprintf("tip-%d", i), context)
+	}
+	for _, count := range []int{0, 2, 3, 7} {
+		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
+			tips := append([]datawizfacts.Fact(nil), valid[:count]...)
+			a := Appliance{ID: "hvac-1", Category: "hvac", Fuel: "electricity", Identity: "unresolved", ResearchTips: tips}
+			before := append([]datawizfacts.Fact(nil), tips...)
+			for _, evaluate := range []func(Appliance) []Action{Evaluate, EvaluateGasEnabled} {
+				got := evaluate(a)
+				if len(got) != 1 || got[0].RuleID != "general.gather_information" || got[0].State != "candidate" || got[0].NextQuestion != "confirm_model" || got[0].SavingsAmount != nil {
+					t.Fatalf("fallback changed: %+v", got)
+				}
+				want := valid[:min(count, maxResearchTipsPerAppliance)]
+				assertTipAttachments(t, got[0], want)
+			}
+			if !reflect.DeepEqual(tips, before) {
+				t.Fatal("input tips changed")
+			}
+		})
+	}
+	invalidField := researchTip("other-field", "night")
+	invalidField.Field = "other"
+	malformed := researchTip("malformed", "night")
+	malformed.Value = json.RawMessage(`{`)
+	excluded := researchTip("excluded", "night")
+	excluded.Value = json.RawMessage(`{"context":"night","applicable_categories":["hvac"],"excluded_categories":["hvac"]}`)
+	mismatchedCategory := researchTip("mismatched-category", "night")
+	mismatchedCategory.Value = json.RawMessage(`{"context":"night","applicable_categories":["television"]}`)
+	mismatchedContext := researchTip("mismatched-context", "unsupported")
+	emptyID := researchTip("", "night")
+	tips := []datawizfacts.Fact{invalidField, malformed, excluded, mismatchedCategory, mismatchedContext, emptyID, valid[0], valid[0], valid[1], valid[2], valid[3]}
+	a := Appliance{ID: "hvac-1", Category: "hvac", Fuel: "electricity", ResearchTips: tips}
+	before := append([]datawizfacts.Fact(nil), tips...)
+	got := Evaluate(a)
+	assertTipAttachments(t, got[0], valid[:3])
+	if !reflect.DeepEqual(tips, before) {
+		t.Fatal("input tips changed")
+	}
+}
+
+func TestResearchTipAttachmentPreservesActionEvidence(t *testing.T) {
+	tips := []datawizfacts.Fact{researchTip("one", "habits"), researchTip("two", "appliance_type"), researchTip("three", "upgrades"), researchTip("four", "maintenance")}
+	a := Appliance{ID: "heat-pump", Category: "heat_pump", Fuel: "electricity", Identity: "confirmed_exact", ResearchTips: tips,
+		Facts: []Evidence{{ID: "energy", Kind: "annual_energy", Revision: 4}}, Tariff: &Evidence{ID: "rate", Kind: "tariff", Revision: 5}}
+	got := Evaluate(a)
+	if len(got) != 1 || got[0].State != "active" || got[0].NextQuestion != "" || got[0].SavingsAmount != nil {
+		t.Fatalf("active action changed: %+v", got)
+	}
+	assertTipAttachments(t, got[0], tips[:3])
+	if len(got[0].EvidenceRefs) != 5 || got[0].EvidenceRefs[0] != a.Facts[0] || got[0].EvidenceRefs[1] != *a.Tariff {
+		t.Fatalf("ordinary evidence changed: %+v", got[0].EvidenceRefs)
+	}
+}
+
+func TestResearchTipAttachmentSharesBudgetAcrossActions(t *testing.T) {
+	tips := []datawizfacts.Fact{researchTip("one", "habits"), researchTip("two", "habits"), researchTip("three", "habits"), researchTip("four", "habits")}
+	a := Appliance{Category: "hvac", ResearchTips: tips}
+	actions := []Action{{RuleID: "first", EvidenceRefs: []Evidence{{ID: "ordinary", Kind: "annual_energy", Revision: 1}}}, {RuleID: "second", EvidenceRefs: []Evidence{}}}
+	attachResearchTips(a, actions)
+	assertTipAttachments(t, actions[0], tips[:3])
+	assertTipAttachments(t, actions[1], nil)
+	if len(actions[0].EvidenceRefs) != 4 || actions[0].EvidenceRefs[0].ID != "ordinary" {
+		t.Fatalf("first action refs changed: %+v", actions[0].EvidenceRefs)
+	}
+}
 
 func TestRulesUseUniqueRegistryCategoryMapping(t *testing.T) {
 	light := Appliance{ID: "light-1", Category: "light", categoryKey: "light", Fuel: "electricity", Identity: "unresolved", ruleCategoryKeys: map[string]string{"lighting": "light"}, ruleKeyCounts: map[string]int{"light": 1}}

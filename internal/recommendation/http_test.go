@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"energylens.local/cloud/internal/datawizfacts"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -19,9 +21,66 @@ type stubStore struct {
 	owner, home string
 }
 
+type researchStubStore struct {
+	*stubStore
+	tips []datawizfacts.Fact
+}
+
+func (s *researchStubStore) Research(context.Context) ([]datawizfacts.Fact, error) {
+	return s.tips, nil
+}
+
 func (s *stubStore) Current(_ context.Context, owner, home string, _ time.Time) ([]Appliance, error) {
 	s.owner, s.home = owner, home
 	return s.appliances, s.err
+}
+
+func TestRecommendationsRouteCapsEachApplianceAndKeepsResearchFacts(t *testing.T) {
+	contexts := []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"}
+	tips := make([]datawizfacts.Fact, len(contexts))
+	for i, context := range contexts {
+		tips[i] = researchTip(uuid.NewString(), context)
+	}
+	store := &researchStubStore{stubStore: &stubStore{appliances: []Appliance{
+		{ID: uuid.NewString(), Category: "hvac", Fuel: "electricity", ResearchTips: tips},
+		{ID: uuid.NewString(), Category: "hvac", Fuel: "electricity", ResearchTips: tips},
+	}}, tips: tips}
+	r := chi.NewRouter()
+	Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return "owner" }}.Routes(r)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/homes/"+uuid.NewString()+"/recommendations", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("response: %d", w.Code)
+	}
+	var body struct {
+		Actions  []Action            `json:"actions"`
+		Research []datawizfacts.Fact `json:"research_facts"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Actions) != 2 || len(body.Research) != len(tips) {
+		t.Fatalf("actions/research counts: %d/%d", len(body.Actions), len(body.Research))
+	}
+	wantDevices := map[string]bool{}
+	for _, appliance := range store.appliances {
+		wantDevices[appliance.ID] = true
+	}
+	for _, action := range body.Actions {
+		if !wantDevices[action.ApplianceID] {
+			t.Fatalf("unexpected or repeated device: %s", action.ApplianceID)
+		}
+		delete(wantDevices, action.ApplianceID)
+		assertTipAttachments(t, action, tips[:3])
+	}
+	if len(wantDevices) != 0 {
+		t.Fatalf("missing devices: %+v", wantDevices)
+	}
+	for i, fact := range tips {
+		if body.Research[i].ID != fact.ID || string(body.Research[i].Value) != string(fact.Value) || string(body.Research[i].Source) != string(fact.Source) {
+			t.Fatalf("research fact %d changed: %+v", i, body.Research[i])
+		}
+	}
 }
 
 func TestRecommendationsRouteUsesOwnerAndNeverPromisesSavings(t *testing.T) {
