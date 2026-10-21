@@ -12,9 +12,9 @@ import (
 type Link struct{ ProductID, MatchQuality string }
 
 // productGroup identifies one product for linking: duplicates share brand key,
-// model, variant and region.
+// model, variant and region. The model keeps each * position, as Datawiz keys do.
 func productGroup(brandKey, model string, variant, region *string) string {
-	return strings.Join([]string{CanonicalBrandKey(brandKey), normalizedModel(model), lowerOrEmpty(variant), lowerOrEmpty(region)}, "|")
+	return strings.Join([]string{CanonicalBrandKey(brandKey), strings.ToUpper(nonModelChars.ReplaceAllString(model, "")), lowerOrEmpty(variant), lowerOrEmpty(region)}, "|")
 }
 
 func lowerOrEmpty(s *string) string {

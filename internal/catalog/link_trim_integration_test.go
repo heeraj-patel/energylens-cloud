@@ -127,3 +127,14 @@ func TestFindLinkDocumentedFamilyFromDatawizSources(t *testing.T) {
 		}
 	}
 }
+
+func TestFindLinkTrimKeepsExactAndWildcardProductsApart(t *testing.T) {
+	pool := migratedCatalogPool(t, "catalog_trim_")
+	seedTrim(t, pool,
+		trimSeed{brand: "Zenith", model: "ABC1234", quality: "confirmed_exact", source: "epa_exact", kwh: 700, age: time.Hour},
+		trimSeed{brand: "Zenith", model: "ABC1234*", quality: "documented_variant_family", source: "epa_family", kwh: 400},
+	)
+	if link, found, err := FindLink(context.Background(), pool, Search{Brand: "Zenith", Model: "ABC123", Fuel: "electricity", Category: "refrigerator"}); err != nil || found {
+		t.Fatalf("exact and wildcard products that disagree must not link: %+v found=%v err=%v", link, found, err)
+	}
+}
