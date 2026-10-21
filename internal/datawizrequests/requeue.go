@@ -49,6 +49,10 @@ func QueueWithAttempt(ctx context.Context, tx pgx.Tx, applianceID, homeID, reaso
 	if err := Queue(ctx, tx, applianceID, reason); err != nil {
 		return time.Time{}, err
 	}
+	return recordAttempt(ctx, tx, applianceID, homeID, reason)
+}
+
+func recordAttempt(ctx context.Context, tx pgx.Tx, applianceID, homeID, reason string) (time.Time, error) {
 	var at time.Time
 	if err := tx.QueryRow(ctx, `SELECT queued_at FROM datawiz_resolve_queue WHERE appliance_id=$1`, applianceID).Scan(&at); err != nil {
 		return time.Time{}, err
@@ -126,11 +130,12 @@ func (q Requeuer) enqueue(ctx context.Context, r requeueRow, reason string) (boo
 		return false, err
 	}
 	defer tx.Rollback(ctx)
-	var queued bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM datawiz_resolve_queue WHERE appliance_id=$1)`, r.applianceID).Scan(&queued); err != nil || queued {
+	// An owner refresh queued meanwhile keeps its row, so insert only when absent.
+	tag, err := tx.Exec(ctx, `INSERT INTO datawiz_resolve_queue(appliance_id,reason) VALUES($1,$2) ON CONFLICT(appliance_id) DO NOTHING`, r.applianceID, reason)
+	if err != nil || tag.RowsAffected() == 0 {
 		return false, err
 	}
-	if _, err = QueueWithAttempt(ctx, tx, r.applianceID, r.homeID, reason); err != nil {
+	if _, err = recordAttempt(ctx, tx, r.applianceID, r.homeID, reason); err != nil {
 		return false, err
 	}
 	return true, tx.Commit(ctx)

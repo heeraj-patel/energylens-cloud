@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -304,5 +306,43 @@ func TestRequeueDetectsRetractedFactSharingARevision(t *testing.T) {
 	}
 	if n := f.run(t); n != 1 || f.queued(t, id) != "catalog_change" {
 		t.Fatalf("retracted fact with a surviving same-revision fact: %d %q", n, f.queued(t, id))
+	}
+}
+
+type queueRace struct {
+	admin *pgxpool.Pool
+	id    string
+	once  sync.Once
+}
+
+func (r *queueRace) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	if strings.Contains(data.SQL, "INSERT INTO datawiz_resolve_queue") {
+		r.once.Do(func() {
+			r.admin.Exec(ctx, `INSERT INTO datawiz_resolve_queue(appliance_id,reason,queued_at) VALUES($1,'owner_refresh',now()-interval '1 hour')`, r.id)
+		})
+	}
+	return ctx
+}
+
+func (r *queueRace) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+func TestRequeueKeepsOwnerRefreshQueuedBetweenCheckAndInsert(t *testing.T) {
+	f := newRequeueFixture(t)
+	id := f.appliance(t, nil, plainIdentity, resolved("category_typical", nil), 40*day)
+	cfg := f.pool.Config()
+	cfg.ConnConfig.Tracer = &queueRace{admin: f.pool, id: id}
+	traced, err := pgxpool.NewWithConfig(f.ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traced.Close()
+	n, err := (Requeuer{DB: traced, Now: f.q.Now}).RunOnce(f.ctx)
+	if err != nil || n != 0 {
+		t.Fatalf("requeuer must yield to the owner refresh: %d %v", n, err)
+	}
+	var reason string
+	var attempts int
+	if err = f.pool.QueryRow(f.ctx, `SELECT reason,(SELECT count(*) FROM datawiz_resolve_attempts WHERE appliance_id=$1) FROM datawiz_resolve_queue WHERE appliance_id=$1`, id).Scan(&reason, &attempts); err != nil || reason != "owner_refresh" || attempts != 0 {
+		t.Fatalf("queue row: %q attempts=%d %v", reason, attempts, err)
 	}
 }
