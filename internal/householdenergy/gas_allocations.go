@@ -227,47 +227,177 @@ func applyGas(a *allocation, g gasAppliance, f gasFigures, rate *GasRate) {
 	}
 }
 
-// gasDeviceRows are the non-metered gas appliances' estimated rows, per
-// bucket and for the period. Metered gas appliances are handled by decorate.
-func gasDeviceRows(ctx context.Context, tx pgx.Tx, gc *gasContext, home string, buckets []bucket, now time.Time, national NationalRate) ([][]deviceAllocation, []deviceAllocation, error) {
+// gasDeviceRows are the estimated gas rows, per bucket and for the period:
+// whole rows for non-metered appliances, and for metered ones only the buckets
+// with no measured row (standby fallback), merged into the measured period row
+// in existing, which is updated in place.
+func gasDeviceRows(ctx context.Context, tx pgx.Tx, gc *gasContext, home string, buckets []bucket, now time.Time, national NationalRate, existing []deviceAllocation) ([][]deviceAllocation, []deviceAllocation, error) {
 	byBucket := make([][]deviceAllocation, len(buckets))
 	period := []deviceAllocation{}
-	if gc == nil || len(buckets) == 0 {
-		return byBucket, period, nil
-	}
-	var unmetered []gasAppliance
-	for _, g := range gc.appliances {
-		if !g.metered {
-			unmetered = append(unmetered, g)
-		}
-	}
-	if len(unmetered) == 0 {
+	if gc == nil || len(buckets) == 0 || len(gc.appliances) == 0 {
 		return byBucket, period, nil
 	}
 	tariff, rateBasis, err := estimateElectricSchedule(ctx, tx, home, now, buckets, national)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, g := range unmetered {
+	for _, g := range gc.appliances {
 		var total gasFigures
+		var fallback fallbackSum
 		for bi, b := range buckets {
+			if g.metered && hasDeviceRow(buckets[bi].DeviceAllocations, g.id) {
+				continue
+			}
 			f := g.figures(b.Start, b.End, tariff)
 			if f.empty() {
 				continue
 			}
 			total.add(f)
-			byBucket[bi] = append(byBucket[bi], deviceAllocation{ApplianceID: g.id, Allocation: g.estimatedAllocation(f, tariff, rateBasis, gc.rate)})
+			a := g.estimatedAllocation(f, tariff, rateBasis, gc.rate)
+			fallback.add(a)
+			byBucket[bi] = append(byBucket[bi], deviceAllocation{ApplianceID: g.id, Allocation: a})
 		}
-		if !total.empty() {
+		if total.empty() {
+			continue
+		}
+		if !g.metered {
 			period = append(period, deviceAllocation{ApplianceID: g.id, Allocation: g.estimatedAllocation(total, tariff, rateBasis, gc.rate)})
+			continue
+		}
+		var all gasFigures
+		for _, b := range buckets {
+			all.add(g.gasOnly(b.Start, b.End))
+		}
+		merged := false
+		for j := range existing {
+			if existing[j].ApplianceID == g.id {
+				fallback.mergeInto(&existing[j].Allocation, true, rateBasis)
+				applyGas(&existing[j].Allocation, g, all, gc.rate)
+				merged = true
+			}
+		}
+		if !merged {
+			a := allocation{Availability: "partial", EvidenceBasis: "estimated"}
+			fallback.mergeInto(&a, false, rateBasis)
+			applyGas(&a, g, all, gc.rate)
+			period = append(period, deviceAllocation{ApplianceID: g.id, Allocation: a})
 		}
 	}
 	return byBucket, period, nil
 }
 
+func hasDeviceRow(rows []deviceAllocation, id string) bool {
+	for _, r := range rows {
+		if r.ApplianceID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// fallbackSum adds up the estimated bucket rows of one metered gas appliance,
+// so its period row equals the sum of the bucket rows it shows.
+type fallbackSum struct {
+	energy, useful, waste, unclass           *big.Rat
+	cost, usefulCost, wasteCost, unclassCost *big.Rat
+	standbyCost                              *big.Rat
+	currency                                 string
+	unpriced                                 bool
+}
+
+func ratOf(q any) *big.Rat {
+	switch v := q.(type) {
+	case *quantity:
+		if v != nil {
+			return mustDecimal(v.Value)
+		}
+	case money:
+		return mustDecimal(v.Amount)
+	}
+	return nil
+}
+
+func (s *fallbackSum) add(a allocation) {
+	if a.Energy == nil {
+		return
+	}
+	addRat(&s.energy, ratOf(a.Energy))
+	addRat(&s.useful, ratOf(a.UsefulEnergy))
+	addRat(&s.waste, ratOf(a.WasteEnergy))
+	addRat(&s.unclass, ratOf(a.UnclassifiedEnergy))
+	m, ok := a.Cost.(money)
+	if !ok {
+		s.unpriced = true
+		return
+	}
+	s.currency = m.Currency
+	addRat(&s.cost, ratOf(a.Cost))
+	addRat(&s.usefulCost, ratOf(a.UsefulCost))
+	addRat(&s.wasteCost, ratOf(a.WasteCost))
+	addRat(&s.unclassCost, ratOf(a.UnclassifiedCost))
+	addRat(&s.standbyCost, ratOf(a.StandbyCost))
+}
+
+// mergeInto adds the fallback to a period row; fields the row lacks count as
+// zero, and cost fields are dropped when either part has no electric price.
+func (s fallbackSum) mergeInto(p *allocation, measured bool, rateBasis string) {
+	if s.energy == nil {
+		return
+	}
+	sum := func(old any, add *big.Rat) *big.Rat {
+		var out *big.Rat
+		addRat(&out, ratOf(old))
+		addRat(&out, add)
+		return out
+	}
+	qty := func(r *big.Rat) *quantity {
+		if r == nil {
+			return nil
+		}
+		return &quantity{Value: r.FloatString(12), Unit: "kWh"}
+	}
+	p.Energy = qty(sum(p.Energy, s.energy))
+	if r := sum(p.UnclassifiedEnergy, s.unclass); r != nil {
+		p.UnclassifiedEnergy = qty(r)
+	}
+	if r := sum(p.UsefulEnergy, s.useful); r != nil {
+		p.UsefulEnergy = qty(r)
+	}
+	if r := sum(p.WasteEnergy, s.waste); r != nil {
+		p.WasteEnergy = qty(r)
+		if p.WasteBasis == "" {
+			p.WasteBasis = "rated_standby"
+		}
+	}
+	if p.RateBasis == "" {
+		p.RateBasis = rateBasis
+	}
+	p.Availability = "partial"
+	p.EvidenceBasis = "estimated"
+	if measured {
+		p.EvidenceBasis = "mixed"
+	}
+	cur, isMoney := p.Cost.(money)
+	if s.unpriced || s.currency == "" || measured && (!isMoney || cur.Currency != s.currency) {
+		p.Cost, p.UsefulCost, p.WasteCost, p.UnclassifiedCost, p.StandbyCost = nil, nil, nil, nil, nil
+		return
+	}
+	set := func(old any, add *big.Rat) any {
+		if r := sum(old, add); r != nil {
+			return money{Amount: r.FloatString(6), Currency: s.currency}
+		}
+		return old
+	}
+	p.Cost = set(p.Cost, s.cost)
+	p.UsefulCost = set(p.UsefulCost, s.usefulCost)
+	p.WasteCost = set(p.WasteCost, s.wasteCost)
+	p.UnclassifiedCost = set(p.UnclassifiedCost, s.unclassCost)
+	p.StandbyCost = set(p.StandbyCost, s.standbyCost)
+}
+
 // decorate adds gas fields to the measured rows of metered gas appliances.
 // Their electric figures stay measured; gas is never metered, so the period row
-// carries gas for every requested bucket, not only the measured ones.
+// carries gas for every requested bucket. gasDeviceRows fills unmeasured buckets.
 func (gc *gasContext) decorate(buckets []bucket, rows [][]deviceAllocation, periodRows []deviceAllocation) {
 	if gc == nil {
 		return

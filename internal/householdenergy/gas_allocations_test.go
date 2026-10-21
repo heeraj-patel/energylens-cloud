@@ -408,3 +408,169 @@ func TestDecorateProratesMeteredGasOverFullPeriod(t *testing.T) {
 		t.Fatalf("bucket gas_cost = %s", got)
 	}
 }
+
+// meteredGasFallback runs decorate and gasDeviceRows over 30 day buckets where
+// only the first 10 carry a measured row, as the dashboard does.
+func meteredGasFallback(t *testing.T, est gasestimate.Estimate, measured func(i int) allocation) ([]bucket, []deviceAllocation) {
+	t.Helper()
+	h := newGasHarness(t, nil)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	buckets := make([]bucket, 30)
+	rows := make([][]deviceAllocation, 30)
+	var period allocation
+	for i := range buckets {
+		buckets[i] = bucket{Start: start.AddDate(0, 0, i), End: start.AddDate(0, 0, i+1)}
+		if i < 10 {
+			a := measured(i)
+			rows[i] = []deviceAllocation{{ApplianceID: "a", Allocation: a}}
+			period = sumMeasuredRows(period, a)
+		}
+	}
+	g := gasAppliance{id: "a", fuel: "natural_gas", metered: true, estimate: est}
+	gc := &gasContext{appliances: []gasAppliance{g}, rate: &GasRate{USDPerTherm: big.NewRat(2, 1), Basis: "static"}}
+	periodRows := []deviceAllocation{{ApplianceID: "a", Allocation: period}, {ApplianceID: "e", Allocation: allocation{Energy: &quantity{Value: "1.000000000000", Unit: "kWh"}}}}
+	gc.decorate(buckets, rows, periodRows)
+	for i := range buckets {
+		buckets[i].DeviceAllocations = rows[i]
+	}
+	tx, err := h.pool.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	byBucket, extra, err := gasDeviceRows(h.ctx, tx, gc, h.home, buckets, time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC), h.svc.NationalRate, periodRows)
+	if err != nil || len(extra) != 0 {
+		t.Fatalf("rows: %+v %v", extra, err)
+	}
+	for i := range buckets {
+		buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, byBucket[i]...)
+	}
+	if e := periodRows[1].Allocation; e.Energy.Value != "1.000000000000" || e.EvidenceBasis != "" || e.Fuel != "" {
+		t.Fatalf("electric row changed: %+v", e)
+	}
+	return buckets, periodRows[:1]
+}
+
+// sumMeasuredRows adds measured energy, cost and waste of one bucket to the period row.
+func sumMeasuredRows(p, a allocation) allocation {
+	var out allocation
+	out.Availability, out.EvidenceBasis, out.WasteBasis, out.RateBasis = a.Availability, a.EvidenceBasis, a.WasteBasis, a.RateBasis
+	add := func(x, y any) *big.Rat {
+		var s *big.Rat
+		addRat(&s, ratOf(x))
+		addRat(&s, ratOf(y))
+		return s
+	}
+	q := func(r *big.Rat) *quantity {
+		if r == nil {
+			return nil
+		}
+		return &quantity{Value: r.FloatString(12), Unit: "kWh"}
+	}
+	m := func(r *big.Rat) any {
+		if r == nil {
+			return nil
+		}
+		return money{Amount: r.FloatString(6), Currency: "USD"}
+	}
+	out.Energy = q(add(p.Energy, a.Energy))
+	out.Cost = m(add(p.Cost, a.Cost))
+	if w := add(p.WasteEnergy, a.WasteEnergy); w != nil {
+		out.WasteEnergy, out.UsefulEnergy = q(w), q(add(p.UsefulEnergy, a.UsefulEnergy))
+		out.WasteCost, out.UsefulCost = m(add(p.WasteCost, a.WasteCost)), m(add(p.UsefulCost, a.UsefulCost))
+	} else {
+		out.UnclassifiedEnergy = out.Energy
+		out.UnclassifiedCost = out.Cost
+	}
+	return out
+}
+
+func rowSum(buckets []bucket, id string, field func(allocation) any) float64 {
+	var sum float64
+	for _, b := range buckets {
+		for _, d := range b.DeviceAllocations {
+			if d.ApplianceID == id {
+				if r := ratOf(field(d.Allocation)); r != nil {
+					f, _ := r.Float64()
+					sum += f
+				}
+			}
+		}
+	}
+	return sum
+}
+
+func countRows(buckets []bucket, id string) (n int) {
+	for _, b := range buckets {
+		if hasDeviceRow(b.DeviceAllocations, id) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestMeteredGasBoilerUnmeasuredBucketsFallBackToRatedStandby(t *testing.T) {
+	therms, kwh, elec, standby := 365.0, 365.0*29.3, 87.6, 87.6
+	est := gasestimate.Estimate{GasTherms: &therms, GasKWhEq: &kwh, ElectricKWh: &elec, StandbyKWh: &standby}
+	buckets, period := meteredGasFallback(t, est, func(int) allocation {
+		return allocation{Energy: &quantity{Value: "0.500000000000", Unit: "kWh"}, Cost: money{Amount: "0.091550", Currency: "USD"},
+			UsefulEnergy: &quantity{Value: "0.400000000000", Unit: "kWh"}, WasteEnergy: &quantity{Value: "0.100000000000", Unit: "kWh"},
+			UsefulCost: money{Amount: "0.073240", Currency: "USD"}, WasteCost: money{Amount: "0.018310", Currency: "USD"},
+			WasteBasis: "standby", RateBasis: "us_average", Availability: "partial", EvidenceBasis: "measured"}
+	})
+	if got := countRows(buckets, "a"); got != 30 {
+		t.Fatalf("bucket rows = %d, want 30", got)
+	}
+	for i, b := range buckets {
+		a := b.DeviceAllocations[0].Allocation
+		if i < 10 && (a.WasteBasis != "standby" || a.Energy.Value != "0.500000000000" || a.GasCost == nil) {
+			t.Fatalf("measured bucket %d changed: %+v", i, a)
+		}
+		if i >= 10 && (a.WasteBasis != "rated_standby" || a.EvidenceBasis != "estimated" || a.StandbyCost == nil || a.GasCost == nil) {
+			t.Fatalf("unmeasured bucket %d: %+v", i, a)
+		}
+	}
+	p := period[0].Allocation
+	near(t, "period waste", ratFloat(p.WasteEnergy), 10*0.1+20*0.24, 1e-9)
+	near(t, "period waste = bucket sum", ratFloat(p.WasteEnergy), rowSum(buckets, "a", func(a allocation) any { return a.WasteEnergy }), 1e-9)
+	near(t, "period energy", ratFloat(p.Energy), 10*0.5+20*0.24, 1e-9)
+	near(t, "period useful+waste", ratFloat(p.UsefulEnergy)+ratFloat(p.WasteEnergy), ratFloat(p.Energy), 1e-9)
+	near(t, "period cost", ratFloat(p.Cost), rowSum(buckets, "a", func(a allocation) any { return a.Cost }), 1e-5)
+	near(t, "period waste cost", ratFloat(p.WasteCost), rowSum(buckets, "a", func(a allocation) any { return a.WasteCost }), 1e-5)
+	near(t, "period standby cost", ratFloat(p.StandbyCost), 20*0.24*0.1831, 1e-5)
+	near(t, "period gas_cost", ratFloat(p.GasCost), 60, 1e-9)
+	near(t, "gas_cost sums", ratFloat(p.GasCost), rowSum(buckets, "a", func(a allocation) any { return a.GasCost }), 1e-5)
+	near(t, "total cost", ratFloat(p.TotalCost), ratFloat(p.Cost)+60, 1e-5)
+	if p.WasteBasis != "standby" || p.EvidenceBasis != "mixed" {
+		t.Fatalf("period marks: %+v", p)
+	}
+}
+
+func TestMeteredGasWithoutStandbyFigureGetsEstimateButNoWaste(t *testing.T) {
+	therms, kwh, elec := 365.0, 365.0*29.3, 36.5
+	est := gasestimate.Estimate{GasTherms: &therms, GasKWhEq: &kwh, ElectricKWh: &elec}
+	buckets, period := meteredGasFallback(t, est, func(int) allocation {
+		return allocation{Energy: &quantity{Value: "0.500000000000", Unit: "kWh"}, Cost: money{Amount: "0.091550", Currency: "USD"}, Availability: "partial", EvidenceBasis: "measured"}
+	})
+	if got := countRows(buckets, "a"); got != 30 {
+		t.Fatalf("bucket rows = %d, want 30", got)
+	}
+	for i := 10; i < 30; i++ {
+		a := buckets[i].DeviceAllocations[0].Allocation
+		if a.Energy == nil || a.GasCost == nil || a.WasteEnergy != nil || a.WasteBasis != "" || a.StandbyCost != nil {
+			t.Fatalf("unmeasured bucket %d: %+v", i, a)
+		}
+	}
+	p := period[0].Allocation
+	if p.WasteEnergy != nil || p.WasteBasis != "" {
+		t.Fatalf("period waste without a standby figure: %+v", p)
+	}
+	near(t, "period energy", ratFloat(p.Energy), 10*0.5+20*0.1, 1e-9)
+	near(t, "period unclassified", ratFloat(p.UnclassifiedEnergy), ratFloat(p.Energy), 1e-9)
+	near(t, "gas_cost sums", ratFloat(p.GasCost), rowSum(buckets, "a", func(a allocation) any { return a.GasCost }), 1e-5)
+}
+
+func ratFloat(v any) float64 {
+	f, _ := ratOf(v).Float64()
+	return f
+}

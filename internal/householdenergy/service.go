@@ -442,7 +442,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, resolvedBuckets[i]...)
 	}
 	sampleDeviceRows = append(sampleDeviceRows, resolvedPeriod...)
-	gasBuckets, gasPeriod, err := gasDeviceRows(ctx, tx, gas, home, buckets, now, s.NationalRate)
+	gasBuckets, gasPeriod, err := gasDeviceRows(ctx, tx, gas, home, buckets, now, s.NationalRate, sampleDeviceRows)
 	if err != nil {
 		return nil, err
 	}
