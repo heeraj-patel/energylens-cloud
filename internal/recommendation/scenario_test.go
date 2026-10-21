@@ -45,3 +45,14 @@ func TestApplyBenefitScenariosRequiresExplicitComparableEvidence(t *testing.T) {
 		t.Fatalf("candidate claimed benefit: %+v", candidate[0])
 	}
 }
+
+func TestScenarioBenefitAcceptsHalfUnitUsage(t *testing.T) {
+	usage, tariff := Evidence{ID: "usage", Kind: "confirmed_answer", Revision: 1}, Evidence{ID: "tariff", Kind: "tariff", Revision: 1}
+	action := Action{ApplianceID: "a", RuleID: "r", EvidenceRefs: []Evidence{{ID: "base", Kind: "cycle_energy", Revision: 1}, usage, tariff}, usageUnit: "cycles_per_week", usageFrequency: 1.5}
+	scenario := BenefitScenario{ApplianceID: "a", RuleID: "r", BaselineEnergy: "2", AlternativeEnergy: "1", EnergyUnit: "kWh/use",
+		UsagePerWeek: 1.5, RateUSDPerKWh: "0.25", BaselineRef: Evidence{ID: "base", Kind: "reviewed_usage_fact", Revision: 1},
+		AlternativeRef: Evidence{ID: "alt", Kind: "reviewed_usage_fact", Revision: 1}, UsageRef: usage, TariffRef: tariff, SourceURL: "https://example.org/s"}
+	if got, ok := scenarioBenefit(action, scenario); !ok || got != "19.500000" {
+		t.Fatalf("1.5 cycles/week: %q %t", got, ok)
+	}
+}

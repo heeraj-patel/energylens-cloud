@@ -31,9 +31,9 @@ type Appliance struct {
 	Tariff           *Evidence           // current marginal electricity rate; never used for a savings claim
 	GasUsage         *Evidence           // exact reviewed dryer therm/cycle fact
 	GasTariff        *Evidence           // fresh USD/therm marginal rate
-	UsageFrequency   int64               // legacy frequency for callers supplying one answer kind
-	HoursPerWeek     *int64              // confirmed current hours per week, including zero
-	CyclesPerWeek    *int64              // confirmed current cycles per week, including zero
+	UsageFrequency   float64             // legacy frequency for callers supplying one answer kind
+	HoursPerWeek     *float64            // confirmed current hours per week, including zero
+	CyclesPerWeek    *float64            // confirmed current cycles per week, including zero
 	Scenarios        []BenefitScenario   // explicit current action alternatives
 }
 
@@ -45,7 +45,7 @@ func (a Appliance) matchesRuleCategory(ruleCategory string) bool {
 	return key != "" && key == a.categoryKey && a.ruleKeyCounts[key] == 1
 }
 
-func (a Appliance) frequencyFor(kind string) int64 {
+func (a Appliance) frequencyFor(kind string) float64 {
 	switch kind {
 	case "hours_per_week":
 		if a.HoursPerWeek != nil {
@@ -77,7 +77,7 @@ type Action struct {
 	SavingsBasis     string              `json:"savings_basis,omitempty"`
 	ScenarioRefs     []Evidence          `json:"scenario_refs,omitempty"`
 	SourceURL        string              `json:"source_url,omitempty"`
-	usageFrequency   int64
+	usageFrequency   float64
 	usageUnit        string
 }
 

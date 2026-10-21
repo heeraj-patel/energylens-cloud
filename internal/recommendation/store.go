@@ -280,7 +280,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			}
 			for _, kind := range []string{"hours_per_week", "cycles_per_week"} {
 				if questionID == item.Category+"."+kind {
-					var frequency int64
+					var frequency float64
 					if json.Unmarshal(answerValue, &frequency) != nil || frequency < 0 ||
 						(kind == "hours_per_week" && frequency > 168) || (kind == "cycles_per_week" && frequency > 100) {
 						continue

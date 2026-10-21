@@ -14,7 +14,7 @@ import (
 
 func TestRecommendationLifecycleAndRanking(t *testing.T) {
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	makeAction := func(device string, frequency int64) Action {
+	makeAction := func(device string, frequency float64) Action {
 		return Action{RuleID: "computer.sleep_settings", RuleVersion: 1, ApplianceID: device, State: "active", BenefitGroup: "computer_idle", EvidenceRefs: []Evidence{{ID: "source", Kind: "annual_energy", Revision: 1}}, usageFrequency: frequency, usageUnit: "hours_per_week"}
 	}
 	ranked := rankActions([]Action{makeAction("a", 2), makeAction("b", 20)})

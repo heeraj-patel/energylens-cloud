@@ -15,7 +15,7 @@ type BenefitScenario struct {
 	BaselineEnergy    string // kWh per use or kWh per hour
 	AlternativeEnergy string // same unit and service as baseline
 	EnergyUnit        string // kWh/use or kWh/hour
-	UsagePerWeek      int64
+	UsagePerWeek      float64
 	RateUSDPerKWh     string
 	BaselineRef       Evidence
 	AlternativeRef    Evidence
@@ -96,7 +96,7 @@ func scenarioBenefit(action Action, scenario BenefitScenario) (string, bool) {
 		return "", false
 	}
 	saving := new(big.Rat).Sub(baseline, alternative)
-	saving.Mul(saving, big.NewRat(scenario.UsagePerWeek*52, 1))
+	saving.Mul(saving, new(big.Rat).SetFloat64(scenario.UsagePerWeek*52))
 	saving.Mul(saving, rate)
 	return saving.FloatString(6), true
 }
