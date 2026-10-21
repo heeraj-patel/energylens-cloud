@@ -138,3 +138,29 @@ func TestFindLinkTrimKeepsExactAndWildcardProductsApart(t *testing.T) {
 		t.Fatalf("exact and wildcard products that disagree must not link: %+v found=%v err=%v", link, found, err)
 	}
 }
+
+func TestFamilyCandidatesFollowAsteriskAndQuestionMark(t *testing.T) {
+	pool := migratedCatalogPool(t, "catalog_trim_")
+	ids := seedTrim(t, pool,
+		trimSeed{brand: "Acme", model: "ABCDE*", quality: "documented_variant_family", source: "oem_family", kwh: 100},
+		trimSeed{brand: "Acme", model: "FGHIJ?", quality: "documented_variant_family", source: "oem_family", kwh: 200},
+	)
+	for model, want := range map[string]string{
+		"ABCDE1": "ABCDE*", "ABCDE123": "ABCDE*", "ABCDE": "",
+		"FGHIJ1": "FGHIJ?", "FGHIJ12": "", "FGHIJ": "",
+	} {
+		found, err := (catalogReader{pool}).familyCandidates(context.Background(), Search{Brand: "Acme", Model: model, Fuel: "electricity"}, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == "" {
+			if len(found) != 0 {
+				t.Errorf("%s: unexpected candidates %+v", model, found)
+			}
+			continue
+		}
+		if len(found) != 1 || found[0].id != ids[want] {
+			t.Errorf("%s: want %s, got %+v", model, want, found)
+		}
+	}
+}

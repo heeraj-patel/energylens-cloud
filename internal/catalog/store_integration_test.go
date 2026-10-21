@@ -120,9 +120,9 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	familyFactID := uuid.NewString()
-	familyFact := map[string]any{"id": familyFactID, "kind": "annual_energy", "value": "312", "unit": "kWh", "test_basis": map[string]any{"matched_model": "WM3070H*A"}, "included_energy": map[string]any{"status": "not_specified_by_source"}, "source_kind": "oem_family", "source_url": "https://example.org/manual", "source_hash": hash, "source_hash_basis": "verified_source_document", "source_manifest": "sources/lg.json", "reviewed_at": "2026-09-30T00:00:00Z", "revision": 1}
+	familyFact := map[string]any{"id": familyFactID, "kind": "annual_energy", "value": "312", "unit": "kWh", "test_basis": map[string]any{"matched_model": "WM3070H?A"}, "included_energy": map[string]any{"status": "not_specified_by_source"}, "source_kind": "oem_family", "source_url": "https://example.org/manual", "source_hash": hash, "source_hash_basis": "verified_source_document", "source_manifest": "sources/lg.json", "reviewed_at": "2026-09-30T00:00:00Z", "revision": 1}
 	familyFactJSON, _ := json.Marshal(familyFact)
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',312,'kWh',$4,'{}','oem_family','https://example.org/manual',$3,'verified_source_document','sources/lg.json','2026-09-30T00:00:00Z',1,$5)`, familyFactID, familyID, hash, `{"matched_model":"WM3070H*A"}`, familyFactJSON); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',312,'kWh',$4,'{}','oem_family','https://example.org/manual',$3,'verified_source_document','sources/lg.json','2026-09-30T00:00:00Z',1,$5)`, familyFactID, familyID, hash, `{"matched_model":"WM3070H?A"}`, familyFactJSON); err != nil {
 		t.Fatal(err)
 	}
 	variant := "US-120V"
@@ -186,9 +186,9 @@ func TestReviewedCatalogExactSearchAndFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	energuideFactID := uuid.NewString()
-	energuideFact := map[string]any{"id": energuideFactID, "kind": "annual_energy", "value": "659", "unit": "kWh", "test_basis": map[string]any{"matched_model": "KSSC48QT*0*"}, "included_energy": map[string]any{"status": "not_specified_by_source"}, "source_kind": "other_official", "source_url": "https://example.org/energuide.pdf", "source_hash": hash, "source_hash_basis": "verified_source_document", "source_manifest": "sources/kitchenaid.json", "reviewed_at": "2026-09-30T00:00:00Z", "revision": 1}
+	energuideFact := map[string]any{"id": energuideFactID, "kind": "annual_energy", "value": "659", "unit": "kWh", "test_basis": map[string]any{"matched_model": "KSSC48QT?0?"}, "included_energy": map[string]any{"status": "not_specified_by_source"}, "source_kind": "other_official", "source_url": "https://example.org/energuide.pdf", "source_hash": hash, "source_hash_basis": "verified_source_document", "source_manifest": "sources/kitchenaid.json", "reviewed_at": "2026-09-30T00:00:00Z", "revision": 1}
 	energuideFactJSON, _ := json.Marshal(energuideFact)
-	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',659,'kWh',$4,'{}','other_official','https://example.org/energuide.pdf',$3,'verified_source_document','sources/kitchenaid.json','2026-09-30T00:00:00Z',1,$5)`, energuideFactID, energuideID, hash, `{"matched_model":"KSSC48QT*0*"}`, energuideFactJSON); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',659,'kWh',$4,'{}','other_official','https://example.org/energuide.pdf',$3,'verified_source_document','sources/kitchenaid.json','2026-09-30T00:00:00Z',1,$5)`, energuideFactID, energuideID, hash, `{"matched_model":"KSSC48QT?0?"}`, energuideFactJSON); err != nil {
 		t.Fatal(err)
 	}
 	results, err = store.Search(ctx, Search{Brand: "KitchenAid", Model: "KSSC48QTS00", Fuel: "electricity"})

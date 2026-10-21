@@ -12,7 +12,7 @@ import (
 type Link struct{ ProductID, MatchQuality string }
 
 // productGroup identifies one product for linking: duplicates share brand key,
-// model, variant and region. The model keeps each * position, as Datawiz keys do.
+// model, variant and region. The model keeps each * and ? position, as Datawiz keys do.
 func productGroup(brandKey, model string, variant, region *string) string {
 	return strings.Join([]string{CanonicalBrandKey(brandKey), strings.ToUpper(nonModelChars.ReplaceAllString(model, "")), lowerOrEmpty(variant), lowerOrEmpty(region)}, "|")
 }
@@ -105,7 +105,7 @@ const (
 	maxKWhSpread  = 1.15
 )
 
-var nonModelChars = regexp.MustCompile(`[^A-Za-z0-9*]`)
+var nonModelChars = regexp.MustCompile(`[^A-Za-z0-9*?]`)
 
 type trimCandidate struct {
 	id, group, model string
@@ -125,20 +125,17 @@ func findTrimLink(ctx context.Context, db catalogQueries, q Search) (Link, bool,
 	if len(model) < minTrimLength {
 		return Link{}, false, nil
 	}
-	var re strings.Builder
-	re.WriteByte('^')
-	for i := 0; i < minTrimLength; i++ {
-		re.WriteString("[" + model[i:i+1] + "*]")
-	}
+	// A * spans several characters, so only the first position can be tested in SQL.
+	re := "^[" + model[:1] + "*?]"
 	rows, err := db.Query(ctx, `SELECT DISTINCT ON (p.id) p.id, `+brandKeySQL+`, p.full_model, p.variant, p.region,
 	           f.value::float8, f.source_kind IN ('epa_exact','epa_family'), f.reviewed_at
 	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
 	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND p.fuel=$2
 	      AND (p.region IS NULL OR ($3::text IS NOT NULL AND lower(p.region)=lower($3)))
 	      AND ($4::text IS NULL OR p.variant IS NULL OR lower(p.variant)=lower($4))
-	      AND regexp_replace(upper(p.full_model), '[^A-Z0-9*]', '', 'g') ~ $5
+	      AND regexp_replace(upper(p.full_model), '[^A-Z0-9*?]', '', 'g') ~ $5
 	    ORDER BY p.id, f.source_kind IN ('epa_exact','epa_family') DESC, f.reviewed_at DESC, f.id`,
-		BrandKeys(q.Brand), q.Fuel, q.Region, q.Variant, re.String())
+		BrandKeys(q.Brand), q.Fuel, q.Region, q.Variant, re)
 	if err != nil {
 		return Link{}, false, err
 	}
@@ -188,15 +185,7 @@ func newerFact(a, b trimCandidate) bool {
 }
 
 func trimPrefixMatches(prefix, model string) bool {
-	if len(model) < len(prefix) {
-		return false
-	}
-	for i := 0; i < len(prefix); i++ {
-		if model[i] != '*' && model[i] != prefix[i] {
-			return false
-		}
-	}
-	return true
+	return wildcardPrefixMatches(model, prefix)
 }
 
 func medianLink(found []trimCandidate) (Link, bool, error) {
