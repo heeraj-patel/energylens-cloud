@@ -156,6 +156,14 @@ func (g gasAppliance) figures(start, end time.Time, tariff *marginalTariff) gasF
 	return f
 }
 
+// wasteBasis is rated_standby for a per-model figure, standby for a typical.
+func (g gasAppliance) wasteBasis() string {
+	if g.estimate.StandbyBasis == gasestimate.BasisTypical {
+		return "standby"
+	}
+	return "rated_standby"
+}
+
 // estimatedAllocation builds a gas appliance's row from its estimate. The
 // electric part is an estimate beside, never inside, the metered totals.
 func (g gasAppliance) estimatedAllocation(f gasFigures, tariff *marginalTariff, rateBasis string, rate *GasRate) allocation {
@@ -173,7 +181,7 @@ func (g gasAppliance) estimatedAllocation(f gasFigures, tariff *marginalTariff, 
 			if standby.Cmp(f.electric) > 0 {
 				standby = f.electric
 			}
-			a.WasteBasis = "rated_standby"
+			a.WasteBasis = g.wasteBasis()
 			a.WasteEnergy = &quantity{Value: standby.FloatString(12), Unit: "kWh"}
 			a.UsefulEnergy = &quantity{Value: nonNegative(new(big.Rat).Sub(f.electric, standby)).FloatString(12), Unit: "kWh"}
 			a.UnclassifiedEnergy = nil
@@ -271,14 +279,14 @@ func gasDeviceRows(ctx context.Context, tx pgx.Tx, gc *gasContext, home string, 
 		merged := false
 		for j := range existing {
 			if existing[j].ApplianceID == g.id {
-				fallback.mergeInto(&existing[j].Allocation, true, rateBasis)
+				fallback.mergeInto(&existing[j].Allocation, true, rateBasis, g.wasteBasis())
 				applyGas(&existing[j].Allocation, g, all, gc.rate)
 				merged = true
 			}
 		}
 		if !merged {
 			a := allocation{Availability: "partial", EvidenceBasis: "estimated"}
-			fallback.mergeInto(&a, false, rateBasis)
+			fallback.mergeInto(&a, false, rateBasis, g.wasteBasis())
 			applyGas(&a, g, all, gc.rate)
 			period = append(period, deviceAllocation{ApplianceID: g.id, Allocation: a})
 		}
@@ -340,7 +348,7 @@ func (s *fallbackSum) add(a allocation) {
 
 // mergeInto adds the fallback to a period row; fields the row lacks count as
 // zero, and cost fields are dropped when either part has no electric price.
-func (s fallbackSum) mergeInto(p *allocation, measured bool, rateBasis string) {
+func (s fallbackSum) mergeInto(p *allocation, measured bool, rateBasis, wasteBasis string) {
 	if s.energy == nil {
 		return
 	}
@@ -366,7 +374,7 @@ func (s fallbackSum) mergeInto(p *allocation, measured bool, rateBasis string) {
 	if r := sum(p.WasteEnergy, s.waste); r != nil {
 		p.WasteEnergy = qty(r)
 		if p.WasteBasis == "" {
-			p.WasteBasis = "rated_standby"
+			p.WasteBasis = wasteBasis
 		}
 	}
 	if p.RateBasis == "" {

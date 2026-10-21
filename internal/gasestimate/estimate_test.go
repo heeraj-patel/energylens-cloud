@@ -108,16 +108,75 @@ func TestGasBoilerStandbyUpperBound(t *testing.T) {
 	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(4), OffModeW: fp(9)}})
 	near(t, "max of standby and off", e.ElectricKWh, 78.84, 1e-9)
 	near(t, "standby kWh follows the same bound", e.StandbyKWh, 78.84, 1e-9)
-	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(9)}})
-	near(t, "off-mode only still estimates electric", e.ElectricKWh, 78.84, 1e-9)
-	isNil(t, "off-mode only is not a standby fact", e.StandbyKWh)
-	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas"})
-	isNil(t, "no facts", e.ElectricKWh)
-	isNil(t, "no facts standby", e.StandbyKWh)
+	if e.StandbyBasis != BasisRatedFact {
+		t.Fatalf("standby basis %q", e.StandbyBasis)
+	}
+	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(5)}})
+	near(t, "off-mode only still estimates electric", e.ElectricKWh, 43.8, 1e-9)
+	near(t, "off-mode only is not a standby fact: typical standby", e.StandbyKWh, 78.84, 1e-9)
 }
 
-func TestGasFurnaceAndSpaceHeaterElectricOnlyWhenFact(t *testing.T) {
-	for _, class := range []Class{ClassFurnace, ClassSpaceHeater} {
+func TestGasStandbyTypicalsWithoutFacts(t *testing.T) {
+	cases := []struct {
+		name     string
+		class    Class
+		tankless bool
+		kwh      float64
+	}{
+		{"furnace", ClassFurnace, false, 96.36}, {"pool heater", ClassPoolHeater, false, 63.072},
+		{"boiler", ClassBoiler, false, 78.84}, {"range", ClassRange, false, 27.156},
+		{"dryer", ClassDryer, false, 13.14}, {"storage water heater", ClassWaterHeater, false, 43.8},
+	}
+	for _, c := range cases {
+		e, ok := Compute(Input{Class: c.class, Tankless: c.tankless, Fuel: "natural_gas"})
+		if !ok || e.StandbyBasis != BasisTypical {
+			t.Fatalf("%s: %+v", c.name, e)
+		}
+		near(t, c.name+" standby", e.StandbyKWh, c.kwh, 1e-9)
+		if c.class != ClassDryer && c.class != ClassWaterHeater {
+			near(t, c.name+" electric is the standby", e.ElectricKWh, c.kwh, 1e-9)
+			near(t, c.name+" total", e.TotalKWhEq, c.kwh, 1e-9)
+			if e.ElectricBasis != BasisTypical {
+				t.Fatalf("%s electric basis %q", c.name, e.ElectricBasis)
+			}
+		}
+	}
+	d, _ := Compute(Input{Class: ClassDryer, Fuel: "natural_gas"})
+	near(t, "dryer electric kept", d.ElectricKWh, 59.43, 0.01)
+	w, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas"})
+	near(t, "storage electric kept", w.ElectricKWh, 29, 0)
+}
+
+func TestGasStandbyNoneForTanklessHeaterFireplace(t *testing.T) {
+	for _, in := range []Input{
+		{Class: ClassWaterHeater, Tankless: true, Fuel: "natural_gas"}, {Class: ClassSpaceHeater, Fuel: "natural_gas"}, {Class: ClassNone, Fuel: "natural_gas"},
+	} {
+		e, _ := Compute(in)
+		isNil(t, "standby", e.StandbyKWh)
+		if in.Class != ClassWaterHeater {
+			isNil(t, "electric", e.ElectricKWh)
+		}
+	}
+	if c, _ := ClassOf("gas fireplace"); c != ClassNone {
+		t.Fatalf("fireplace class %s", c)
+	}
+}
+
+func TestGasStandbyFactBeatsTypical(t *testing.T) {
+	for _, class := range []Class{ClassFurnace, ClassPoolHeater, ClassRange, ClassDryer, ClassWaterHeater, ClassBoiler} {
+		e, _ := Compute(Input{Class: class, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(2), ProductGroup: "x"}})
+		near(t, string(class)+" fact standby", e.StandbyKWh, 17.52, 1e-9)
+		if e.StandbyBasis != BasisRatedFact {
+			t.Fatalf("%s basis %q", class, e.StandbyBasis)
+		}
+	}
+	e, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(400)}})
+	near(t, "furnace electric fact kept", e.ElectricKWh, 400, 0)
+	near(t, "furnace typical standby", e.StandbyKWh, 96.36, 1e-9)
+}
+
+func TestGasSpaceHeaterElectricOnlyWhenFact(t *testing.T) {
+	for _, class := range []Class{ClassSpaceHeater} {
 		with, _ := Compute(Input{Class: class, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(341)}})
 		near(t, string(class)+" electric", with.ElectricKWh, 341, 0)
 		isNil(t, string(class)+" therms", with.GasTherms)
@@ -127,13 +186,11 @@ func TestGasFurnaceAndSpaceHeaterElectricOnlyWhenFact(t *testing.T) {
 	}
 }
 
-func TestOtherGasClassesAreAllNil(t *testing.T) {
-	for _, category := range []string{"Gas Range", "pool heater", "fireplace", "cooktop"} {
-		class, _ := ClassOf(category)
-		e, ok := Compute(Input{Class: class, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(10), StandbyW: fp(5)}})
-		if !ok || e.ElectricKWh != nil || e.GasTherms != nil || e.TotalKWhEq != nil {
-			t.Fatalf("%s: %+v", category, e)
-		}
+func TestFireplaceClassIsAllNil(t *testing.T) {
+	class, _ := ClassOf("fireplace")
+	e, ok := Compute(Input{Class: class, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(10), StandbyW: fp(5)}})
+	if !ok || e.ElectricKWh != nil || e.GasTherms != nil || e.TotalKWhEq != nil || e.StandbyKWh != nil {
+		t.Fatalf("%+v", e)
 	}
 }
 
@@ -166,7 +223,8 @@ func TestClassOf(t *testing.T) {
 		{"dryer", ClassDryer, false}, {"Clothes Dryer", ClassDryer, false}, {"water_heater", ClassWaterHeater, false},
 		{"Tankless Water Heater", ClassWaterHeater, true}, {"tankless", ClassWaterHeater, true}, {"boiler", ClassBoiler, false},
 		{"furnace", ClassFurnace, false}, {"hvac", ClassFurnace, false}, {"space_heater", ClassSpaceHeater, false},
-		{"pool heater", ClassNone, false}, {"oven", ClassNone, false}, {"refrigerator", ClassNone, false},
+		{"pool heater", ClassPoolHeater, false}, {"oven", ClassRange, false}, {"Gas Range", ClassRange, false},
+		{"cooktop", ClassRange, false}, {"fireplace", ClassNone, false}, {"refrigerator", ClassNone, false},
 	}
 	for _, c := range cases {
 		if class, tankless := ClassOf(c.category); class != c.class || tankless != c.tankless {
@@ -181,7 +239,7 @@ func TestHVACSplitsBoilerFromFurnaceByFacts(t *testing.T) {
 	standby, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(9)}})
 	near(t, "boiler by standby fact", standby.ElectricKWh, 78.84, 1e-9)
 	furnace, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{AFUE: fp(96), ProductGroup: "Weatherized gas furnaces"}})
-	isNil(t, "furnace without kWh fact", furnace.ElectricKWh)
+	near(t, "furnace without kWh fact is typical standby", furnace.ElectricKWh, 96.36, 1e-9)
 }
 
 func TestInstantaneousProductGroupSelectsTanklessTypical(t *testing.T) {

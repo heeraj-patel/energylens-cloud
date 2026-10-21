@@ -247,39 +247,47 @@ func TestNoGasRateKeepsElectricCostAndOmitsTotals(t *testing.T) {
 	absent(t, day["totals"].(map[string]any), "gas_cost", "total_cost")
 }
 
-func TestGasWasteOnlyFromPerModelStandbyFact(t *testing.T) {
+func TestGasWasteFromStandbyFactElseCitedTypical(t *testing.T) {
 	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisNational, 1.2))
 	dryer := h.appliance("dryer", "natural_gas", "D1", ptrTo(h.product("dryer", "natural_gas", "D1", map[[2]string]float64{{"combined_energy_factor", "lb/kWh"}: 3.3}, dryerCEF)))
 	tank := h.appliance("water_heater", "natural_gas", "W1", ptrTo(h.product("water_heater", "natural_gas", "W1", map[[2]string]float64{{"annual_fuel", "therm"}: 178}, "{}")))
-	typicalOnly := h.appliance("dryer", "natural_gas", "D2", nil)
+	tankless := h.appliance("tankless_water_heater", "natural_gas", "W2", nil)
+	furnace := h.appliance("furnace", "natural_gas", "F1", nil)
+	pool := h.appliance("pool heater", "natural_gas", "P1", nil)
+	rng := h.appliance("range", "natural_gas", "R1", nil)
+	fireplace := h.appliance("fireplace", "natural_gas", "FP1", nil)
+	heater := h.appliance("space_heater", "natural_gas", "SH1", nil)
 	boiler := h.appliance("boiler", "natural_gas", "B1", ptrTo(h.product("boiler", "natural_gas", "B1", map[[2]string]float64{{"standby_power", "W"}: 9, {"off_mode_power", "W"}: 5}, `{"product_group_code":"boiler"}`)))
-	offOnly := h.appliance("boiler", "natural_gas", "B2", ptrTo(h.product("boiler", "natural_gas", "B2", map[[2]string]float64{{"off_mode_power", "W"}: 5}, `{"product_group_code":"boiler"}`)))
 	day := h.get("/dashboard")
-	for _, id := range []string{dryer, tank, typicalOnly, offOnly} {
-		row := deviceRow(t, day, id)
+	for _, id := range []string{tankless, fireplace, heater} {
+		if row := deviceRow(t, day, id); row != nil {
+			absent(t, row, "waste_basis", "standby_cost")
+			if row["waste_energy"] != nil {
+				t.Fatalf("class without a typical got waste: %+v", row)
+			}
+		}
+	}
+	for _, c := range []struct {
+		id    string
+		basis string
+		kwh   float64
+	}{{furnace, "standby", 96.36}, {pool, "standby", 63.072}, {rng, "standby", 27.156}, {dryer, "standby", 13.14}, {tank, "standby", 29}, {boiler, "rated_standby", 78.84}} {
+		row := deviceRow(t, day, c.id)
 		if row == nil {
-			t.Fatalf("row %s missing", id)
+			t.Fatalf("row %s missing", c.id)
 		}
-		absent(t, row, "waste_basis", "standby_cost")
-		if row["waste_energy"] != nil || row["waste_cost"] != nil {
-			t.Fatalf("gas class got waste: %+v", row)
+		if row["waste_basis"] != c.basis || row["fuel"] != "natural_gas" {
+			t.Fatalf("%s: %+v", c.id, row)
 		}
+		// Yearly standby kWh over the one-day view; waste is capped at electric.
+		near(t, c.basis+" standby kWh", amountOf(t, row, "waste_energy"), c.kwh/365, 1e-5)
+		near(t, "standby cost", amountOf(t, row, "standby_cost"), c.kwh/365*0.1831, 1e-5)
+		near(t, "waste_cost = standby_cost", amountOf(t, row, "waste_cost"), amountOf(t, row, "standby_cost"), 1e-9)
 	}
-	b := deviceRow(t, day, boiler)
-	if b["waste_basis"] != "rated_standby" || b["fuel"] != "natural_gas" {
-		t.Fatalf("boiler: %+v", b)
-	}
-	// Upper bound: max(standby, off) W x 8.76 over the year, here one day.
-	near(t, "boiler standby kWh", amountOf(t, b, "waste_energy"), 9*8.76/365, 1e-5)
-	near(t, "boiler standby cost", amountOf(t, b, "standby_cost"), 9*8.76/365*0.1831, 1e-5)
-	near(t, "waste_cost = standby_cost", amountOf(t, b, "waste_cost"), amountOf(t, b, "standby_cost"), 1e-9)
-	absent(t, b, "gas_energy", "gas_cost", "total_cost")
-
-	// Gas energy is never waste: a priced dryer leaves useful/waste unset.
 	d := deviceRow(t, day, dryer)
-	if d["useful_energy"] != nil || d["unclassified_energy"] == nil {
-		t.Fatalf("dryer split: %+v", d)
-	}
+	near(t, "dryer useful", amountOf(t, d, "useful_energy"), (59.43-13.14)/365, 1e-4)
+	near(t, "dryer gas energy still not waste", amountOf(t, d, "gas_energy"), 22.698/365, 1e-4)
+	absent(t, deviceRow(t, day, boiler), "gas_energy", "gas_cost", "total_cost")
 }
 
 func TestGasAppliancesStayOutOfStandbyTips(t *testing.T) {
@@ -543,6 +551,38 @@ func TestMeteredGasBoilerUnmeasuredBucketsFallBackToRatedStandby(t *testing.T) {
 	near(t, "total cost", ratFloat(p.TotalCost), ratFloat(p.Cost)+60, 1e-5)
 	if p.WasteBasis != "standby" || p.EvidenceBasis != "mixed" {
 		t.Fatalf("period marks: %+v", p)
+	}
+}
+
+func TestMeteredGasFurnaceGapBucketsUseTypicalStandby(t *testing.T) {
+	est, _ := gasestimate.Compute(gasestimate.Input{Class: gasestimate.ClassFurnace, Fuel: "natural_gas"})
+	buckets, period := meteredGasFallback(t, est, func(int) allocation {
+		return allocation{Energy: &quantity{Value: "0.500000000000", Unit: "kWh"}, Cost: money{Amount: "0.091550", Currency: "USD"}, Availability: "partial", EvidenceBasis: "measured"}
+	})
+	for i := 10; i < 30; i++ {
+		a := buckets[i].DeviceAllocations[0].Allocation
+		if a.WasteBasis != "standby" || a.StandbyCost == nil || a.EvidenceBasis != "estimated" {
+			t.Fatalf("gap bucket %d: %+v", i, a)
+		}
+		near(t, "bucket waste", ratFloat(a.WasteEnergy), 96.36/365, 1e-6)
+	}
+	p := period[0].Allocation
+	near(t, "period waste", ratFloat(p.WasteEnergy), 20*96.36/365, 1e-6)
+	if p.WasteBasis != "standby" || p.EvidenceBasis != "mixed" {
+		t.Fatalf("period marks: %+v", p)
+	}
+}
+
+func TestGasStandbyWasteIsCappedAtElectric(t *testing.T) {
+	elec, standby := 10.0, 13.14
+	g := gasAppliance{id: "a", fuel: "natural_gas", estimate: gasestimate.Estimate{ElectricKWh: &elec, StandbyKWh: &standby, StandbyBasis: gasestimate.BasisTypical}}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f := g.figures(start, start.AddDate(1, 0, 0), nil)
+	a := g.estimatedAllocation(f, nil, "", nil)
+	near(t, "waste", ratFloat(a.WasteEnergy), 10, 1e-6)
+	near(t, "useful", ratFloat(a.UsefulEnergy), 0, 1e-6)
+	if a.WasteBasis != "standby" {
+		t.Fatalf("waste basis %q", a.WasteBasis)
 	}
 }
 

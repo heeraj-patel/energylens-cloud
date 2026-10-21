@@ -28,6 +28,16 @@ const (
 	waterDrawDaysPerYear  = 365.0 // 10 CFR 430 Appendix E 6.3.9
 )
 
+// Typical electric standby watts, used only when a gas appliance has no per-model figure.
+const (
+	typicalFurnaceStandbyW = 11.0 // DOE furnace NOPR 2022, Table IV.16 baseline
+	typicalPoolStandbyW    = 7.2  // DOE pool heater final rule 2023, Table IV.3
+	typicalBoilerStandbyW  = 9.0  // CEC MAEDbS sample, first 25 boiler rows
+	typicalRangeStandbyW   = 3.1  // LBNL standby summary, cooking range median
+	typicalDryerStandbyW   = 1.5  // ENERGY STAR dryer scoping report 2011
+	typicalStorageStandbyW = 5.0  // NEEA 2021, power-vent storage water heater
+)
+
 // Basis values for Estimate.GasBasis and Estimate.ElectricBasis.
 const (
 	BasisRatedFact      = "rated_fact"
@@ -48,6 +58,8 @@ const (
 	ClassBoiler      Class = "boiler"
 	ClassFurnace     Class = "furnace"
 	ClassSpaceHeater Class = "space_heater"
+	ClassPoolHeater  Class = "pool_heater"
+	ClassRange       Class = "range"
 )
 
 // Input is one appliance's class, fuel and active catalog facts.
@@ -67,8 +79,10 @@ type Estimate struct {
 	GasKWhEq         *float64
 	TotalKWhEq       *float64
 	AnnualFuelGallon *float64
-	// StandbyKWh is set only from a per-model standby_power fact (boilers).
-	StandbyKWh    *float64
+	// StandbyKWh is the yearly standby: a per-model fact, else a cited typical.
+	StandbyKWh *float64
+	// StandbyBasis is rated_fact or typical.
+	StandbyBasis  string
 	GasBasis      string
 	ElectricBasis string
 }
@@ -91,8 +105,10 @@ func ClassOf(category string) (Class, bool) {
 		return false
 	}
 	switch {
-	case has("pool", "fireplace"):
+	case has("fireplace"):
 		return ClassNone, false
+	case has("pool"):
+		return ClassPoolHeater, false
 	case has("dryer"):
 		return ClassDryer, false
 	case has("water_heater", "waterheater", "tankless"):
@@ -103,6 +119,8 @@ func ClassOf(category string) (Class, bool) {
 		return ClassFurnace, false
 	case has("space_heater", "wall_heater", "floor_heater", "room_heater"):
 		return ClassSpaceHeater, false
+	case has("range", "oven", "cooktop", "cook_top", "stove"):
+		return ClassRange, false
 	}
 	return ClassNone, false
 }
@@ -145,6 +163,7 @@ func Compute(in Input) (Estimate, bool) {
 	switch class {
 	case ClassDryer:
 		e.ElectricKWh, e.ElectricBasis, e.GasBasis = ptr(dryerElectricKWhCycle*dryerCyclesPerYear), BasisTypical, BasisTypical
+		e.setStandby(f, typicalDryerStandbyW)
 		if f.CEF != nil && f.CEF.Value > 0 {
 			eq := dryerLoadLb * dryerCyclesPerYear / f.CEF.Value
 			e.GasBasis = BasisDerivedFromCEF
@@ -167,19 +186,23 @@ func Compute(in Input) (Estimate, bool) {
 				e.setGas(in.Fuel, math.Max(0, btu-btuPerKWh**e.ElectricKWh)/btuPerTherm, 0)
 			}
 		}
+		if tankless {
+			e.setStandby(f, 0)
+		} else {
+			e.setStandby(f, typicalStorageStandbyW)
+		}
 		if in.Fuel == "propane" && f.AnnualFuelGallon != nil {
 			e.AnnualFuelGallon = ptr(*f.AnnualFuelGallon)
 		}
 	case ClassBoiler:
 		if w, ok := maxPresent(f.StandbyW, f.OffModeW); ok {
 			e.setElectric(ptr(w*standbyHoursPerYear), 0)
-			if f.StandbyW != nil {
-				e.StandbyKWh = ptr(w * standbyHoursPerYear)
-			}
 		}
+		e.setStandby(f, typicalBoilerStandbyW)
 		e.electricOnlyTotal()
-	case ClassFurnace, ClassSpaceHeater:
+	case ClassFurnace, ClassSpaceHeater, ClassPoolHeater, ClassRange:
 		e.setElectric(f.AnnualEnergyKWh, 0)
+		e.setStandby(f, map[Class]float64{ClassFurnace: typicalFurnaceStandbyW, ClassPoolHeater: typicalPoolStandbyW, ClassRange: typicalRangeStandbyW}[class])
 		e.electricOnlyTotal()
 	}
 	if e.GasBasis == "" {
@@ -195,6 +218,20 @@ func (e *Estimate) setElectric(fact *float64, typical float64) {
 		e.ElectricKWh, e.ElectricBasis = ptr(*fact), BasisRatedFact
 	case typical > 0:
 		e.ElectricKWh, e.ElectricBasis = ptr(typical), BasisTypical
+	}
+}
+
+// setStandby sets the yearly standby: the per-model fact wins, else the typical
+// watts (0: none). With no electric figure, standby is the minimum electric use.
+func (e *Estimate) setStandby(f catalog.GasFacts, typicalW float64) {
+	switch w, ok := maxPresent(f.StandbyW, f.OffModeW); {
+	case f.StandbyW != nil && ok:
+		e.StandbyKWh, e.StandbyBasis = ptr(w*standbyHoursPerYear), BasisRatedFact
+	case typicalW > 0:
+		e.StandbyKWh, e.StandbyBasis = ptr(typicalW*standbyHoursPerYear), BasisTypical
+	}
+	if e.ElectricKWh == nil && e.StandbyKWh != nil {
+		e.ElectricKWh, e.ElectricBasis = ptr(*e.StandbyKWh), e.StandbyBasis
 	}
 }
 
