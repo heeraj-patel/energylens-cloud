@@ -230,7 +230,7 @@ func LoadConfig(role string) (Config, error) {
 		c.Environment = "dev"
 	}
 	if c.APIListen == "" {
-		c.APIListen = "127.0.0.1:18091"
+		c.APIListen = "127.0.0.1:18092"
 	}
 	// The old names remain accepted for deployments during the single-port
 	// migration. They configure the same server certificate, never a listener.

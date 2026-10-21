@@ -35,7 +35,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 - `ENERGYLENS_CLOUD_ENV` dev (default) | staging | production. `RUNTIME_ENV` local | dev | test | staging | production;
   must agree with `ENERGYLENS_CLOUD_ENV` (`local` implies dev + local auth). Other values fail startup.
 - `ENERGYLENS_CLOUD_ROLE` / `--role`: api | worker | all (default all; production refuses all).
-- `ENERGYLENS_CLOUD_BIND` default `127.0.0.1:18091` (worker example 18092). `ENERGYLENS_CLOUD_HUB_BIND` is obsolete and fails startup.
+- `ENERGYLENS_CLOUD_BIND` default `127.0.0.1:18092` (worker example 18092). `ENERGYLENS_CLOUD_HUB_BIND` is obsolete and fails startup.
 - `ENERGYLENS_CLOUD_DATABASE_URL`; staging/production need `sslmode=verify-full`. `RUNTIME_ENV=local` needs a local/private PG host.
 - TLS (API): `..._TLS_CERT`, `..._TLS_KEY`, `..._HUB_CLIENT_CA`, `..._HUB_SIGN_CERT`, `..._HUB_SIGN_KEY`;
   TLS 1.2+, client cert requested but optional (`VerifyClientCertIfGiven`); hub routes enforce it per handler.

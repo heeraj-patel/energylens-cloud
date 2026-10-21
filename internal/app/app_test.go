@@ -15,7 +15,7 @@ import (
 )
 
 func TestRoleAndDatabasePolicy(t *testing.T) {
-	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":18091", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt", MeteredExportCursorKeyFile: "/private/metered-export.key"}
+	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":18092", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt", MeteredExportCursorKeyFile: "/private/metered-export.key"}
 	if err := base.Validate(); err == nil {
 		t.Fatal("production must require database")
 	}
@@ -48,7 +48,7 @@ func TestRoleAndDatabasePolicy(t *testing.T) {
 }
 
 func TestAccountDeletionProductionGate(t *testing.T) {
-	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":18091", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=verify-full", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt", MeteredExportCursorKeyFile: "/private/metered-export.key"}
+	base := Config{Role: RoleAPI, Environment: "production", APIListen: ":18092", DatabaseURL: "postgres://user:pass@localhost:5432/db?sslmode=verify-full", OIDCIssuer: "https://id.example/", OIDCAudience: "energylens", OIDCJWKSURL: "https://id.example/jwks", HubSignCertFile: "signer.crt", HubSignKeyFile: "signer.key", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt", MeteredExportCursorKeyFile: "/private/metered-export.key"}
 	if err := base.Validate(); err != nil {
 		t.Fatalf("disabled route rejected: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestAllHubOperationsRequireVerifiedTLSCertificate(t *testing.T) {
 }
 
 func TestSinglePortConfiguration(t *testing.T) {
-	c := Config{Role: RoleAPI, Environment: "dev", APIListen: ":18091", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt"}
+	c := Config{Role: RoleAPI, Environment: "dev", APIListen: ":18092", HubCertFile: "server.crt", HubKeyFile: "server.key", HubCAFile: "client-ca.crt"}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("single TLS listener rejected: %v", err)
 	}
