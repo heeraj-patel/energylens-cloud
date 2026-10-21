@@ -32,7 +32,7 @@ type requeueRow struct {
 	identity            []byte
 	catalogID           *string
 	pBrand, pModel      *string
-	pQuality            *string
+	pQuality, pFuel     *string
 	schema, status      string
 	tier, recordKey     string
 	recordURL           string
@@ -142,7 +142,7 @@ func (q Requeuer) enqueue(ctx context.Context, r requeueRow, reason string) (boo
 }
 
 func (q Requeuer) load(ctx context.Context) ([]requeueRow, error) {
-	rows, err := q.DB.Query(ctx, `SELECT a.id::text,a.home_id::text,a.identity,a.catalog_product_id::text,pr.brand,pr.full_model,pr.match_quality,
+	rows, err := q.DB.Query(ctx, `SELECT a.id::text,a.home_id::text,a.identity,a.catalog_product_id::text,pr.brand,pr.full_model,pr.match_quality,pr.fuel,
   COALESCE(r.record->>'schema_version',''),COALESCE(r.record->>'status',''),COALESCE(r.record->'source'->>'tier',''),
   COALESCE(r.record->'source'->>'record_key',''),COALESCE(r.record->'source'->>'url',''),COALESCE(r.record->'source'->>'dataset_id',''),COALESCE(r.record->'values'->>'waste_basis',''),
   COALESCE(r.record->>'source_fingerprint',''),r.resolved_at,
@@ -168,7 +168,7 @@ func (q Requeuer) load(ctx context.Context) ([]requeueRow, error) {
 	var out []requeueRow
 	for rows.Next() {
 		var r requeueRow
-		if err = rows.Scan(&r.applianceID, &r.homeID, &r.identity, &r.catalogID, &r.pBrand, &r.pModel, &r.pQuality,
+		if err = rows.Scan(&r.applianceID, &r.homeID, &r.identity, &r.catalogID, &r.pBrand, &r.pModel, &r.pQuality, &r.pFuel,
 			&r.schema, &r.status, &r.tier, &r.recordKey, &r.recordURL, &r.datasetID, &r.basis, &r.fingerprint, &r.resolvedAt,
 			&r.lastAttempt, &r.lowTierAttempts, &r.activeFacts); err != nil {
 			return nil, err
@@ -224,7 +224,7 @@ func (r requeueRow) sourceChanged(fingerprint, categoryVersion string) bool {
 func (r requeueRow) catalogChanged() bool {
 	var identity inventory.Identity
 	sendable := false
-	if r.catalogID != nil && json.Unmarshal(r.identity, &identity) == nil {
+	if r.catalogID != nil && json.Unmarshal(r.identity, &identity) == nil && deref(r.pFuel) == identity.Fuel {
 		_, sendable = catalog.SendableLink(identity.Brand, identity.FullModel, identity.MatchQuality, catalog.LinkedProduct{Brand: deref(r.pBrand), FullModel: deref(r.pModel), MatchQuality: deref(r.pQuality)})
 	}
 	if !sendable {

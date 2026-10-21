@@ -285,7 +285,7 @@ func checkCatalog(ctx context.Context, tx pgx.Tx, a Appliance) error {
 		return nil
 	}
 	var found string
-	err := tx.QueryRow(ctx, `SELECT id FROM catalog_products WHERE id=$1`, *id).Scan(&found)
+	err := tx.QueryRow(ctx, `SELECT id FROM catalog_products WHERE id=$1 AND fuel=$2`, *id, a.Identity.Fuel).Scan(&found)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrCatalogMismatch
 	}

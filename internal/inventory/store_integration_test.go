@@ -230,6 +230,10 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil || linked.Identity.CatalogProductID == nil || *linked.Identity.CatalogProductID != missing {
 		t.Fatalf("exact catalog link %+v %v", linked, err)
 	}
+	gas := Identity{Brand: "Acme", FullModel: "A123", Fuel: "natural_gas", MatchQuality: "confirmed_exact", CatalogProductID: &missing}
+	if _, err = store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Identity: &gas}, 3, uuid.NewString(), patchHash[:]); !errors.Is(err, ErrCatalogMismatch) {
+		t.Fatalf("link to a product of another fuel = %v", err)
+	}
 	cleared, err := store.Patch(ctx, owner.ID, home.ID, a.ID, PatchInput{Room: []byte("null")}, 3, uuid.NewString(), patchHash[:])
 	if err != nil || cleared.Room != nil || cleared.Version != 4 {
 		t.Fatalf("clear optional room %+v %v", cleared, err)

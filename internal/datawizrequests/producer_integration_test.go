@@ -251,11 +251,14 @@ func TestProducerDedupAndCatalogLinks(t *testing.T) {
 	for _, p := range [][]string{{exactID, "Acme", "Heat-100", "confirmed_exact"}, {famID, "Acme", "Fam-1", "documented_variant_family"}, {wrongID, "Acme", "Other-9", "confirmed_exact"}} {
 		exec(`INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'hvac',$2,$3,'electricity',$4,'{}')`, p[0], p[1], p[2], p[3])
 	}
-	add := func(home, name, model string, link *string) string {
+	addFuel := func(home, name, model, fuel string, link *string) string {
 		id := uuid.NewString()
 		exec(`INSERT INTO appliances(id,home_id,name,category,catalog_product_id,identity) VALUES($1,$2,$3,'hvac',$4,$5)`, id, home, name, link,
-			`{"brand":"Acme","full_model":"`+model+`"}`)
+			`{"brand":"Acme","full_model":"`+model+`","fuel":"`+fuel+`"}`)
 		return id
+	}
+	add := func(home, name, model string, link *string) string {
+		return addFuel(home, name, model, "electricity", link)
 	}
 	count := func(dir, route string) int {
 		paths, _ := filepath.Glob(filepath.Join(dir, route, "*.json"))
@@ -282,6 +285,7 @@ func TestProducerDedupAndCatalogLinks(t *testing.T) {
 	exactApp := add(home, "Exact", "heat 100", &exactID)
 	famApp := add(home, "Family", "Fam-2", &famID)
 	wrongApp := add(home, "Wrong", "Heat-100", &wrongID)
+	gasApp := addFuel(home, "Gas", "heat 100", "natural_gas", &exactID)
 	before := count(dir, "device")
 	if _, err := p.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -291,7 +295,7 @@ func TestProducerDedupAndCatalogLinks(t *testing.T) {
 	}
 	for _, c := range []struct {
 		id, link, quality string
-	}{{exactApp, exactID, "confirmed_exact"}, {famApp, famID, "documented_variant_family"}, {wrongApp, "", ""}} {
+	}{{exactApp, exactID, "confirmed_exact"}, {famApp, famID, "documented_variant_family"}, {wrongApp, "", ""}, {gasApp, "", ""}} {
 		entry, found, err := p.resolveEntryFor(ctx, c.id)
 		if err != nil || !found || entry.entry.CatalogProductID != c.link || entry.entry.MatchQuality != c.quality {
 			t.Fatalf("resolve link for %s: %+v %t %v", c.id, entry.entry, found, err)
