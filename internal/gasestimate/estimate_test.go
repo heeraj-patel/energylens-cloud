@@ -190,3 +190,10 @@ func TestInstantaneousProductGroupSelectsTanklessTypical(t *testing.T) {
 	e, _ = Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{ProductGroup: "Gas-fired Storage Water Heater"}})
 	near(t, "storage typical", e.ElectricKWh, 29, 0)
 }
+
+func TestFurnaceWithKWhFactAndStandbyStaysFurnace(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(400), StandbyW: fp(9), ProductGroup: "Weatherized gas furnaces"}})
+	near(t, "furnace keeps annual kWh", e.ElectricKWh, 400, 1e-9)
+	noGroup, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(400), StandbyW: fp(9)}})
+	near(t, "no group with kWh fact stays furnace", noGroup.ElectricKWh, 400, 1e-9)
+}

@@ -124,7 +124,10 @@ func WaterHeaterAnnualBtu(uef float64, drawPattern string) (float64, bool) {
 func refine(in Input) (Class, bool) {
 	group := strings.ToLower(in.Facts.ProductGroup)
 	class, tankless := in.Class, in.Tankless
-	if class == ClassFurnace && (strings.Contains(group, "boiler") || in.Facts.StandbyW != nil || in.Facts.OffModeW != nil) {
+	// Without a product group, standby/off-mode watts imply a boiler only when
+	// no annual kWh fact (a furnace's) exists.
+	wOnly := group == "" && in.Facts.AnnualEnergyKWh == nil && (in.Facts.StandbyW != nil || in.Facts.OffModeW != nil)
+	if class == ClassFurnace && (strings.Contains(group, "boiler") || wOnly) {
 		class = ClassBoiler
 	}
 	return class, tankless || class == ClassWaterHeater && strings.Contains(group, "instantaneous")
