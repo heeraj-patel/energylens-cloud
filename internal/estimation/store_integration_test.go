@@ -253,7 +253,13 @@ func TestEstimateFloorWasteAndNationalRate(t *testing.T) {
 	if down := read(); down.Kind != "unavailable" || down.UnavailableReason != "rate_unavailable" {
 		t.Fatalf("national rate outage: %+v", down)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.10,'kWh','USD','user_tariff','bill',$2,false,$3)`, home, now, now.AddDate(0, -2, 0)); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.40,'kWh','USD','regional_average','state average',$2,true,$3)`, home, now, now.AddDate(0, -2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if fallback := read(); fallback.Kind != "unavailable" || fallback.UnavailableReason != "rate_unavailable" {
+		t.Fatalf("stored regional fallback tariff must not be the home rate: %+v", fallback)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,2,'electricity',0.10,'kWh','USD','user_tariff','bill',$2,false,$3)`, home, now, now.AddDate(0, -2, 0)); err != nil {
 		t.Fatal(err)
 	}
 	tariff := read()
