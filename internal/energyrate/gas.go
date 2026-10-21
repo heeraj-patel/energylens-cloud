@@ -209,23 +209,48 @@ func (s *Service) gasRegionRate(ctx context.Context, region string) (GasRate, bo
 		backoff := s.now().Before(s.failUntil[key])
 		s.mu.Unlock()
 		if !backoff {
-			fresh, err := s.gasFetcher.ResidentialGasPrice(context.WithoutCancel(ctx), region)
-			s.mu.Lock()
-			if err != nil {
-				s.failUntil[key] = s.now().Add(failureBackoff)
-			} else {
-				delete(s.failUntil, key)
-			}
-			s.mu.Unlock()
+			fresh, err := s.fetchGas(ctx, region)
 			if err == nil {
-				if fresh.FetchedAt.IsZero() {
-					fresh.FetchedAt = s.now().UTC()
-				}
-				s.gasCache.put(fresh)
 				return fresh, false, true
 			}
 			s.log.Warn("energyrate: EIA gas fetch failed", "region", region, "err", err)
 		}
 	}
 	return cached, valid, valid
+}
+
+// fetchGas calls EIA with per-region request coalescing, records the failure
+// backoff, and writes the cache.
+func (s *Service) fetchGas(ctx context.Context, region string) (GasRate, error) {
+	s.mu.Lock()
+	if c, ok := s.gasInflight[region]; ok {
+		s.mu.Unlock()
+		select {
+		case <-c.done:
+			return c.r, c.err
+		case <-ctx.Done():
+			return GasRate{}, ctx.Err()
+		}
+	}
+	c := &gasCall{done: make(chan struct{})}
+	s.gasInflight[region] = c
+	s.mu.Unlock()
+
+	c.r, c.err = s.gasFetcher.ResidentialGasPrice(context.WithoutCancel(ctx), region)
+	if c.err == nil {
+		if c.r.FetchedAt.IsZero() {
+			c.r.FetchedAt = s.now().UTC()
+		}
+		s.gasCache.put(c.r)
+	}
+	s.mu.Lock()
+	delete(s.gasInflight, region)
+	if c.err != nil {
+		s.failUntil["gas:"+region] = s.now().Add(failureBackoff)
+	} else {
+		delete(s.failUntil, "gas:"+region)
+	}
+	s.mu.Unlock()
+	close(c.done)
+	return c.r, c.err
 }

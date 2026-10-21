@@ -112,8 +112,15 @@ type Service struct {
 	mu             sync.Mutex
 	failUntil      map[string]time.Time // region → no refetch before this instant
 	inflight       map[string]*call     // region → fetch in progress (coalescing)
+	gasInflight    map[string]*gasCall  // region → gas fetch in progress (coalescing)
 	lastGood       map[string]Rate      // region → newest rate seen (fetched or read from the cache)
 	cacheDownUntil time.Time            // no Cache.Get before this instant (after a cache error)
+}
+
+type gasCall struct {
+	done chan struct{}
+	r    GasRate
+	err  error
 }
 
 type call struct {
@@ -158,6 +165,7 @@ func NewService(o Options) *Service {
 		log:          o.Logger,
 		failUntil:    map[string]time.Time{},
 		inflight:     map[string]*call{},
+		gasInflight:  map[string]*gasCall{},
 		lastGood:     map[string]Rate{},
 	}
 }

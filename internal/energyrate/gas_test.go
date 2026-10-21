@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -157,5 +159,35 @@ func TestEIAGasNoKey(t *testing.T) {
 	c := NewEIAClient("http://127.0.0.1:1", "")
 	if _, err := c.ResidentialGasPrice(context.Background(), "TX"); err == nil {
 		t.Fatal("expected no-key error")
+	}
+}
+
+type slowGasFetcher struct {
+	calls atomic.Int32
+	rate  GasRate
+}
+
+func (f *slowGasFetcher) ResidentialGasPrice(context.Context, string) (GasRate, error) {
+	f.calls.Add(1)
+	time.Sleep(200 * time.Millisecond)
+	return f.rate, nil
+}
+
+func TestGasRegionRateCoalescesConcurrentFetches(t *testing.T) {
+	f := &slowGasFetcher{rate: gasRate("TX", 1.5, gasNow)}
+	s := gasService(f, true, nil, GasStaticRate{})
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.ResolveGas(context.Background(), "78732"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := f.calls.Load(); n != 1 {
+		t.Fatalf("fetches = %d, want 1", n)
 	}
 }
