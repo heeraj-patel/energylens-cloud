@@ -266,7 +266,8 @@ func gasDeviceRows(ctx context.Context, tx pgx.Tx, gc *gasContext, home string, 
 }
 
 // decorate adds gas fields to the measured rows of metered gas appliances.
-// Their electric figures stay measured; gas covers the buckets that have a row.
+// Their electric figures stay measured; gas is never metered, so the period row
+// carries gas for every requested bucket, not only the measured ones.
 func (gc *gasContext) decorate(buckets []bucket, rows [][]deviceAllocation, periodRows []deviceAllocation) {
 	if gc == nil {
 		return
@@ -276,14 +277,15 @@ func (gc *gasContext) decorate(buckets []bucket, rows [][]deviceAllocation, peri
 			continue
 		}
 		var total gasFigures
+		for bi := range buckets {
+			total.add(g.gasOnly(buckets[bi].Start, buckets[bi].End))
+		}
 		for bi := range rows {
 			for j := range rows[bi] {
 				if rows[bi][j].ApplianceID != g.id {
 					continue
 				}
-				f := g.gasOnly(buckets[bi].Start, buckets[bi].End)
-				total.add(f)
-				applyGas(&rows[bi][j].Allocation, g, f, gc.rate)
+				applyGas(&rows[bi][j].Allocation, g, g.gasOnly(buckets[bi].Start, buckets[bi].End), gc.rate)
 			}
 		}
 		for j := range periodRows {

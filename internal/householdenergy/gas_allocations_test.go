@@ -385,3 +385,26 @@ func TestApplyGasOnMeasuredRowKeepsElectricAndAddsGas(t *testing.T) {
 }
 
 func ptrTo(s string) *string { return &s }
+
+func TestDecorateProratesMeteredGasOverFullPeriod(t *testing.T) {
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	buckets := make([]bucket, 30)
+	rows := make([][]deviceAllocation, 30)
+	for i := range buckets {
+		buckets[i] = bucket{Start: start.AddDate(0, 0, i), End: start.AddDate(0, 0, i+1)}
+		if i < 10 {
+			rows[i] = []deviceAllocation{{ApplianceID: "a"}}
+		}
+	}
+	therms, kwh := 365.0, 365.0*29.3
+	g := gasAppliance{id: "a", fuel: "natural_gas", metered: true, estimate: gasestimate.Estimate{GasTherms: &therms, GasKWhEq: &kwh}}
+	gc := &gasContext{appliances: []gasAppliance{g}, rate: &GasRate{USDPerTherm: big.NewRat(2, 1), Basis: "static"}}
+	period := []deviceAllocation{{ApplianceID: "a"}}
+	gc.decorate(buckets, rows, period)
+	if got := period[0].Allocation.GasCost.(money).Amount; got != "60.000000" {
+		t.Fatalf("period gas_cost = %s, want the full 30-day value 60.000000", got)
+	}
+	if got := rows[0][0].Allocation.GasCost.(money).Amount; got != "2.000000" {
+		t.Fatalf("bucket gas_cost = %s", got)
+	}
+}
