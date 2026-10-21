@@ -207,7 +207,7 @@ func (s catalogReader) familyCandidates(ctx context.Context, q Search, exclude [
 		return nil, nil
 	}
 	rows, err := s.db.Query(ctx, `SELECT p.id, COALESCE(f.test_basis->>'matched_model', CASE WHEN f.id IS NULL THEN p.full_model END), `+brandKeySQL+`, p.full_model, p.variant, p.region
-	    FROM catalog_products p LEFT JOIN active_catalog_facts f ON f.product_id=p.id
+	    FROM catalog_products p LEFT JOIN active_catalog_facts f ON f.product_id=p.id AND f.kind='annual_energy'
 	      AND f.source_kind IN ('oem_family', 'other_official', 'epa_family', 'doe_ccd', 'oem_search', 'manual_research')
 	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND ($2::text='' OR p.fuel=$2)
 	      AND p.match_quality='documented_variant_family'

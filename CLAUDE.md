@@ -11,7 +11,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   `householdenergy` (dashboard, trends), `catalog`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
   `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs` (+OEDI, source probe),
   `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `designfixture`, `helpexport`, `migrate`, `apierror`.
-- `migrations/` embedded SQL 0016..0086 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
+- `migrations/` embedded SQL 0016..0087 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
 ## Build / test (verified 2026-10-16)
