@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -78,10 +79,14 @@ func newLinkFixture(t *testing.T) *linkFixture {
 }
 
 func (f *linkFixture) product(brand, brandKey, model, quality string, variant, region *string) string {
+	return f.fuelProduct("electricity", brand, brandKey, model, quality, variant, region)
+}
+
+func (f *linkFixture) fuelProduct(fuel, brand, brandKey, model, quality string, variant, region *string) string {
 	f.t.Helper()
 	id := uuid.NewString()
 	json := `{"id":"` + id + `"` + brandKeyJSON(brandKey) + `}`
-	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_products(id,category,brand,full_model,variant,region,fuel,match_quality,product_json) VALUES($1,'refrigerator',$2,$3,$4,$5,'electricity',$6,$7::jsonb)`, id, brand, model, variant, region, quality, json); err != nil {
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_products(id,category,brand,full_model,variant,region,fuel,match_quality,product_json) VALUES($1,'refrigerator',$2,$3,$4,$5,$8,$6,$7::jsonb)`, id, brand, model, variant, region, quality, json, fuel); err != nil {
 		f.t.Fatal(err)
 	}
 	return id
@@ -235,14 +240,14 @@ func TestRelinkCatalogLinksUnlinkedAppliancesOnce(t *testing.T) {
 	exact := f.create("Acme", "A123", "electricity")
 	family := f.create("Delta", "DX1234B", "electricity")
 	unknown := f.create("Zed", "Z1", "electricity")
-	gas := f.create("Acme", "A123", "natural_gas")
+	gas := f.create("Acme", "A123", "natural_gas") // no gas product exists, so it stays unresolved
 	pExact := f.product("Acme", "acme", "A123", "confirmed_exact", nil, nil)
 	f.fact(pExact, "epa_exact", "", now)
 	pFamily := f.product("Delta", "delta", "DX1234A", "documented_variant_family", nil, nil)
 	f.fact(pFamily, "oem_family", "DX1234*", now)
 
 	got, err := f.store.RelinkCatalog(f.ctx)
-	if err != nil || got != (RelinkResult{LinkedExact: 1, LinkedFamily: 1, Unresolved: 1}) {
+	if err != nil || got != (RelinkResult{LinkedExact: 1, LinkedFamily: 1, Unresolved: 2}) {
 		t.Fatalf("first pass %+v %v", got, err)
 	}
 	for id, want := range map[string]string{exact.ID: pExact, family.ID: pFamily} {
@@ -260,7 +265,7 @@ func TestRelinkCatalogLinksUnlinkedAppliancesOnce(t *testing.T) {
 		}
 	}
 	got, err = f.store.RelinkCatalog(f.ctx)
-	if err != nil || got != (RelinkResult{Unresolved: 1}) {
+	if err != nil || got != (RelinkResult{Unresolved: 2}) {
 		t.Fatalf("second pass %+v %v", got, err)
 	}
 }
@@ -328,5 +333,87 @@ func TestRelinkCarriesUsageAnswersToTheNewVersion(t *testing.T) {
 	}
 	if len(got) != 2 || got["refrigerator.hours_per_week"] != "confirmed/45.5/3" || got["refrigerator.age_band"] != "unknown//2" {
 		t.Fatalf("carried answers: %v", got)
+	}
+}
+
+func (f *linkFixture) createDryer(brand, model, fuel string) Appliance {
+	f.t.Helper()
+	hash := sha256.Sum256([]byte("dryer" + brand + model + fuel))
+	a, err := f.store.Create(f.ctx, f.owner, f.home, CreateInput{Name: "Dryer", Category: "dryer", Identity: Identity{Brand: brand, FullModel: model, Fuel: fuel, MatchQuality: "unresolved"}}, uuid.NewString(), hash[:])
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return a
+}
+
+func TestGasAppliancesLinkOnlyToProductsOfTheirOwnFuel(t *testing.T) {
+	f := newLinkFixture(t)
+	now := time.Now().UTC()
+	gasExact := f.fuelProduct("natural_gas", "Acme", "acme", "GD100A", "confirmed_exact", nil, nil)
+	f.fact(gasExact, "epa_exact", "", now)
+	elecSame := f.product("Acme", "acme", "GD100A", "confirmed_exact", nil, nil)
+	f.fact(elecSame, "epa_exact", "", now)
+	gasFamily := f.fuelProduct("natural_gas", "Acme", "acme", "GF2000A", "documented_variant_family", nil, nil)
+	f.fact(gasFamily, "oem_family", "GF2000*", now)
+	gasTrim := f.fuelProduct("natural_gas", "Acme", "acme", "GT3000ABCD", "confirmed_exact", nil, nil)
+	f.fact(gasTrim, "epa_exact", "", now)
+	gasOnly := f.fuelProduct("natural_gas", "Acme", "acme", "GO400A", "confirmed_exact", nil, nil)
+	f.fact(gasOnly, "epa_exact", "", now)
+	elecOnly := f.product("Acme", "acme", "EO500A", "confirmed_exact", nil, nil)
+	f.fact(elecOnly, "epa_exact", "", now)
+
+	f.wantLink(f.createDryer("Acme", "GD100A", "natural_gas"), gasExact, "confirmed_exact")
+	f.wantLink(f.createDryer("Acme", "GD100A", "electricity"), elecSame, "confirmed_exact")
+	f.wantLink(f.createDryer("Acme", "GF2000B", "natural_gas"), gasFamily, "documented_variant_family")
+	f.wantLink(f.createDryer("Acme", "GF2000B", "electricity"), "", "unresolved")
+	f.wantLink(f.createDryer("Acme", "GT3000ABCX", "natural_gas"), gasTrim, "documented_variant_family")
+	f.wantLink(f.createDryer("Acme", "GT3000ABCX", "electricity"), "", "unresolved")
+	f.wantLink(f.createDryer("Acme", "GO400A", "electricity"), "", "unresolved")
+	f.wantLink(f.createDryer("Acme", "EO500A", "natural_gas"), "", "unresolved")
+
+	hash := sha256.Sum256([]byte("fuel mismatch"))
+	for _, c := range []struct{ fuel, product string }{{"electricity", gasOnly}, {"natural_gas", elecOnly}} {
+		identity := Identity{Brand: "Acme", FullModel: "ZZ1", Fuel: c.fuel, MatchQuality: "confirmed_exact", CatalogProductID: &c.product}
+		_, err := f.store.Create(f.ctx, f.owner, f.home, CreateInput{Name: "Dryer", Category: "dryer", Identity: identity}, uuid.NewString(), hash[:])
+		if !errors.Is(err, ErrCatalogMismatch) {
+			t.Fatalf("%s appliance picking a product of another fuel = %v", c.fuel, err)
+		}
+	}
+}
+
+func TestPatchRelinksGasApplianceAfterModelEdit(t *testing.T) {
+	f := newLinkFixture(t)
+	product := f.fuelProduct("natural_gas", "Acme", "acme", "GD200A", "confirmed_exact", nil, nil)
+	f.fact(product, "epa_exact", "", time.Now().UTC())
+	base := f.createDryer("Acme", "GD1", "natural_gas")
+	f.wantLink(base, "", "unresolved")
+	identity := Identity{Brand: "Acme", FullModel: "GD200A", Fuel: "natural_gas", MatchQuality: "unresolved"}
+	patched, err := f.store.Patch(f.ctx, f.owner, f.home, base.ID, PatchInput{Identity: &identity}, base.Version, uuid.NewString(), make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.wantLink(patched, product, "confirmed_exact")
+}
+
+func TestRelinkCatalogLinksGasAppliancesToGasProducts(t *testing.T) {
+	f := newLinkFixture(t)
+	now := time.Now().UTC()
+	gas := f.createDryer("Acme", "GD100A", "natural_gas")
+	elec := f.createDryer("Acme", "GD100A", "electricity")
+	gasFamily := f.createDryer("Acme", "GF2000B", "natural_gas")
+	pGas := f.fuelProduct("natural_gas", "Acme", "acme", "GD100A", "confirmed_exact", nil, nil)
+	f.fact(pGas, "epa_exact", "", now)
+	pFamily := f.fuelProduct("natural_gas", "Acme", "acme", "GF2000A", "documented_variant_family", nil, nil)
+	f.fact(pFamily, "oem_family", "GF2000*", now)
+
+	got, err := f.store.RelinkCatalog(f.ctx)
+	if err != nil || got != (RelinkResult{LinkedExact: 1, LinkedFamily: 1, Unresolved: 1}) {
+		t.Fatalf("relink %+v %v", got, err)
+	}
+	for id, want := range map[string]string{gas.ID: pGas, gasFamily.ID: pFamily, elec.ID: ""} {
+		var column *string
+		if err = f.pool.QueryRow(f.ctx, `SELECT catalog_product_id::text FROM appliances WHERE id=$1`, id).Scan(&column); err != nil || (want == "") != (column == nil) || column != nil && *column != want {
+			t.Fatalf("appliance %s linked to %v, want %q (%v)", id, column, want, err)
+		}
 	}
 }

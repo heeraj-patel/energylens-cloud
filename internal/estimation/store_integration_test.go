@@ -275,3 +275,32 @@ func TestEstimateFloorWasteAndNationalRate(t *testing.T) {
 		t.Fatalf("floor waste above usage: %+v", got)
 	}
 }
+
+func TestGasApplianceLinkNeverYieldsElectricEstimate(t *testing.T) {
+	ctx, pool := estimationTestPool(t)
+	owner, home, appliance, product := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'Home','America/Chicago')`, []any{home, owner}},
+		{`INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'dryer','Acme','GD100A','natural_gas','confirmed_exact','{}')`, []any{product}},
+		{`INSERT INTO appliances(id,home_id,name,category,catalog_product_id,identity) VALUES($1,$2,'Dryer','dryer',$3,'{"brand":"Acme","full_model":"GD100A","fuel":"natural_gas","match_quality":"confirmed_exact"}')`, []any{appliance, home, product}},
+		{`INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.20,'kWh','USD','user_tariff','bill',$2,false,$3)`, []any{home, now, now.AddDate(0, -1, -1)}},
+		{`INSERT INTO datawiz_energy_resolutions(appliance_ref,request_sha256,record,resolved_at) VALUES($1,$2,$3,clock_timestamp())`, []any{"cloud:" + appliance, make([]byte, 32), `{"appliance_version":1,"status":"resolved","device_kind":"real_non_metering","values":{"kwh_per_day":2.5,"waste_kwh_per_day":0.5}}`}},
+	} {
+		if _, err := pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, err := PGRunStore{Pool: pool}.ListRuns(ctx, owner, home, &appliance, now)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs %d: %v", len(runs), err)
+	}
+	got := decodeEstimate(t, runs[0])
+	if got.Kind != "unavailable" || got.UnavailableReason != "basis_incomparable" || got.Energy != nil || got.Cost != nil || got.WasteEnergy != nil {
+		t.Fatalf("gas appliance got an electric estimate: %+v", got)
+	}
+}

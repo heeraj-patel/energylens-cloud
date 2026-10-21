@@ -193,3 +193,34 @@ func TestResolutionAllocationsFloorWasteUsesHomeOrNationalRate(t *testing.T) {
 		t.Fatalf("home tariff row: %+v", a)
 	}
 }
+
+func TestResolutionAllocationsSkipGasAppliances(t *testing.T) {
+	ctx, pool := resolutionTestPool(t)
+	owner, home, gas, electric := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	record := `{"appliance_version":1,"status":"resolved","device_kind":"real_non_metering","values":{"kwh_per_day":0.008,"waste_kwh_per_day":0.008}}`
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'Home','America/Chicago')`, []any{home, owner}},
+		{`INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Gas dryer','dryer','{"fuel":"natural_gas","match_quality":"confirmed_exact"}')`, []any{gas, home}},
+		{`INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'Lamp','light','{"fuel":"electricity","match_quality":"unresolved"}')`, []any{electric, home}},
+		{`INSERT INTO datawiz_energy_resolutions(appliance_ref,request_sha256,record,resolved_at) VALUES($1,$2,$3,now()),($4,$2,$3,now())`, []any{"cloud:" + gas, make([]byte, 32), record, "cloud:" + electric}},
+	} {
+		if _, err := pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loc, _ := time.LoadLocation("America/Chicago")
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, loc)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	rows, period, err := resolutionDeviceRows(ctx, tx, home, []bucket{{Start: start, End: start.AddDate(0, 0, 1)}}, start.AddDate(0, 0, 1), nil)
+	if err != nil || len(rows) != 1 || len(rows[0]) != 1 || len(period) != 1 || rows[0][0].ApplianceID != electric {
+		t.Fatalf("only the electric appliance may be allocated: %+v %+v %v", rows, period, err)
+	}
+}

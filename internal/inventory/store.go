@@ -296,10 +296,11 @@ func checkCatalog(ctx context.Context, tx pgx.Tx, a Appliance) error {
 }
 
 // linkCatalog sets the catalog link for an identity that has none: the single
-// exact product, else the single documented family product, else a prefix-trim family product.
+// exact product, else the single documented family product, else a prefix-trim
+// family product. Only products of the identity's own fuel are considered.
 func linkCatalog(ctx context.Context, tx pgx.Tx, a *Appliance) error {
 	i := &a.Identity
-	if i.CatalogProductID != nil || i.Fuel != "electricity" || strings.TrimSpace(i.Brand) == "" || strings.TrimSpace(i.FullModel) == "" {
+	if i.CatalogProductID != nil || strings.TrimSpace(i.Brand) == "" || strings.TrimSpace(i.FullModel) == "" {
 		return nil
 	}
 	category, err := energycategories.Ensure(ctx, tx, a.Category)
@@ -644,10 +645,10 @@ func validUUID(s string) bool { _, err := uuid.Parse(s); return err == nil && s 
 // RelinkResult counts the outcome of one RelinkCatalog pass.
 type RelinkResult struct{ LinkedExact, LinkedFamily, Unresolved int }
 
-// RelinkCatalog links active electricity appliances that have no catalog link,
+// RelinkCatalog links active appliances of any fuel that have no catalog link,
 // writing each change like a Patch: version bump and snapshot.
 func (s PGStore) RelinkCatalog(ctx context.Context) (RelinkResult, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id FROM appliances WHERE catalog_product_id IS NULL AND archived_at IS NULL AND identity->>'fuel'='electricity' AND btrim(identity->>'brand')<>'' AND btrim(identity->>'full_model')<>'' ORDER BY created_at,id`)
+	rows, err := s.Pool.Query(ctx, `SELECT id FROM appliances WHERE catalog_product_id IS NULL AND archived_at IS NULL AND btrim(identity->>'brand')<>'' AND btrim(identity->>'full_model')<>'' ORDER BY created_at,id`)
 	if err != nil {
 		return RelinkResult{}, err
 	}

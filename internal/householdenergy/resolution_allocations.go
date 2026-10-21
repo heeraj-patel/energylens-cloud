@@ -28,8 +28,9 @@ type resolvedEnergy struct {
 
 // resolutionDeviceRows keep estimates beside measured allocations. They never
 // enter whole-home measured totals, which may already include these loads.
+// Only electric appliances count: a gas appliance's record is never electric kWh.
 func resolutionDeviceRows(ctx context.Context, tx pgx.Tx, home string, buckets []bucket, now time.Time, national NationalRate) ([][]deviceAllocation, []deviceAllocation, error) {
-	rows, err := tx.Query(ctx, `SELECT a.id::text,r.record FROM appliances a JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id::text AND r.record->'appliance_version'=to_jsonb(a.version) WHERE a.home_id=$1 AND a.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM attachments t JOIN sensor_endpoints s ON s.id=t.sensor_id WHERE t.appliance_id=a.id AND t.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[]) ORDER BY a.id`, home)
+	rows, err := tx.Query(ctx, `SELECT a.id::text,r.record FROM appliances a JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id::text AND r.record->'appliance_version'=to_jsonb(a.version) WHERE a.home_id=$1 AND a.archived_at IS NULL AND COALESCE(a.identity->>'fuel','electricity')='electricity' AND NOT EXISTS(SELECT 1 FROM attachments t JOIN sensor_endpoints s ON s.id=t.sensor_id WHERE t.appliance_id=a.id AND t.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[]) ORDER BY a.id`, home)
 	if err != nil {
 		return nil, nil, err
 	}

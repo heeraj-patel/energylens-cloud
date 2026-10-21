@@ -428,3 +428,49 @@ func TestDrainQueueScansInventoryOncePerBatch(t *testing.T) {
 		t.Fatalf("resolve files: %d", len(paths))
 	}
 }
+
+func TestProducerSkipsDeviceLookupOnlyForSameFuelFactLink(t *testing.T) {
+	ctx, pool := testPool(t)
+	owner, home := uuid.NewString(), uuid.NewString()
+	for _, q := range []string{
+		`INSERT INTO users(id) VALUES('` + owner + `')`,
+		`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES('` + home + `','` + owner + `','Home','America/Chicago')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hash := strings.Repeat("a", 64)
+	if _, err := pool.Exec(ctx, `INSERT INTO catalog_publications(payload_sha256,key_id,envelope_sha256,imported_by,product_count,fact_count) VALUES($1,$1,$1,'test',1,1)`, hash); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		model, productFuel, applianceFuel string
+		want                              int
+	}{{"Gas-Same-1", "natural_gas", "natural_gas", 0}, {"Gas-Mismatch-1", "electricity", "natural_gas", 1}, {"Elec-Mismatch-1", "natural_gas", "electricity", 1}} {
+		product := uuid.NewString()
+		if _, err := pool.Exec(ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'dryer','Acme',$2,$3,'confirmed_exact','{}')`, product, tc.model, tc.productFuel); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO catalog_fact_revisions(id,product_id,publication_sha256,kind,value,unit,test_basis,included_energy,source_kind,source_url,source_hash,source_hash_basis,source_manifest,reviewed_at,revision,fact_json) VALUES($1,$2,$3,'annual_energy',20,'kWh','{}','{}','epa_exact','https://example.org/fact',$3,'reviewed_row_manifest','sources/example.json',now(),1,'{}')`, uuid.NewString(), product, hash); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO appliances(id,home_id,name,category,identity,catalog_product_id) VALUES($1,$2,'Dryer','dryer',jsonb_build_object('brand','Acme','full_model',$3::text,'fuel',$4::text,'match_quality','confirmed_exact'),$5)`, uuid.NewString(), home, tc.model, tc.applianceFuel, product); err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		if _, err := (Producer{DB: pool, Dir: dir}).RunOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+		paths, _ := filepath.Glob(filepath.Join(dir, "device", "*.json"))
+		found := 0
+		for _, path := range paths {
+			if body, _ := os.ReadFile(path); strings.Contains(string(body), tc.model) {
+				found++
+			}
+		}
+		if found != tc.want {
+			t.Fatalf("%s device requests: got %d want %d", tc.model, found, tc.want)
+		}
+	}
+}
