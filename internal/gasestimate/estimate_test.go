@@ -1,0 +1,187 @@
+package gasestimate
+
+import (
+	"math"
+	"testing"
+
+	"energylens.local/cloud/internal/catalog"
+)
+
+func fp(v float64) *float64 { return &v }
+
+func near(t *testing.T, name string, got *float64, want, tol float64) {
+	t.Helper()
+	if got == nil || math.Abs(*got-want) > tol {
+		t.Fatalf("%s = %v, want %v +-%v", name, got, want, tol)
+	}
+}
+
+func isNil(t *testing.T, name string, got *float64) {
+	t.Helper()
+	if got != nil {
+		t.Fatalf("%s = %v, want nil", name, *got)
+	}
+}
+
+func uef(v float64, pattern string) *catalog.FactValue {
+	return &catalog.FactValue{Value: v, TestBasis: map[string]any{"draw_pattern": pattern}}
+}
+
+func TestGasDryerDVG45T6000VFromCEF(t *testing.T) {
+	e, ok := Compute(Input{Class: ClassDryer, Fuel: "natural_gas", Facts: catalog.GasFacts{CEF: &catalog.FactValue{Value: 3.3, TestBasis: map[string]any{"appendix": "D1"}}}})
+	if !ok {
+		t.Fatal("gas dryer not estimated")
+	}
+	near(t, "total kWh-eq", e.TotalKWhEq, 724.7, 0.1)
+	near(t, "electric", e.ElectricKWh, 59.4, 0.1)
+	near(t, "therms", e.GasTherms, 22.7, 0.1)
+	near(t, "gas kWh-eq", e.GasKWhEq, 724.7-59.4, 0.1)
+	if e.GasBasis != BasisDerivedFromCEF || e.ElectricBasis != BasisTypical {
+		t.Fatalf("basis %q/%q", e.GasBasis, e.ElectricBasis)
+	}
+}
+
+func TestGasDryerWithoutCEFKeepsTypicalElectricOnly(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassDryer, Fuel: "natural_gas"})
+	near(t, "electric", e.ElectricKWh, 59.43, 0.01)
+	isNil(t, "therms", e.GasTherms)
+	isNil(t, "total", e.TotalKWhEq)
+	if e.GasBasis != BasisTypical {
+		t.Fatalf("basis %q", e.GasBasis)
+	}
+}
+
+func TestGasWaterHeaterUsesCECElectricAndENERGYSTARTherms(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(47), AnnualFuelTherm: fp(135.2), UEF: uef(0.81, "medium")}})
+	near(t, "electric", e.ElectricKWh, 47, 0)
+	near(t, "therms", e.GasTherms, 135.2, 0)
+	near(t, "total", e.TotalKWhEq, 47+135.2*29.31, 1e-9)
+	if e.GasBasis != BasisRatedFact || e.ElectricBasis != BasisRatedFact {
+		t.Fatalf("basis %q/%q", e.GasBasis, e.ElectricBasis)
+	}
+}
+
+func TestGasWaterHeaterZeroElectricFactIsKept(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassWaterHeater, Tankless: true, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(0), AnnualFuelTherm: fp(100)}})
+	near(t, "electric", e.ElectricKWh, 0, 0)
+	near(t, "total", e.TotalKWhEq, 2931, 1e-9)
+}
+
+func TestGasWaterHeaterUEFDerivedKeepsAnnualBtu(t *testing.T) {
+	btu, ok := WaterHeaterAnnualBtu(0.81, "medium")
+	if !ok || math.Abs(btu-13682723) > 1 {
+		t.Fatalf("E_annual = %v", btu)
+	}
+	e, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(47), UEF: uef(0.81, "Medium")}})
+	near(t, "therms", e.GasTherms, 135223.59/1000, 0.01)
+	near(t, "fuel+electric Btu", fp(*e.GasTherms*btuPerTherm+*e.ElectricKWh*btuPerKWh), 13682723, 1)
+	if e.GasBasis != BasisRatedFact {
+		t.Fatalf("basis %q", e.GasBasis)
+	}
+}
+
+func TestGasWaterHeaterTypicalsByType(t *testing.T) {
+	facts := catalog.GasFacts{UEF: uef(0.81, "medium")}
+	storage, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: facts})
+	tankless, _ := Compute(Input{Class: ClassWaterHeater, Tankless: true, Fuel: "natural_gas", Facts: facts})
+	near(t, "storage electric", storage.ElectricKWh, 29, 0)
+	near(t, "tankless electric", tankless.ElectricKWh, 38, 0)
+	if storage.ElectricBasis != BasisTypical {
+		t.Fatalf("electric basis %q", storage.ElectricBasis)
+	}
+	none, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas"})
+	isNil(t, "therms without facts", none.GasTherms)
+	isNil(t, "total without facts", none.TotalKWhEq)
+	if none.GasBasis != BasisTypical {
+		t.Fatalf("basis %q", none.GasBasis)
+	}
+	if _, ok := WaterHeaterAnnualBtu(0.81, "huge"); ok {
+		t.Fatal("unknown draw pattern accepted")
+	}
+}
+
+func TestGasBoilerStandbyUpperBound(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(9), OffModeW: fp(9)}})
+	near(t, "electric", e.ElectricKWh, 78.84, 1e-9)
+	near(t, "total", e.TotalKWhEq, 78.84, 1e-9)
+	isNil(t, "therms", e.GasTherms)
+	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(4), OffModeW: fp(9)}})
+	near(t, "max of standby and off", e.ElectricKWh, 78.84, 1e-9)
+	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas"})
+	isNil(t, "no facts", e.ElectricKWh)
+}
+
+func TestGasFurnaceAndSpaceHeaterElectricOnlyWhenFact(t *testing.T) {
+	for _, class := range []Class{ClassFurnace, ClassSpaceHeater} {
+		with, _ := Compute(Input{Class: class, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(341)}})
+		near(t, string(class)+" electric", with.ElectricKWh, 341, 0)
+		isNil(t, string(class)+" therms", with.GasTherms)
+		without, _ := Compute(Input{Class: class, Fuel: "natural_gas"})
+		isNil(t, string(class)+" electric without fact", without.ElectricKWh)
+		isNil(t, string(class)+" total without fact", without.TotalKWhEq)
+	}
+}
+
+func TestOtherGasClassesAreAllNil(t *testing.T) {
+	for _, category := range []string{"Gas Range", "pool heater", "fireplace", "cooktop"} {
+		class, _ := ClassOf(category)
+		e, ok := Compute(Input{Class: class, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(10), StandbyW: fp(5)}})
+		if !ok || e.ElectricKWh != nil || e.GasTherms != nil || e.TotalKWhEq != nil {
+			t.Fatalf("%s: %+v", category, e)
+		}
+	}
+}
+
+func TestPropaneKeepsGallonsAndNoTherms(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "propane", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(0), AnnualFuelGallon: fp(210), AnnualFuelTherm: fp(190)}})
+	near(t, "gallons", e.AnnualFuelGallon, 210, 0)
+	near(t, "electric", e.ElectricKWh, 0, 0)
+	isNil(t, "therms", e.GasTherms)
+	isNil(t, "gas kWh-eq", e.GasKWhEq)
+	isNil(t, "total", e.TotalKWhEq)
+	d, _ := Compute(Input{Class: ClassDryer, Fuel: "propane", Facts: catalog.GasFacts{CEF: &catalog.FactValue{Value: 3.3}}})
+	near(t, "propane dryer electric", d.ElectricKWh, 59.43, 0.01)
+	isNil(t, "propane dryer therms", d.GasTherms)
+}
+
+func TestElectricApplianceIsNotEstimated(t *testing.T) {
+	for _, fuel := range []string{"", "electricity"} {
+		if e, ok := Compute(Input{Class: ClassDryer, Fuel: fuel}); ok || e != (Estimate{}) {
+			t.Fatalf("fuel %q: %+v %v", fuel, e, ok)
+		}
+	}
+}
+
+func TestClassOf(t *testing.T) {
+	cases := []struct {
+		category string
+		class    Class
+		tankless bool
+	}{
+		{"dryer", ClassDryer, false}, {"Clothes Dryer", ClassDryer, false}, {"water_heater", ClassWaterHeater, false},
+		{"Tankless Water Heater", ClassWaterHeater, true}, {"tankless", ClassWaterHeater, true}, {"boiler", ClassBoiler, false},
+		{"furnace", ClassFurnace, false}, {"hvac", ClassFurnace, false}, {"space_heater", ClassSpaceHeater, false},
+		{"pool heater", ClassNone, false}, {"oven", ClassNone, false}, {"refrigerator", ClassNone, false},
+	}
+	for _, c := range cases {
+		if class, tankless := ClassOf(c.category); class != c.class || tankless != c.tankless {
+			t.Errorf("%q = %s/%v, want %s/%v", c.category, class, tankless, c.class, c.tankless)
+		}
+	}
+}
+
+func TestHVACSplitsBoilerFromFurnaceByFacts(t *testing.T) {
+	boiler, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(0), ProductGroup: "Gas-fired hot water boiler"}})
+	near(t, "boiler by group, off-mode 0 W", boiler.ElectricKWh, 0, 0)
+	standby, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{StandbyW: fp(9)}})
+	near(t, "boiler by standby fact", standby.ElectricKWh, 78.84, 1e-9)
+	furnace, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{AFUE: fp(96), ProductGroup: "Weatherized gas furnaces"}})
+	isNil(t, "furnace without kWh fact", furnace.ElectricKWh)
+}
+
+func TestInstantaneousProductGroupSelectsTanklessTypical(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{ProductGroup: "Instantaneous Gas-fired Water Heater"}})
+	near(t, "tankless typical", e.ElectricKWh, 38, 0)
+	e, _ = Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{ProductGroup: "Gas-fired Storage Water Heater"}})
+	near(t, "storage typical", e.ElectricKWh, 29, 0)
+}

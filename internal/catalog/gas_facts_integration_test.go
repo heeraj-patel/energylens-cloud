@@ -41,7 +41,7 @@ func TestReadGasFactsAndGetSerialiseEveryKind(t *testing.T) {
 	add("standby_power", "W", 4.5, "{}", now, 1)
 	add("off_mode_power", "W", 0, "{}", now, 1)
 	add("auxiliary_power", "W", 60, "{}", now, 1)
-	add("burner_input", "Btu/h", 22000, "{}", now, 1)
+	add("burner_input", "Btu/h", 22000, `{"product_group_code":"Gas-fired hot water boiler"}`, now, 1)
 
 	got, err := ReadGasFacts(ctx, pool, product)
 	if err != nil {
@@ -53,8 +53,8 @@ func TestReadGasFactsAndGetSerialiseEveryKind(t *testing.T) {
 		}
 		return *p
 	}
-	if got.Fuel != "natural_gas" || f(got.AnnualFuelTherm) != 120 || f(got.AnnualFuelGallon) != 130 || f(got.AFUE) != 95 ||
-		f(got.StandbyW) != 4.5 || f(got.OffModeW) != 0 || f(got.AuxiliaryW) != 60 || f(got.BurnerInputBtuH) != 22000 {
+	if got.Fuel != "natural_gas" || f(got.AnnualEnergyKWh) != 55 || f(got.AnnualFuelTherm) != 120 || f(got.AnnualFuelGallon) != 130 || f(got.AFUE) != 95 ||
+		f(got.StandbyW) != 4.5 || f(got.OffModeW) != 0 || f(got.AuxiliaryW) != 60 || f(got.BurnerInputBtuH) != 22000 || got.ProductGroup != "Gas-fired hot water boiler" {
 		t.Fatalf("scalar facts: %+v", got)
 	}
 	if got.CEF == nil || got.CEF.Value != 3.3 || got.CEF.TestBasis["appendix"] != "D1" {

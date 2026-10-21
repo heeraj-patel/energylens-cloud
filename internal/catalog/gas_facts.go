@@ -18,6 +18,7 @@ type FactValue struct {
 // A kind with no active fact is nil. Annual fuel is split by unit (therm, gallon).
 type GasFacts struct {
 	Fuel             string
+	AnnualEnergyKWh  *float64
 	AnnualFuelTherm  *float64
 	AnnualFuelGallon *float64
 	CEF              *FactValue
@@ -27,10 +28,11 @@ type GasFacts struct {
 	OffModeW         *float64
 	AuxiliaryW       *float64
 	BurnerInputBtuH  *float64
+	ProductGroup     string // DOE product_group_code from test_basis, when a fact carries it
 }
 
 // ReadGasFacts returns the product's fuel and active gas-relevant facts.
-// annual_energy (electric kWh) is not included; read it separately.
+// AnnualEnergyKWh is the electric part only; for gas classes it excludes fuel.
 func ReadGasFacts(ctx context.Context, db catalogQueries, productID string) (GasFacts, error) {
 	var out GasFacts
 	err := db.QueryRow(ctx, `SELECT fuel FROM catalog_products WHERE id=$1`, productID).Scan(&out.Fuel)
@@ -42,7 +44,7 @@ func ReadGasFacts(ctx context.Context, db catalogQueries, productID string) (Gas
 	}
 	rows, err := db.Query(ctx, `SELECT DISTINCT ON (kind, unit) kind, unit, value::float8, test_basis
 	    FROM active_catalog_facts
-	    WHERE product_id=$1 AND kind IN ('annual_fuel','combined_energy_factor','uniform_energy_factor','afue','standby_power','off_mode_power','auxiliary_power','burner_input')
+	    WHERE product_id=$1 AND kind IN ('annual_energy','annual_fuel','combined_energy_factor','uniform_energy_factor','afue','standby_power','off_mode_power','auxiliary_power','burner_input')
 	    ORDER BY kind, unit, reviewed_at DESC, revision DESC, id DESC`, productID)
 	if err != nil {
 		return out, err
@@ -56,7 +58,15 @@ func ReadGasFacts(ctx context.Context, db catalogQueries, productID string) (Gas
 			return out, err
 		}
 		v := value
+		var tb struct {
+			Group string `json:"product_group_code"`
+		}
+		if out.ProductGroup == "" && json.Unmarshal(basis, &tb) == nil {
+			out.ProductGroup = tb.Group
+		}
 		switch kind {
+		case "annual_energy":
+			out.AnnualEnergyKWh = &v
 		case "annual_fuel":
 			if unit == "therm" {
 				out.AnnualFuelTherm = &v
