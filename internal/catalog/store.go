@@ -209,7 +209,7 @@ func (s catalogReader) familyCandidates(ctx context.Context, q Search, exclude [
 	    FROM catalog_products p JOIN active_catalog_facts f ON f.product_id=p.id
 	    WHERE (cardinality($1::text[])=0 OR `+brandKeySQL+` = ANY($1)) AND ($2::text='' OR p.fuel=$2)
 	      AND p.match_quality='documented_variant_family'
-	      AND f.source_kind IN ('oem_family', 'other_official', 'epa_family')
+	      AND f.source_kind IN ('oem_family', 'other_official', 'epa_family', 'doe_ccd', 'oem_search', 'manual_research')
 	      AND (p.variant IS NULL OR $3::text IS NULL OR lower(p.variant)=lower($3))
 	      AND (p.region IS NULL OR ($4::text IS NOT NULL AND lower(p.region)=lower($4)))
 	      AND length(regexp_replace(upper(f.test_basis->>'matched_model'), '[^A-Z0-9*]', '', 'g'))=$5

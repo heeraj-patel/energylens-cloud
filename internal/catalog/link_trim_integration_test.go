@@ -110,3 +110,20 @@ func TestFindLinkPrefixTrimMedianAndDuplicates(t *testing.T) {
 		t.Errorf("duplicate products must count as one: found=%v err=%v", found, err)
 	}
 }
+
+func TestFindLinkDocumentedFamilyFromDatawizSources(t *testing.T) {
+	pool := migratedCatalogPool(t, "catalog_trim_")
+	ids := seedTrim(t, pool,
+		trimSeed{brand: "LG", model: "OLED55C3**", quality: "documented_variant_family", source: "doe_ccd", kwh: 250},
+		trimSeed{brand: "Sony", model: "XBRA80K**", quality: "documented_variant_family", source: "oem_search", kwh: 260},
+		trimSeed{brand: "Vizio", model: "VFDA50D**", quality: "documented_variant_family", source: "manual_research", kwh: 270},
+	)
+	for _, c := range []struct{ brand, model, want string }{
+		{"LG", "OLED55C3PU", "OLED55C3**"}, {"Sony", "XBRA80KAB", "XBRA80K**"}, {"Vizio", "VFDA50DXY", "VFDA50D**"},
+	} {
+		link, found, err := FindLink(context.Background(), pool, Search{Brand: c.brand, Model: c.model, Fuel: "electricity", Category: "tv"})
+		if err != nil || !found || link.ProductID != ids[c.want] || link.MatchQuality != "documented_variant_family" {
+			t.Errorf("%s %s: got %+v found=%v err=%v", c.brand, c.model, link, found, err)
+		}
+	}
+}
