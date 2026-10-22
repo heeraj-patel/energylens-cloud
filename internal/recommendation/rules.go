@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"energylens.local/cloud/internal/datawizfacts"
 	"math/big"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -231,8 +232,9 @@ func attachResearchTips(a Appliance, actions []Action) {
 				Context    string   `json:"context"`
 				Applicable []string `json:"applicable_categories"`
 				Excluded   []string `json:"excluded_categories"`
+				Fuels      []string `json:"applicable_fuels"`
 			}
-			if json.Unmarshal(tip.Value, &value) != nil || !tipApplies(value.Context, a.Category, actions[i].RuleID, value.Applicable, value.Excluded) {
+			if json.Unmarshal(tip.Value, &value) != nil || !tipApplies(value.Context, a.Category, actions[i].RuleID, value.Applicable, value.Excluded) || !tipFuelApplies(a.Fuel, value.Fuels) {
 				continue
 			}
 			actions[i].ResearchEvidence = append(actions[i].ResearchEvidence, tip)
@@ -241,6 +243,18 @@ func attachResearchTips(a Appliance, actions []Action) {
 			attached++
 		}
 	}
+}
+
+// Research tips are electricity guidance unless tagged with other fuels;
+// an empty appliance fuel means electricity.
+func tipFuelApplies(fuel string, tagged []string) bool {
+	if fuel == "" {
+		fuel = "electricity"
+	}
+	if len(tagged) == 0 {
+		return fuel == "electricity"
+	}
+	return slices.Contains(tagged, fuel)
 }
 
 // Source guidance can support an existing action without asserting that its

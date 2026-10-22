@@ -16,3 +16,23 @@ func TestHabitsTipWithoutCategoriesAttachesToAnyCategory(t *testing.T) {
 	got := Evaluate(a)
 	assertTipAttachments(t, got[0], []datawizfacts.Fact{habits})
 }
+
+func TestResearchTipsSkipNonElectricFuelUnlessTagged(t *testing.T) {
+	plain := researchTip("plain", "habits")
+	tagged := researchTip("tagged", "habits")
+	tagged.Value = json.RawMessage(`{"context":"habits","applicable_categories":["hvac"],"applicable_fuels":["natural_gas"]}`)
+	tips := []datawizfacts.Fact{plain, tagged}
+	cases := []struct {
+		fuel string
+		want []datawizfacts.Fact
+	}{
+		{"", []datawizfacts.Fact{plain}},
+		{"electricity", []datawizfacts.Fact{plain}},
+		{"natural_gas", []datawizfacts.Fact{tagged}},
+		{"propane", nil},
+	}
+	for _, c := range cases {
+		got := Evaluate(Appliance{ID: "h", Category: "hvac", Fuel: c.fuel, ResearchTips: tips})
+		assertTipAttachments(t, got[0], c.want)
+	}
+}
