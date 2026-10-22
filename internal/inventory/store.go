@@ -13,6 +13,7 @@ import (
 	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/energycategories"
 	"energylens.local/cloud/internal/householdenergy"
+	"energylens.local/cloud/internal/programs"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -406,6 +407,7 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 	if err = saveReplay(ctx, tx, owner, home, "create_appliance", key, hash, a); err != nil {
 		return Appliance{}, err
 	}
+	queueProgramRefresh(ctx, tx, owner, home, a.ID, "create:"+key)
 	return a, tx.Commit(ctx)
 }
 func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInput, version int64, key string, hash []byte) (Appliance, error) {
@@ -431,6 +433,7 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 	if a.Version != version {
 		return Appliance{}, ErrVersion
 	}
+	previousCategory, previousFuel := a.Category, a.Identity.Fuel
 	if in.Name != nil {
 		a.Name = *in.Name
 	}
@@ -479,7 +482,26 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 	if err = saveReplay(ctx, tx, owner, home, op, key, hash, a); err != nil {
 		return Appliance{}, err
 	}
+	if a.Category != previousCategory || a.Identity.Fuel != previousFuel {
+		queueProgramRefresh(ctx, tx, owner, home, a.ID, "patch:"+key)
+	}
 	return a, tx.Commit(ctx)
+}
+
+// queueProgramRefresh queues program discovery for the appliance's ZIP and
+// category. It is best effort in a savepoint, so a missing location or queue
+// limit never fails the appliance write.
+func queueProgramRefresh(ctx context.Context, tx pgx.Tx, owner, home, appliance, seed string) {
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return
+	}
+	key := uuid.NewSHA1(uuid.NameSpaceOID, []byte("program-refresh:"+seed)).String()
+	if _, err = programs.EnqueueInTx(ctx, sp, owner, home, appliance, key); err != nil {
+		_ = sp.Rollback(ctx)
+		return
+	}
+	_ = sp.Commit(ctx)
 }
 
 // Archive closes active attachments at the database clock before hiding the

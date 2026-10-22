@@ -36,6 +36,20 @@ func (s RefreshStore) Enqueue(ctx context.Context, owner, home, appliance, key s
 		return RefreshStatus{}, err
 	}
 	defer tx.Rollback(ctx)
+	id, err := EnqueueInTx(ctx, tx, owner, home, appliance, key)
+	if err != nil {
+		return RefreshStatus{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return RefreshStatus{}, err
+	}
+	return s.Status(ctx, owner, home, id)
+}
+
+// EnqueueInTx queues a coalesced discovery job inside the caller's transaction
+// and returns the request id. It never contacts an external source.
+func EnqueueInTx(ctx context.Context, tx pgx.Tx, owner, home, appliance, key string) (string, error) {
+	var err error
 	var country, zip, category string
 	var revision int
 	err = tx.QueryRow(ctx, `SELECT l.country_code,l.postal_code,l.revision,a.category
@@ -43,42 +57,39 @@ func (s RefreshStore) Enqueue(ctx context.Context, owner, home, appliance, key s
  LEFT JOIN LATERAL (SELECT country_code,postal_code,revision FROM home_location_revisions WHERE home_id=h.id ORDER BY revision DESC LIMIT 1) l ON true
  WHERE h.id=$1 AND h.owner_user_id=$2 AND h.deleted_at IS NULL FOR SHARE OF h,a`, home, owner, appliance).Scan(&country, &zip, &revision, &category)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return RefreshStatus{}, ErrOwnerHomeNotFound
+		return "", ErrOwnerHomeNotFound
 	}
 	if err != nil { // NULL location produces scan failure; check explicitly below on a second narrow read.
 		var exists bool
 		checkErr := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM homes h JOIN appliances a ON a.home_id=h.id WHERE h.id=$1 AND h.owner_user_id=$2 AND a.id=$3 AND a.archived_at IS NULL AND h.deleted_at IS NULL)`, home, owner, appliance).Scan(&exists)
 		if checkErr == nil && exists {
-			return RefreshStatus{}, ErrLocationRequired
+			return "", ErrLocationRequired
 		}
-		return RefreshStatus{}, err
+		return "", err
 	}
 	// Serialize a home's requests so its active queue bound and idempotency
 	// decision stay stable under concurrent API instances.
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "program-refresh:"+owner+":"+home); err != nil {
-		return RefreshStatus{}, err
+		return "", err
 	}
 	var existing string
 	var existingAppliance string
 	err = tx.QueryRow(ctx, `SELECT id::text,appliance_id::text FROM program_discovery_refresh_requests WHERE owner_user_id=$1 AND home_id=$2 AND idempotency_key=$3`, owner, home, key).Scan(&existing, &existingAppliance)
 	if err == nil {
 		if existingAppliance != appliance {
-			return RefreshStatus{}, ErrRefreshConflict
+			return "", ErrRefreshConflict
 		}
-		if err = tx.Commit(ctx); err != nil {
-			return RefreshStatus{}, err
-		}
-		return s.Status(ctx, owner, home, existing)
+		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return RefreshStatus{}, err
+		return "", err
 	}
 	var count int
 	if err = tx.QueryRow(ctx, `SELECT count(*) FROM program_discovery_refresh_requests r JOIN program_discovery_refresh_jobs j ON j.id=r.job_id WHERE r.owner_user_id=$1 AND r.home_id=$2 AND j.state IN ('pending','running')`, owner, home).Scan(&count); err != nil {
-		return RefreshStatus{}, err
+		return "", err
 	}
 	if count >= 10 {
-		return RefreshStatus{}, ErrRefreshLimit
+		return "", ErrRefreshLimit
 	}
 	var jobID string
 	for attempt := 0; attempt < 2; attempt++ {
@@ -87,29 +98,26 @@ func (s RefreshStore) Enqueue(ctx context.Context, owner, home, appliance, key s
 			break
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return RefreshStatus{}, err
+			return "", err
 		}
 		err = tx.QueryRow(ctx, `INSERT INTO program_discovery_refresh_jobs(country_code,postal_code,category) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id::text`, country, zip, category).Scan(&jobID)
 		if err == nil {
 			break
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return RefreshStatus{}, err
+			return "", err
 		}
 	}
 	if jobID == "" {
-		return RefreshStatus{}, errors.New("active refresh job unavailable")
+		return "", errors.New("active refresh job unavailable")
 	}
 	var id string
 	err = tx.QueryRow(ctx, `INSERT INTO program_discovery_refresh_requests(owner_user_id,home_id,appliance_id,location_revision,country_code,postal_code,category,idempotency_key,job_id)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id::text`, owner, home, appliance, revision, country, zip, category, key, jobID).Scan(&id)
 	if err != nil {
-		return RefreshStatus{}, err
+		return "", err
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return RefreshStatus{}, err
-	}
-	return s.Status(ctx, owner, home, id)
+	return id, nil
 }
 
 // Status checks all private snapshot fields against the current owner scope.
