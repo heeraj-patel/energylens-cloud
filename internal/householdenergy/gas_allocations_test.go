@@ -709,6 +709,21 @@ func TestGasFurnaceUsesHoursAndSeasonAnswers(t *testing.T) {
 	absent(t, deviceRow(t, h.get("/dashboard"), id), "gas_energy", "gas_cost", "gas_basis")
 }
 
+func TestGasBoilerUsesHoursAndSeasonAnswers(t *testing.T) {
+	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisStatic, 1.481))
+	burner := map[[2]string]float64{{"burner_input", "Btu/h"}: 100000}
+	p := h.product("hvac", "natural_gas", "B100", burner, `{"product_group_code":"Gas boilers"}`)
+	id := h.appliance("boiler", "natural_gas", "B100", &p)
+	absent(t, deviceRow(t, h.get("/dashboard"), id), "gas_energy", "gas_cost")
+	h.answer(id, "hvac.hours_per_week", "20")
+	h.answer(id, "hvac.season_share", "0.5")
+	row := deviceRow(t, h.get("/dashboard"), id)
+	near(t, "therms/day", amountOf(t, row, "gas_energy"), 100000*20*52*0.5/100000/365, 1e-6)
+	if row["gas_basis"] != "rated_fact" {
+		t.Fatalf("basis: %+v", row)
+	}
+}
+
 func TestGasHeatingWithoutBurnerInputOrOnPropaneHasNoThermsOrCost(t *testing.T) {
 	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisStatic, 1.481))
 	plain := h.product("hvac", "natural_gas", "F0", map[[2]string]float64{{"afue", "percent"}: 96}, `{"product_group_code":"Weatherized gas furnaces"}`)

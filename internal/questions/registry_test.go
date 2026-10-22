@@ -24,3 +24,19 @@ func TestWaterHeaterHouseholdSizeQuestion(t *testing.T) {
 		t.Fatal("household size is not a usage question")
 	}
 }
+
+func TestBoilerGetsHvacUsageQuestions(t *testing.T) {
+	qs := questionsForMapped("boiler", "boiler", "a1", 1, "onboarding")
+	if len(qs) != 2 || qs[0].ID != "hvac.hours_per_week" || qs[1].ID != "hvac.season_share" {
+		t.Fatalf("questions: %+v", qs)
+	}
+	hvac := questionsFor("hvac", "a1", 1, "onboarding")
+	for i, q := range qs {
+		if q.Prompt != hvac[i].Prompt || q.Unit != hvac[i].Unit || len(q.Options) != len(hvac[i].Options) {
+			t.Fatalf("question %d differs from hvac: %+v", i, q)
+		}
+		if !isUsageQuestion(q.ID) || !Applies("boiler", "boiler", q.ID) {
+			t.Fatalf("%s is not an applicable usage question", q.ID)
+		}
+	}
+}

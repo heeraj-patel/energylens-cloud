@@ -60,6 +60,15 @@ func TestCategoryRegistryAndETag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for raw, want := range map[string]string{"Boiler": "boiler", "boilers": "boiler", "furnace": "hvac", "heat_pump": "hvac"} {
+		if got, err := Ensure(ctx, tx, raw); err != nil || got != want {
+			t.Fatalf("Ensure(%q) = %q %v, want %q", raw, got, err, want)
+		}
+	}
+	var label, group string
+	if err = tx.QueryRow(ctx, `SELECT label,group_key FROM energy_categories WHERE key='boiler' AND origin='seed'`).Scan(&label, &group); err != nil || label != "Boiler" || group != "heating_cooling" {
+		t.Fatalf("boiler seed row: %q %q %v", label, group, err)
+	}
 	key, err := Ensure(ctx, tx, "Kegerator")
 	if err != nil || key != "kegerator" {
 		t.Fatalf("unknown key: %q %v", key, err)

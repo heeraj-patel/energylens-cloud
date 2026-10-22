@@ -417,3 +417,17 @@ func TestRelinkCatalogLinksGasAppliancesToGasProducts(t *testing.T) {
 		}
 	}
 }
+
+func TestBoilerLinksToHvacCategoryProductByExactModel(t *testing.T) {
+	f := newLinkFixture(t)
+	product := uuid.NewString()
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO catalog_products(id,category,brand,full_model,fuel,match_quality,product_json) VALUES($1,'hvac','Acme','B120','natural_gas','confirmed_exact','{"brand_key":"acme"}')`, product); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte("boiler"))
+	a, err := f.store.Create(f.ctx, f.owner, f.home, CreateInput{Name: "Boiler", Category: "boiler", Identity: Identity{Brand: "Acme", FullModel: "B120", Fuel: "natural_gas", MatchQuality: "unresolved"}}, uuid.NewString(), hash[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.wantLink(a, product, "confirmed_exact")
+}

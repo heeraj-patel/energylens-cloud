@@ -84,6 +84,7 @@ func fridge(category string) []definition {
 
 const onboardingVersion = 2
 
+// Boiler reuses the hvac question ids so answers survive a hvac/boiler recategorisation.
 var onboarding = map[string][]definition{
 	"light":           {hours("light", "lighting", hoursPrompt)},
 	"lighting":        {hours("lighting", "lighting", hoursPrompt)},
@@ -99,6 +100,7 @@ var onboarding = map[string][]definition{
 	"fan":             {hours("fan", "fan", hoursPrompt), season("fan")},
 	"dehumidifier":    {hours("dehumidifier", "dehumidifier", hoursPrompt), season("dehumidifier")},
 	"hvac":            {hours("hvac", "hvac", hoursPrompt), season("hvac")},
+	"boiler":          {hours("boiler", "hvac", hoursPrompt), {"boiler", "hvac.season_share", "choice", seasonPrompt, seasonUnit, seasonOpts}},
 	"water_heater":    {{"water_heater", "water_heater.household_size", "choice", householdPrompt, hotWaterUnit, householdOptions}},
 	"refrigerator":    fridge("refrigerator"),
 	"freezer":         fridge("freezer"),
