@@ -221,11 +221,11 @@ func (e *Estimate) setElectric(fact *float64, typical float64) {
 	}
 }
 
-// setStandby sets the yearly standby: the per-model fact wins, else the typical
-// watts (0: none). With no electric figure, standby is the minimum electric use.
+// setStandby sets the yearly standby: the per-model standby or off-mode fact
+// (the larger) wins, else the typical watts (0: none). With no electric figure, standby is the minimum electric use.
 func (e *Estimate) setStandby(f catalog.GasFacts, typicalW float64) {
 	switch w, ok := maxPresent(f.StandbyW, f.OffModeW); {
-	case f.StandbyW != nil && ok:
+	case ok:
 		e.StandbyKWh, e.StandbyBasis = ptr(w*standbyHoursPerYear), BasisRatedFact
 	case typicalW > 0:
 		e.StandbyKWh, e.StandbyBasis = ptr(typicalW*standbyHoursPerYear), BasisTypical

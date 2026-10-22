@@ -113,7 +113,28 @@ func TestGasBoilerStandbyUpperBound(t *testing.T) {
 	}
 	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(5)}})
 	near(t, "off-mode only still estimates electric", e.ElectricKWh, 43.8, 1e-9)
-	near(t, "off-mode only is not a standby fact: typical standby", e.StandbyKWh, 78.84, 1e-9)
+	near(t, "off-mode only is a per-model figure", e.StandbyKWh, 43.8, 1e-9)
+	if e.StandbyBasis != BasisRatedFact {
+		t.Fatalf("standby basis %q", e.StandbyBasis)
+	}
+}
+
+func TestGasOffModeOnlyStandbyIsPerModel(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(3)}})
+	near(t, "boiler off-mode 3 W", e.StandbyKWh, 26.28, 1e-9)
+	if e.StandbyBasis != BasisRatedFact {
+		t.Fatalf("basis %q", e.StandbyBasis)
+	}
+	e, _ = Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(0)}})
+	near(t, "boiler off-mode 0 W is rated zero", e.StandbyKWh, 0, 0)
+	if e.StandbyBasis != BasisRatedFact {
+		t.Fatalf("basis %q", e.StandbyBasis)
+	}
+	e, _ = Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{OffModeW: fp(4), ProductGroup: "Weatherized gas furnaces"}})
+	near(t, "furnace off-mode", e.StandbyKWh, 35.04, 1e-9)
+	if e.StandbyBasis != BasisRatedFact {
+		t.Fatalf("basis %q", e.StandbyBasis)
+	}
 }
 
 func TestGasStandbyTypicalsWithoutFacts(t *testing.T) {
