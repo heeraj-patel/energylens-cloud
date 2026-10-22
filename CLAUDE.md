@@ -29,7 +29,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   `adopt-dev-account-username`, `unlock-dev-username-login`, `deletion-journal`, `export-unresolved-device-help`.
 - Migrate with a separate DDL role (`ENERGYLENS_CLOUD_MIGRATION_DATABASE_URL`) before serving; serving never runs DDL.
 - Geekom deploy: `../energylens-common/scripts/deploy-geekom.sh cloud` cross-builds, copies to
-  `~/energylens-pilot/bin/energylens-cloud-api`, restarts user units `energylens-cloud-api.service` and `energylens-cloud-worker.service`. Needs `ENERGYLENS_GEEKOM_SSH`.
+  `~/energylens-pilot/bin/energylens-cloud-api`, restarts user units `energylens-cloud-api.service` and `energylens-cloud-worker.service`, then health-checks and rolls back on failure. Runs locally on nikesh-a9-max, over `tailscale ssh` elsewhere.
 
 ## Config (see `.env-example`; validation in `internal/app/config.go`)
 - `ENERGYLENS_CLOUD_ENV` dev (default) | staging | production. `RUNTIME_ENV` local | dev | test | staging | production;
