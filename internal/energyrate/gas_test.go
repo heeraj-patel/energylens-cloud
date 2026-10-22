@@ -243,3 +243,19 @@ func TestGasRegionRateCoalescesConcurrentFetches(t *testing.T) {
 		t.Fatalf("fetches = %d, want 1", n)
 	}
 }
+
+func TestGasMeanCountsDuplicatePeriodsOnce(t *testing.T) {
+	body := `{"response":{"data":[
+		{"period":"2026-07","series":"N3010TX3","value":"10"},
+		{"period":"2026-07","series":"N3010TX3","value":"40"},
+		{"period":"2026-06","series":"N3010TX3","value":"20"},
+		{"period":"2026-06","series":"N3010TX3","value":null}]}}`
+	r, err := gasClient(t, body, nil).ResidentialGasPrice(context.Background(), "TX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mean of 10 and 20 only: 15 / 10.36 = 1.4479 $/therm.
+	if math.Abs(r.USDPerTherm-1.4479) > 1e-9 {
+		t.Fatalf("rate = %+v", r)
+	}
+}

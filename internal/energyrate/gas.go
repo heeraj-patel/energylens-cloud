@@ -115,15 +115,21 @@ func (c *EIAClient) ResidentialGasPrice(ctx context.Context, region string) (Gas
 func gasSeries(region string) string { return "N3010" + strings.ToUpper(region) + "3" }
 
 // gasMean averages the non-null, positive values among the rows (newest first),
-// dividing by the months that had data. No such month is ErrNoData.
+// dividing by the months that had data. A repeated period counts once (the
+// first); no such month is ErrNoData.
 func gasMean(er eiaGasResponse, region string, now time.Time) (GasRate, error) {
 	var sum float64
 	var latest time.Time
 	n, rows := 0, 0
+	seen := map[string]bool{}
 	for _, d := range er.Response.Data {
 		if d.Series != "" && !strings.EqualFold(d.Series, gasSeries(region)) {
 			continue
 		}
+		if seen[d.Period] {
+			continue
+		}
+		seen[d.Period] = true
 		if rows++; rows > GasMonths {
 			break
 		}
