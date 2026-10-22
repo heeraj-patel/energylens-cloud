@@ -16,7 +16,6 @@ import (
 )
 
 var ErrRefreshConflict = errors.New("refresh idempotency conflict")
-var ErrRefreshLimit = errors.New("too many pending refresh requests")
 
 type RefreshStatus struct {
 	RequestID  string         `json:"request_id"`
@@ -67,8 +66,8 @@ func EnqueueInTx(ctx context.Context, tx pgx.Tx, owner, home, appliance, key str
 		}
 		return "", err
 	}
-	// Serialize a home's requests so its active queue bound and idempotency
-	// decision stay stable under concurrent API instances.
+	// Serialize a home's requests so its idempotency
+	// decision stays stable under concurrent API instances.
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "program-refresh:"+owner+":"+home); err != nil {
 		return "", err
 	}
@@ -83,13 +82,6 @@ func EnqueueInTx(ctx context.Context, tx pgx.Tx, owner, home, appliance, key str
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return "", err
-	}
-	var count int
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM program_discovery_refresh_requests r JOIN program_discovery_refresh_jobs j ON j.id=r.job_id WHERE r.owner_user_id=$1 AND r.home_id=$2 AND j.state IN ('pending','running')`, owner, home).Scan(&count); err != nil {
-		return "", err
-	}
-	if count >= 10 {
-		return "", ErrRefreshLimit
 	}
 	var jobID string
 	for attempt := 0; attempt < 2; attempt++ {
@@ -244,9 +236,6 @@ func (s OwnerService) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, ErrRefreshConflict):
 		ownerFail(w, 409, "idempotency_conflict")
-		return
-	case errors.Is(err, ErrRefreshLimit):
-		ownerFail(w, 429, "refresh_limit")
 		return
 	case err != nil:
 		slog.Error("program refresh enqueue failed", "error", err)

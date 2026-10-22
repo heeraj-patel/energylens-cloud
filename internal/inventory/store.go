@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -490,14 +491,16 @@ func (s PGStore) Patch(ctx context.Context, owner, home, id string, in PatchInpu
 
 // queueProgramRefresh queues program discovery for the appliance's ZIP and
 // category. It is best effort in a savepoint, so a missing location or queue
-// limit never fails the appliance write.
+// error never fails the appliance write.
 func queueProgramRefresh(ctx context.Context, tx pgx.Tx, owner, home, appliance, seed string) {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
+		slog.Warn("program refresh savepoint failed", "error", err)
 		return
 	}
 	key := uuid.NewSHA1(uuid.NameSpaceOID, []byte("program-refresh:"+seed)).String()
 	if _, err = programs.EnqueueInTx(ctx, sp, owner, home, appliance, key); err != nil {
+		slog.Warn("program refresh enqueue failed", "error", err)
 		_ = sp.Rollback(ctx)
 		return
 	}
