@@ -28,19 +28,20 @@ type gasContext struct {
 // loadGasContext returns nil for a home with no estimable gas appliance, so
 // electric homes never resolve a gas rate. Fuel oil has no API shape yet.
 func loadGasContext(ctx context.Context, tx pgx.Tx, home string, now time.Time, resolve GasRateResolver) (*gasContext, error) {
-	rows, err := tx.Query(ctx, `SELECT a.id::text,a.category,a.identity->>'fuel',a.catalog_product_id::text,EXISTS(SELECT 1 FROM attachments t JOIN sensor_endpoints s ON s.id=t.sensor_id WHERE t.appliance_id=a.id AND t.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[]) FROM appliances a WHERE a.home_id=$1 AND a.archived_at IS NULL AND a.identity->>'fuel' IN ('natural_gas','propane') ORDER BY a.id`, home)
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.category,a.identity->>'fuel',a.catalog_product_id::text,a.version,EXISTS(SELECT 1 FROM attachments t JOIN sensor_endpoints s ON s.id=t.sensor_id WHERE t.appliance_id=a.id AND t.ended_at IS NULL AND s.archived_at IS NULL AND s.capabilities @> ARRAY['power','energy']::text[]) FROM appliances a WHERE a.home_id=$1 AND a.archived_at IS NULL AND a.identity->>'fuel' IN ('natural_gas','propane') ORDER BY a.id`, home)
 	if err != nil {
 		return nil, err
 	}
 	type row struct {
 		id, category, fuel string
 		product            *string
+		version            int64
 		metered            bool
 	}
 	var found []row
 	for rows.Next() {
 		var r row
-		if err = rows.Scan(&r.id, &r.category, &r.fuel, &r.product, &r.metered); err != nil {
+		if err = rows.Scan(&r.id, &r.category, &r.fuel, &r.product, &r.version, &r.metered); err != nil {
 			break
 		}
 		found = append(found, r)
@@ -54,7 +55,11 @@ func loadGasContext(ctx context.Context, tx pgx.Tx, home string, now time.Time, 
 	}
 	gc := &gasContext{}
 	for _, r := range found {
-		e, ok, err := gasestimate.ForAppliance(ctx, tx, r.category, r.fuel, r.product)
+		usage, err := gasestimate.ReadUsage(ctx, tx, r.id, r.version)
+		if err != nil {
+			return nil, err
+		}
+		e, ok, err := gasestimate.ForAppliance(ctx, tx, r.category, r.fuel, r.product, usage)
 		if err != nil {
 			return nil, err
 		}

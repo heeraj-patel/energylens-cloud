@@ -4,6 +4,7 @@ package gasestimate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	waterSpecificHeat     = 1.00  // 10 CFR 430 Appendix E 6.3.9
 	waterTempRiseF        = 67.0  // 10 CFR 430 Appendix E 6.3.9
 	waterDrawDaysPerYear  = 365.0 // 10 CFR 430 Appendix E 6.3.9
+	weeksPerYear          = 52.0
 )
 
 // Typical electric standby watts, used only when a gas appliance has no per-model figure.
@@ -62,18 +64,29 @@ const (
 	ClassRange       Class = "range"
 )
 
-// Input is one appliance's class, fuel and active catalog facts.
+// Usage holds the owner's confirmed usage answers; nil is unanswered or "not sure".
+// SeasonShare is the fraction of the year in use (0..1).
+type Usage struct {
+	CyclesPerWeek *float64
+	HoursPerWeek  *float64
+	SeasonShare   *float64
+}
+
+// Input is one appliance's class, fuel, active catalog facts and usage answers.
 type Input struct {
 	Class    Class
 	Tankless bool
 	Fuel     string
 	Facts    catalog.GasFacts
+	Usage    Usage
 }
 
 // Estimate holds yearly figures; a nil field is unknown. GasBasis is
 // rated_fact, derived_from_cef or typical; ElectricBasis is rated_fact or typical.
 // Propane keeps AnnualFuelGallon only: no therms, no kWh-eq, no cost.
 type Estimate struct {
+	// AnnualFuelBtu is a heating appliance's usage-based burner input, any gas fuel.
+	AnnualFuelBtu *float64
 	ElectricKWh      *float64
 	GasTherms        *float64
 	GasKWhEq         *float64
@@ -162,10 +175,14 @@ func Compute(in Input) (Estimate, bool) {
 	class, tankless := refine(in)
 	switch class {
 	case ClassDryer:
-		e.ElectricKWh, e.ElectricBasis, e.GasBasis = ptr(dryerElectricKWhCycle*dryerCyclesPerYear), BasisTypical, BasisTypical
+		cycles := dryerCyclesPerYear
+		if c := in.Usage.CyclesPerWeek; c != nil && validUsage(*c) {
+			cycles = *c * weeksPerYear
+		}
+		e.ElectricKWh, e.ElectricBasis, e.GasBasis = ptr(dryerElectricKWhCycle*cycles), BasisTypical, BasisTypical
 		e.setStandby(f, typicalDryerStandbyW)
 		if f.CEF != nil && f.CEF.Value > 0 {
-			eq := dryerLoadLb * dryerCyclesPerYear / f.CEF.Value
+			eq := dryerLoadLb * cycles / f.CEF.Value
 			e.GasBasis = BasisDerivedFromCEF
 			e.setGas(in.Fuel, math.Max(0, eq-*e.ElectricKWh)*btuPerKWh/btuPerTherm, eq)
 		}
@@ -200,15 +217,37 @@ func Compute(in Input) (Estimate, bool) {
 		}
 		e.setStandby(f, typicalBoilerStandbyW)
 		e.electricOnlyTotal()
+		e.setHeatingGas(in)
 	case ClassFurnace, ClassSpaceHeater, ClassPoolHeater, ClassRange:
 		e.setElectric(f.AnnualEnergyKWh, 0)
 		e.setStandby(f, map[Class]float64{ClassFurnace: typicalFurnaceStandbyW, ClassPoolHeater: typicalPoolStandbyW, ClassRange: typicalRangeStandbyW}[class])
 		e.electricOnlyTotal()
+		if class == ClassFurnace || class == ClassSpaceHeater {
+			e.setHeatingGas(in)
+		}
 	}
 	if e.GasBasis == "" {
 		e.GasBasis = e.ElectricBasis
 	}
 	return e, true
+}
+
+func validUsage(v float64) bool { return v >= 0 && !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// setHeatingGas sets the yearly burner input from the rated Btu/h, hours per
+// week and season share (1 when unanswered). Needs both the rated input and the hours.
+func (e *Estimate) setHeatingGas(in Input) {
+	btuH, hours := in.Facts.BurnerInputBtuH, in.Usage.HoursPerWeek
+	if btuH == nil || hours == nil || !validUsage(*btuH) || !validUsage(*hours) {
+		return
+	}
+	share := 1.0
+	if s := in.Usage.SeasonShare; s != nil && validUsage(*s) {
+		share = *s
+	}
+	btu := *btuH * *hours * weeksPerYear * share
+	e.AnnualFuelBtu, e.GasBasis = ptr(btu), BasisRatedFact
+	e.setGas(in.Fuel, btu/btuPerTherm, 0)
 }
 
 // setElectric uses the fact, else the typical when it is non-zero, else leaves nil.
@@ -249,12 +288,16 @@ func (e *Estimate) setGas(fuel string, therms, eq float64) {
 		return
 	}
 	e.GasTherms = ptr(therms)
+	var electric float64
+	if e.ElectricKWh != nil {
+		electric = *e.ElectricKWh
+	}
 	if eq > 0 {
-		e.GasKWhEq, e.TotalKWhEq = ptr(eq-*e.ElectricKWh), ptr(eq)
+		e.GasKWhEq, e.TotalKWhEq = ptr(eq-electric), ptr(eq)
 		return
 	}
 	e.GasKWhEq = ptr(therms * kWhEqPerTherm)
-	e.TotalKWhEq = ptr(*e.ElectricKWh + *e.GasKWhEq)
+	e.TotalKWhEq = ptr(electric + *e.GasKWhEq)
 }
 
 func maxPresent(a, b *float64) (float64, bool) {
@@ -276,10 +319,10 @@ type Queries interface {
 }
 
 // ForAppliance reads the linked product's facts (none when unlinked) and
-// estimates. ok is false for an electric appliance.
-func ForAppliance(ctx context.Context, db Queries, category, fuel string, productID *string) (Estimate, bool, error) {
+// estimates with the usage answers. ok is false for an electric appliance.
+func ForAppliance(ctx context.Context, db Queries, category, fuel string, productID *string, usage Usage) (Estimate, bool, error) {
 	class, tankless := ClassOf(category)
-	in := Input{Class: class, Tankless: tankless, Fuel: fuel}
+	in := Input{Class: class, Tankless: tankless, Fuel: fuel, Usage: usage}
 	if productID != nil && fuel != "" && fuel != "electricity" {
 		facts, err := catalog.ReadGasFacts(ctx, db, *productID)
 		if err != nil && !errors.Is(err, catalog.ErrNotFound) {
@@ -289,4 +332,46 @@ func ForAppliance(ctx context.Context, db Queries, category, fuel string, produc
 	}
 	e, ok := Compute(in)
 	return e, ok, nil
+}
+
+// ReadUsage returns the appliance's current-version usage answers. Only the
+// latest revision of each onboarding question counts, and only when confirmed
+// and in range; an unknown answer clears an earlier one.
+func ReadUsage(ctx context.Context, db Queries, applianceID string, version int64) (Usage, error) {
+	var u Usage
+	rows, err := db.Query(ctx, `SELECT DISTINCT ON (question_id) question_id,question_version,status,answer_value::text FROM question_answers WHERE appliance_id=$1 AND appliance_version=$2 ORDER BY question_id,revision DESC`, applianceID, version)
+	if err != nil {
+		return u, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, status string
+		var qv int64
+		var raw *string
+		if err = rows.Scan(&id, &qv, &status, &raw); err != nil {
+			return u, err
+		}
+		if status != "confirmed" || raw == nil || strings.Count(id, ".") != 1 || (qv != 1 && qv != 2) {
+			continue
+		}
+		var v float64
+		if err = json.Unmarshal([]byte(*raw), &v); err != nil || !validUsage(v) {
+			continue
+		}
+		switch id[strings.LastIndex(id, ".")+1:] {
+		case "cycles_per_week":
+			if v <= 100 {
+				u.CyclesPerWeek = &v
+			}
+		case "hours_per_week":
+			if v <= 168 {
+				u.HoursPerWeek = &v
+			}
+		case "season_share":
+			if v <= 1 {
+				u.SeasonShare = &v
+			}
+		}
+	}
+	return u, rows.Err()
 }

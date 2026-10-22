@@ -647,3 +647,81 @@ func TestMeteredGasUnpricedFallbackClearsPeriodCostAndTotal(t *testing.T) {
 		}
 	}
 }
+
+// answer records the next revision of an onboarding answer for an appliance at version 1;
+// an empty value is a "not sure" (unknown) answer.
+func (h *gasHarness) answer(appliance, question, value string) {
+	h.t.Helper()
+	if value == "" {
+		h.exec(`INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status) SELECT $1,$2,1,$3,2,COALESCE(MAX(revision),0)+1,'unknown' FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3`, h.home, appliance, question)
+		return
+	}
+	h.exec(`INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) SELECT $1,$2,1,$3,2,COALESCE(MAX(revision),0)+1,'confirmed',$4::jsonb,now() FROM question_answers WHERE home_id=$1 AND appliance_id=$2 AND question_id=$3`, h.home, appliance, question, value)
+}
+
+func TestGasDryerUsesCyclesAnswerAndRefreshesWhenItChanges(t *testing.T) {
+	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisStatic, 1.481))
+	p := h.product("dryer", "natural_gas", "DVG45T6000V", map[[2]string]float64{{"combined_energy_factor", "lb/kWh"}: 3.3}, dryerCEF)
+	id := h.appliance("dryer", "natural_gas", "DVG45T6000V", &p)
+	eq := 8.45 * 208 / 3.3
+	therms := (eq - 43.68) * 3412 / 100000
+	h.answer(id, "dryer.cycles_per_week", "4")
+	row := deviceRow(t, h.get("/dashboard"), id)
+	near(t, "electric/day", amountOf(t, row, "energy"), 43.68/365, 1e-6)
+	near(t, "therms/day", amountOf(t, row, "gas_energy"), therms/365, 1e-6)
+	near(t, "kwh_eq/day", amountOf(t, row, "total_energy_kwh_eq"), eq/365, 1e-6)
+	near(t, "gas_cost/day", amountOf(t, row, "gas_cost"), therms/365*1.481, 1e-6)
+	if row["gas_basis"] != "derived_from_cef" {
+		t.Fatalf("basis: %+v", row)
+	}
+	h.answer(id, "dryer.cycles_per_week", "10")
+	row = deviceRow(t, h.get("/dashboard"), id)
+	near(t, "electric/day after change", amountOf(t, row, "energy"), 0.21*520/365, 1e-6)
+	h.answer(id, "dryer.cycles_per_week", "")
+	row = deviceRow(t, h.get("/dashboard"), id)
+	near(t, "electric/day not sure", amountOf(t, row, "energy"), 59.43/365, 1e-4)
+	near(t, "kwh_eq/day not sure", amountOf(t, row, "total_energy_kwh_eq"), 724.65/365, 1e-3)
+}
+
+func TestGasFurnaceUsesHoursAndSeasonAnswers(t *testing.T) {
+	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisStatic, 1.481))
+	burner := map[[2]string]float64{{"burner_input", "Btu/h"}: 80000}
+	p := h.product("hvac", "natural_gas", "F80", burner, `{"product_group_code":"Weatherized gas furnaces"}`)
+	id := h.appliance("furnace", "natural_gas", "F80", &p)
+	noAnswers := deviceRow(t, h.get("/dashboard"), id)
+	absent(t, noAnswers, "gas_energy", "gas_cost", "total_cost", "gas_basis")
+	h.exec(`INSERT INTO question_answers(home_id,appliance_id,appliance_version,question_id,question_version,revision,status,answer_value,confirmed_at) VALUES($1,$2,2,'hvac.hours_per_week',2,1,'confirmed','28',now())`, h.home, id)
+	absent(t, deviceRow(t, h.get("/dashboard"), id), "gas_energy", "gas_cost")
+
+	h.answer(id, "hvac.hours_per_week", "28")
+	h.answer(id, "hvac.season_share", "0.5")
+	row := deviceRow(t, h.get("/dashboard"), id)
+	near(t, "therms/day", amountOf(t, row, "gas_energy"), 582.4/365, 1e-6)
+	near(t, "gas_cost/day", amountOf(t, row, "gas_cost"), 582.4/365*1.481, 1e-6)
+	near(t, "electric/day stays typical standby", amountOf(t, row, "energy"), 96.36/365, 1e-6)
+	if row["gas_basis"] != "rated_fact" {
+		t.Fatalf("basis: %+v", row)
+	}
+	h.answer(id, "hvac.season_share", "")
+	row = deviceRow(t, h.get("/dashboard"), id)
+	near(t, "therms/day, unanswered share is all year", amountOf(t, row, "gas_energy"), 80000*28*52/100000.0/365, 1e-6)
+	h.answer(id, "hvac.hours_per_week", "")
+	absent(t, deviceRow(t, h.get("/dashboard"), id), "gas_energy", "gas_cost", "gas_basis")
+}
+
+func TestGasHeatingWithoutBurnerInputOrOnPropaneHasNoThermsOrCost(t *testing.T) {
+	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisStatic, 1.481))
+	plain := h.product("hvac", "natural_gas", "F0", map[[2]string]float64{{"afue", "percent"}: 96}, `{"product_group_code":"Weatherized gas furnaces"}`)
+	noBurner := h.appliance("furnace", "natural_gas", "F0", &plain)
+	burner := map[[2]string]float64{{"burner_input", "Btu/h"}: 80000}
+	lp := h.product("hvac", "propane", "FLP", burner, `{"product_group_code":"Weatherized gas furnaces"}`)
+	propane := h.appliance("furnace", "propane", "FLP", &lp)
+	for _, id := range []string{noBurner, propane} {
+		h.answer(id, "hvac.hours_per_week", "28")
+		h.answer(id, "hvac.season_share", "0.5")
+	}
+	day := h.get("/dashboard")
+	for _, id := range []string{noBurner, propane} {
+		absent(t, deviceRow(t, day, id), "gas_energy", "gas_energy_kwh_eq", "gas_cost", "total_cost")
+	}
+}

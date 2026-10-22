@@ -73,7 +73,7 @@ func TestForApplianceReadsLinkedFactsIncludingZeroKWh(t *testing.T) {
 		return id
 	}
 	wh := seed("water_heater", "natural_gas", "WH1", map[[2]string]float64{{"annual_energy", "kWh"}: 0, {"annual_fuel", "therm"}: 178}, "{}")
-	e, ok, err := ForAppliance(ctx, pool, "Water Heater", "natural_gas", &wh)
+	e, ok, err := ForAppliance(ctx, pool, "Water Heater", "natural_gas", &wh, Usage{})
 	if err != nil || !ok {
 		t.Fatalf("water heater: %v %v", ok, err)
 	}
@@ -85,14 +85,14 @@ func TestForApplianceReadsLinkedFactsIncludingZeroKWh(t *testing.T) {
 	}
 
 	dryer := seed("dryer", "natural_gas", "DVG45T6000", map[[2]string]float64{{"combined_energy_factor", "lb/kWh"}: 3.3}, `{"appendix":"D1"}`)
-	e, ok, err = ForAppliance(ctx, pool, "dryer", "natural_gas", &dryer)
+	e, ok, err = ForAppliance(ctx, pool, "dryer", "natural_gas", &dryer, Usage{})
 	if err != nil || !ok {
 		t.Fatalf("dryer: %v %v", ok, err)
 	}
 	near(t, "dryer total", e.TotalKWhEq, 724.7, 0.1)
 	near(t, "dryer therms", e.GasTherms, 22.7, 0.1)
 
-	e, ok, err = ForAppliance(ctx, pool, "dryer", "natural_gas", nil)
+	e, ok, err = ForAppliance(ctx, pool, "dryer", "natural_gas", nil, Usage{})
 	if err != nil || !ok {
 		t.Fatalf("unlinked: %v %v", ok, err)
 	}
@@ -100,10 +100,10 @@ func TestForApplianceReadsLinkedFactsIncludingZeroKWh(t *testing.T) {
 	isNil(t, "unlinked therms", e.GasTherms)
 
 	missing := uuid.NewString()
-	if _, ok, err = ForAppliance(ctx, pool, "dryer", "natural_gas", &missing); err != nil || !ok {
+	if _, ok, err = ForAppliance(ctx, pool, "dryer", "natural_gas", &missing, Usage{}); err != nil || !ok {
 		t.Fatalf("unknown product: %v %v", ok, err)
 	}
-	if _, ok, err = ForAppliance(ctx, pool, "dryer", "electricity", &dryer); err != nil || ok {
+	if _, ok, err = ForAppliance(ctx, pool, "dryer", "electricity", &dryer, Usage{}); err != nil || ok {
 		t.Fatalf("electric: %v %v", ok, err)
 	}
 }

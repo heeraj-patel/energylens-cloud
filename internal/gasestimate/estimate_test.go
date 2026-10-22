@@ -276,3 +276,79 @@ func TestFurnaceWithKWhFactAndStandbyStaysFurnace(t *testing.T) {
 	noGroup, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualEnergyKWh: fp(400), StandbyW: fp(9)}})
 	near(t, "no group with kWh fact stays furnace", noGroup.ElectricKWh, 400, 1e-9)
 }
+
+func TestGasDryerUsesCyclesPerWeekAnswer(t *testing.T) {
+	cef := catalog.GasFacts{CEF: &catalog.FactValue{Value: 3.3, TestBasis: map[string]any{"appendix": "D1"}}}
+	e, _ := Compute(Input{Class: ClassDryer, Fuel: "natural_gas", Facts: cef, Usage: Usage{CyclesPerWeek: fp(4)}})
+	near(t, "electric", e.ElectricKWh, 43.68, 1e-9)
+	near(t, "total kWh-eq", e.TotalKWhEq, 8.45*208/3.3, 1e-9)
+	near(t, "therms", e.GasTherms, (8.45*208/3.3-43.68)*3412/100000, 1e-9)
+	noCEF, _ := Compute(Input{Class: ClassDryer, Fuel: "natural_gas", Usage: Usage{CyclesPerWeek: fp(4)}})
+	near(t, "electric without CEF", noCEF.ElectricKWh, 43.68, 1e-9)
+	isNil(t, "therms without CEF", noCEF.GasTherms)
+	unanswered, _ := Compute(Input{Class: ClassDryer, Fuel: "natural_gas", Facts: cef, Usage: Usage{HoursPerWeek: fp(10), SeasonShare: fp(0.5)}})
+	near(t, "unanswered total", unanswered.TotalKWhEq, 724.7, 0.1)
+	near(t, "unanswered electric", unanswered.ElectricKWh, 59.4, 0.1)
+	near(t, "unanswered therms", unanswered.GasTherms, 22.7, 0.1)
+}
+
+func TestGasHeatingFromHoursAndSeasonShare(t *testing.T) {
+	facts := catalog.GasFacts{BurnerInputBtuH: fp(80000)}
+	use := Usage{HoursPerWeek: fp(28), SeasonShare: fp(0.5)}
+	for _, class := range []Class{ClassFurnace, ClassSpaceHeater} {
+		e, _ := Compute(Input{Class: class, Fuel: "natural_gas", Facts: facts, Usage: use})
+		near(t, string(class)+" therms", e.GasTherms, 582.4, 1e-9)
+		near(t, string(class)+" btu", e.AnnualFuelBtu, 58240000, 1e-3)
+		near(t, string(class)+" gas kWh-eq", e.GasKWhEq, 582.4*29.31, 1e-9)
+		if e.GasBasis != BasisRatedFact {
+			t.Fatalf("%s basis %q", class, e.GasBasis)
+		}
+	}
+	furnace, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: facts, Usage: use})
+	near(t, "furnace electric stays typical standby", furnace.ElectricKWh, 96.36, 1e-9)
+	near(t, "furnace total", furnace.TotalKWhEq, 96.36+582.4*29.31, 1e-6)
+	heater, _ := Compute(Input{Class: ClassSpaceHeater, Fuel: "natural_gas", Facts: facts, Usage: use})
+	isNil(t, "space heater electric stays unknown", heater.ElectricKWh)
+	near(t, "space heater total", heater.TotalKWhEq, 582.4*29.31, 1e-6)
+	boiler, _ := Compute(Input{Class: ClassBoiler, Fuel: "natural_gas", Facts: facts, Usage: use})
+	near(t, "boiler therms", boiler.GasTherms, 582.4, 1e-9)
+	near(t, "boiler electric stays typical standby", boiler.ElectricKWh, 78.84, 1e-9)
+}
+
+func TestGasHeatingSeasonShareDefaultsToAllYear(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{BurnerInputBtuH: fp(80000)}, Usage: Usage{HoursPerWeek: fp(28)}})
+	near(t, "therms", e.GasTherms, 80000*28*52/100000.0, 1e-9)
+}
+
+func TestGasHeatingNeedsHoursAndBurnerInput(t *testing.T) {
+	cases := map[string]Input{
+		"no hours":  {Class: ClassFurnace, Fuel: "natural_gas", Facts: catalog.GasFacts{BurnerInputBtuH: fp(80000)}, Usage: Usage{SeasonShare: fp(0.5)}},
+		"no burner": {Class: ClassFurnace, Fuel: "natural_gas", Usage: Usage{HoursPerWeek: fp(28)}},
+		"no both":   {Class: ClassSpaceHeater, Fuel: "natural_gas"},
+	}
+	for name, in := range cases {
+		e, _ := Compute(in)
+		isNil(t, name+" therms", e.GasTherms)
+		isNil(t, name+" btu", e.AnnualFuelBtu)
+		if e.GasBasis == BasisRatedFact {
+			t.Fatalf("%s basis %q", name, e.GasBasis)
+		}
+	}
+}
+
+func TestPropaneHeatingKeepsBtuWithoutThermsOrCost(t *testing.T) {
+	e, _ := Compute(Input{Class: ClassFurnace, Fuel: "propane", Facts: catalog.GasFacts{BurnerInputBtuH: fp(80000)}, Usage: Usage{HoursPerWeek: fp(28), SeasonShare: fp(0.5)}})
+	near(t, "btu", e.AnnualFuelBtu, 58240000, 1e-3)
+	isNil(t, "therms", e.GasTherms)
+	isNil(t, "gas kWh-eq", e.GasKWhEq)
+	near(t, "total is electric only", e.TotalKWhEq, 96.36, 1e-9)
+}
+
+func TestElectricAppliancesIgnoreUsage(t *testing.T) {
+	use := Usage{CyclesPerWeek: fp(4), HoursPerWeek: fp(28)}
+	if e, ok := Compute(Input{Class: ClassFurnace, Fuel: "electricity", Facts: catalog.GasFacts{BurnerInputBtuH: fp(80000)}, Usage: use}); ok || e != (Estimate{}) {
+		t.Fatalf("%+v %v", e, ok)
+	}
+	wh, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualFuelTherm: fp(135.2)}, Usage: use})
+	near(t, "water heater therms", wh.GasTherms, 135.2, 0)
+}
