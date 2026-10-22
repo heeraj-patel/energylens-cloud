@@ -2,16 +2,9 @@ package energyrate
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 )
-
-type failingRateFetcher struct{}
-
-func (failingRateFetcher) LatestResidentialPrice(context.Context, string) (Rate, error) {
-	return Rate{}, errors.New("EIA unavailable")
-}
 
 func TestCachedEIARateKeepsSourceTimeAndExpires(t *testing.T) {
 	now := time.Date(2026, time.September, 29, 12, 0, 0, 0, time.UTC)
@@ -21,7 +14,7 @@ func TestCachedEIARateKeepsSourceTimeAndExpires(t *testing.T) {
 	if err := cache.Put(context.Background(), Rate{Region: "TX", USDPerKWh: .17, Period: period, FetchedAt: fetched}); err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(Options{Cache: cache, CacheTTL: 24 * time.Hour, Fetcher: failingRateFetcher{}, HasKey: true, Now: func() time.Time { return now }})
+	service := NewService(Options{Cache: cache, CacheTTL: 24 * time.Hour, Now: func() time.Time { return now }})
 	rate, err := service.Resolve(context.Background(), "US", "78732")
 	if err != nil || rate.FetchedAt == nil || !rate.FetchedAt.Equal(fetched) || !rate.IsStale || rate.IsStatic {
 		t.Fatalf("stale source provenance lost: rate=%+v err=%v", rate, err)

@@ -42,7 +42,6 @@ type Config struct {
 	HubSignCertFile              string
 	HubSignKeyFile               string
 	DatabaseURL                  string
-	EIAAPIKey                    string
 	WeatherOpenMeteoAPIKey       string
 	WeatherCoarseCells           string
 	OIDCIssuer                   string
@@ -93,7 +92,7 @@ func LoadConfig(role string) (Config, error) {
 		Role: Role(strings.TrimSpace(role)), Environment: strings.TrimSpace(os.Getenv("ENERGYLENS_CLOUD_ENV")),
 		APIListen: os.Getenv("ENERGYLENS_CLOUD_BIND"), HubListen: os.Getenv("ENERGYLENS_CLOUD_HUB_BIND"),
 		HubCertFile: os.Getenv("ENERGYLENS_CLOUD_TLS_CERT"), HubKeyFile: os.Getenv("ENERGYLENS_CLOUD_TLS_KEY"), HubCAFile: os.Getenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA"), HubSignCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_CERT"), HubSignKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_KEY"),
-		DatabaseURL: os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"), EIAAPIKey: os.Getenv("EIA_API_KEY"),
+		DatabaseURL:            os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"),
 		WeatherOpenMeteoAPIKey: os.Getenv("ENERGYLENS_CLOUD_OPEN_METEO_API_KEY"), WeatherCoarseCells: os.Getenv("ENERGYLENS_CLOUD_WEATHER_COARSE_CELLS"),
 		OIDCIssuer: os.Getenv("ENERGYLENS_CLOUD_OIDC_ISSUER"), OIDCAudience: os.Getenv("ENERGYLENS_CLOUD_OIDC_AUDIENCE"), OIDCJWKSURL: os.Getenv("ENERGYLENS_CLOUD_OIDC_JWKS_URL"),
 		MeteredExportCursorKeyFile: os.Getenv("ENERGYLENS_CLOUD_METERED_EXPORT_CURSOR_KEY_FILE"), MeteredExportPreviousKeyFile: os.Getenv("ENERGYLENS_CLOUD_METERED_EXPORT_PREVIOUS_CURSOR_KEY_FILE"),

@@ -11,14 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Cache stores the last EIA rate read per region (state code or "US"). It is
+// Rate is one region's average residential price for one EIA data month.
+type Rate struct {
+	Region    string    // two-letter state code, or NationalRegion
+	USDPerKWh float64   // dollars per kWh
+	Period    time.Time // first day of the EIA data month (UTC)
+	FetchedAt time.Time // when Datawiz read it from EIA
+}
+
+// NationalRegion is EIA's stateid for the U.S. total.
+const NationalRegion = "US"
+
+// Cache reads the stored EIA rate per region (state code or "US"). It is
 // keyed only by region — never by postal code, hub, or client — so it holds
 // public aggregate data and nothing that links a location to a household.
 type Cache interface {
-	// Get returns the cached rate for region; ok=false on a miss.
+	// Get returns the stored rate for region; ok=false on a miss.
 	Get(ctx context.Context, region string) (r Rate, ok bool, err error)
-	// Put upserts region's rate.
-	Put(ctx context.Context, r Rate) error
 }
 
 // MemCache is the in-memory Cache used when no DSN is configured.
@@ -38,7 +47,7 @@ func (c *MemCache) Get(_ context.Context, region string) (Rate, bool, error) {
 	return r, ok, nil
 }
 
-// Put implements Cache.
+// Put stores region's rate.
 func (c *MemCache) Put(_ context.Context, r Rate) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -46,12 +55,8 @@ func (c *MemCache) Put(_ context.Context, r Rate) error {
 	return nil
 }
 
-// PgCache is the Postgres-backed Cache (table energy_rate_cache).
-//
-// The table is owned by migrations/0016_energy_rate_cache.sql, which mirrors
-// kernel-common-contracts/db/cloud_schema.sql. The service does not create it:
-// a second copy of the DDL here would be one more place to drift from the
-// contract, and the runtime role should not need CREATE on the schema.
+// PgCache is the Postgres-backed Cache (table energy_rate_cache, migration
+// 0016). Datawiz load-energy-rates writes the rows; Cloud only reads them.
 type PgCache struct {
 	pool *pgxpool.Pool
 }
@@ -80,21 +85,4 @@ func (c *PgCache) Get(ctx context.Context, region string) (Rate, bool, error) {
 	r.Period = r.Period.UTC()
 	r.FetchedAt = r.FetchedAt.UTC()
 	return r, true, nil
-}
-
-// Put implements Cache.
-func (c *PgCache) Put(ctx context.Context, r Rate) error {
-	const q = `
-INSERT INTO energy_rate_cache (region, rate_usd_per_kwh, period, fetched_at)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (region) DO UPDATE SET
-  rate_usd_per_kwh = EXCLUDED.rate_usd_per_kwh,
-  period           = EXCLUDED.period,
-  fetched_at       = EXCLUDED.fetched_at`
-	fetched := r.FetchedAt
-	if fetched.IsZero() {
-		fetched = time.Now().UTC()
-	}
-	_, err := c.pool.Exec(ctx, q, r.Region, r.USDPerKWh, r.Period, fetched)
-	return err
 }

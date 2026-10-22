@@ -11,7 +11,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   `householdenergy` (dashboard, trends), `catalog`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
   `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs` (+OEDI, source probe),
   `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `designfixture`, `helpexport`, `migrate`, `apierror`.
-- `migrations/` embedded SQL 0016..0088 (0055 unused) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
+- `migrations/` embedded SQL 0016..0092 (0055 unused; 0091 reserved) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
 ## Build / test (verified 2026-10-16)
@@ -44,7 +44,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   PRIVATE_KEY_FILE, PUBLIC_KEY_FILES JSON, AUDIENCE, RUNTIME_LOCAL_AUTH_AUDIENCE, LINK_ORIGIN, *_RATE_KEY_FILE, MAIL_ENABLED,
   RESEND_API_KEY/FROM, TRUSTED_PROXY_CIDRS), legacy `..._DEV_AUTH_*`. Production API needs OIDC or enabled local auth.
 - Optional jobs/features all default off: METERED_ROLLUP, PROGRAM_REFRESH (+OEDI CSV/SHA vars), PROGRAM_SOURCE_PROBE, REPORT_*,
-  ACCOUNT_DELETION (non-prod), SAMPLE_FIXTURES (dev/test only, allowlists), DATAWIZ_REQUESTS_DIR, `EIA_API_KEY`.
+  ACCOUNT_DELETION (non-prod), SAMPLE_FIXTURES (dev/test only, allowlists), DATAWIZ_REQUESTS_DIR. EIA rates are read from `energy_rate_cache`/`gas_rate_cache`, which Datawiz `load-energy-rates` writes.
 
 ## Auth modes
 - `RUNTIME_ENV=local`: username/password. `/v1/auth/config` -> methods `["username_password"]`; no email, OIDC or mail allowed

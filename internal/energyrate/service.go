@@ -7,16 +7,15 @@
 // Resolution for country=US:
 //
 //  1. ZIP → state via the offline prefix table (zipstate.go).
-//  2. state average: cached EIA row if fresh, else fetch from EIA and cache,
-//     else a stale cached row (EIA down / no key), else →
-//  3. national average: the same steps for EIA's "US" row, else →
+//  2. state average: the stored EIA row (written by Datawiz load-energy-rates)
+//     if within MaxSourceAge, else →
+//  3. national average: the same step for EIA's "US" row, else →
 //  4. the cited static national value from config (source "national"), else
 //  5. 503 rate_temporarily_unavailable (only when the static value is
 //     disabled) -- a transient failure, not "no rate exists".
 //
-// "Cached" means the Cache row or, when newer or the Cache is failing, the
-// in-memory last-known-good value per region, so a cache DB outage does not
-// turn every request into an EIA call. Any other country → 404
+// "Stored" means the Cache row or, when newer or the Cache is failing, the
+// in-memory last-known-good value per region. Any other country → 404
 // rate_unavailable (a definitive "no rate exists for this location"). The
 // cache is keyed by region only; postal codes are never stored and never
 // logged above debug level.
@@ -46,31 +45,22 @@ const (
 	SourceNational = "national"
 )
 
-// MinCacheTTL is the plan's floor on how long a fetched EIA row is served
-// before a refresh is attempted (§4 task 1.6: "cache ≥ 24 h").
+// MinCacheTTL is the floor on the age at which a stored row is served as stale.
 const MinCacheTTL = 24 * time.Hour
 
-// DefaultCacheTTL refreshes each region roughly monthly, matching EIA's
-// monthly publication cadence (§4 task 1.6: "refreshed monthly").
-const DefaultCacheTTL = 30 * 24 * time.Hour
+// MaxSourceAge bounds how long a stored EIA value may be used: Datawiz reloads
+// quarterly (at most 92 days apart) plus its timer delay. Static fallbacks have no fetch time.
+const MaxSourceAge = 93 * 24 * time.Hour
 
-// MaxSourceAge bounds how long a fetched EIA value may be used, even when
-// refresh is unavailable. Static published fallbacks have no fetch timestamp.
-const MaxSourceAge = 30 * 24 * time.Hour
+// DefaultCacheTTL is the age at which a stored row is served as stale.
+const DefaultCacheTTL = MaxSourceAge
 
-// failureBackoff stops a down EIA from being hit on every request: after a
-// failed fetch for a region, no new fetch is attempted for this long (the
-// stale/national fallback is served meanwhile).
-const failureBackoff = 5 * time.Minute
-
-// cacheBackoff is how long the Cache is left alone after a read or write
-// error. Meanwhile each region is served from the in-memory last-known-good
-// value, so a cache DB outage costs at most one EIA call per region per TTL
-// instead of one per request, and requests stop waiting on a dead pool.
+// cacheBackoff is how long the Cache is left alone after a read error; each
+// region is served from the in-memory last-known-good value meanwhile.
 const cacheBackoff = time.Minute
 
-// StaticRate is the cited national average used when neither EIA nor the
-// cache can supply one.
+// StaticRate is the cited national average used when no stored row can
+// supply one.
 type StaticRate struct {
 	USDPerKWh float64   // <= 0 disables the static fallback
 	AsOf      time.Time // first day of the period the value describes
@@ -80,53 +70,31 @@ type StaticRate struct {
 // Options configures a Service.
 type Options struct {
 	Research     *datawizfacts.Store
-	Fetcher      RateFetcher // nil or keyless → cache-only
-	HasKey       bool        // false: never call Fetcher (no EIA key configured)
 	Cache        Cache
 	CacheTTL     time.Duration
 	Static       StaticRate
 	StaticStates map[string]StaticRate
-	GasFetcher   GasRateFetcher // nil or keyless → cache-only
-	GasCache     *GasCache
+	GasCache     GasCache
 	GasStatic    GasStaticRate
-	Now         func() time.Time
+	Now          func() time.Time
 	Logger       *slog.Logger
 }
 
 // Service resolves rates and serves the HTTP route.
 type Service struct {
 	research     *datawizfacts.Store
-	fetcher      RateFetcher
-	hasKey       bool
 	cache        Cache
 	ttl          time.Duration
 	static       StaticRate
 	staticStates map[string]StaticRate
-	gasFetcher   GasRateFetcher
-	gasCache     *GasCache
+	gasCache     GasCache
 	gasStatic    GasStaticRate
-	gasHasKey    bool
-	now         func() time.Time
+	now          func() time.Time
 	log          *slog.Logger
 
 	mu             sync.Mutex
-	failUntil      map[string]time.Time // region → no refetch before this instant
-	inflight       map[string]*call     // region → fetch in progress (coalescing)
-	gasInflight    map[string]*gasCall  // region → gas fetch in progress (coalescing)
-	lastGood       map[string]Rate      // region → newest rate seen (fetched or read from the cache)
-	cacheDownUntil time.Time            // no Cache.Get before this instant (after a cache error)
-}
-
-type gasCall struct {
-	done chan struct{}
-	r    GasRate
-	err  error
-}
-
-type call struct {
-	done chan struct{}
-	r    Rate
-	err  error
+	lastGood       map[string]Rate // region → newest rate read from the cache
+	cacheDownUntil time.Time       // no Cache.Get before this instant (after a cache error)
 }
 
 // NewService builds the service; zero-valued Options fields get defaults.
@@ -135,7 +103,7 @@ func NewService(o Options) *Service {
 		o.Cache = NewMemCache()
 	}
 	if o.GasCache == nil {
-		o.GasCache = NewGasCache()
+		o.GasCache = NewMemGasCache()
 	}
 	if o.CacheTTL <= 0 {
 		o.CacheTTL = DefaultCacheTTL
@@ -151,21 +119,14 @@ func NewService(o Options) *Service {
 	}
 	return &Service{
 		research:     o.Research,
-		fetcher:      o.Fetcher,
-		hasKey:       o.HasKey && o.Fetcher != nil,
 		cache:        o.Cache,
 		ttl:          o.CacheTTL,
 		static:       o.Static,
 		staticStates: o.StaticStates,
-		gasFetcher:   o.GasFetcher,
 		gasCache:     o.GasCache,
 		gasStatic:    o.GasStatic,
-		gasHasKey:    o.HasKey && o.GasFetcher != nil,
-		now:         o.Now,
+		now:          o.Now,
 		log:          o.Logger,
-		failUntil:    map[string]time.Time{},
-		inflight:     map[string]*call{},
-		gasInflight:  map[string]*gasCall{},
 		lastGood:     map[string]Rate{},
 	}
 }
@@ -176,8 +137,8 @@ func NewService(o Options) *Service {
 var ErrUnavailable = errors.New("energyrate: rate unavailable")
 
 // ErrTemporarilyUnavailable means a US location for which no rate could be
-// produced right now: EIA failed or has no key, nothing is cached for the
-// state or the nation, and the static national value is disabled (contract
+// produced right now: nothing is stored for the state or the nation, and the
+// static national value is disabled (contract
 // 503 rate_temporarily_unavailable, retryable). A transient failure, not "no
 // rate exists".
 var ErrTemporarilyUnavailable = errors.New("energyrate: rate temporarily unavailable")
@@ -265,7 +226,7 @@ func (s *Service) resolveBase(ctx context.Context, country, zip string) (Resolve
 }
 
 // NationalUSDPerKWh is the US average residential rate used for homes without
-// a tariff: the cached or fetched EIA national row, else the static value.
+// a tariff: the stored EIA national row, else the static value.
 func (s *Service) NationalUSDPerKWh(ctx context.Context) (float64, error) {
 	r, err := s.resolveBase(ctx, "US", "")
 	return r.RateUSDPerKWh, err
@@ -281,33 +242,13 @@ func national(rate float64, asOf time.Time) Resolved {
 	}
 }
 
-// regionRate returns a fresh cached rate, else a newly fetched one, else a
-// stale cached one within the source-age ceiling. Static fallbacks are handled
-// by Resolve and have no EIA fetch timestamp.
+// regionRate returns the stored rate within the source-age ceiling, stale once
+// older than the TTL. Static fallbacks are handled by Resolve.
 func (s *Service) regionRate(ctx context.Context, region string) (Rate, bool, bool) {
 	cached, found := s.cachedRate(ctx, region)
 	age := s.now().Sub(cached.FetchedAt)
 	valid := found && !cached.FetchedAt.IsZero() && age >= 0 && age <= MaxSourceAge
-	if valid && age < s.ttl {
-		return cached, false, true
-	}
-	if !s.hasKey {
-		return cached, valid, valid
-	}
-	fresh, err := s.fetch(ctx, region)
-	if err == nil {
-		freshAge := s.now().Sub(fresh.FetchedAt)
-		if !fresh.FetchedAt.IsZero() && freshAge >= 0 && freshAge <= MaxSourceAge {
-			return fresh, freshAge >= s.ttl, true
-		}
-		err = errors.New("energyrate: fetched EIA rate has invalid source age")
-	}
-	if valid {
-		s.log.Warn("energyrate: EIA refresh failed; serving stale cached rate",
-			"region", region, "fetched_at", cached.FetchedAt, "err", err)
-		return cached, true, true
-	}
-	return Rate{}, false, false
+	return cached, valid && age >= s.ttl, valid
 }
 
 // cachedRate returns the newer of the Cache's row and the in-memory
@@ -347,74 +288,6 @@ func (s *Service) markCacheDown() {
 	s.mu.Lock()
 	s.cacheDownUntil = s.now().Add(cacheBackoff)
 	s.mu.Unlock()
-}
-
-// fetch calls EIA with per-region request coalescing and a failure backoff,
-// then writes the cache.
-func (s *Service) fetch(ctx context.Context, region string) (Rate, error) {
-	s.mu.Lock()
-	if until, ok := s.failUntil[region]; ok && s.now().Before(until) {
-		s.mu.Unlock()
-		return Rate{}, errors.New("energyrate: EIA backoff after recent failure")
-	}
-	if c, ok := s.inflight[region]; ok {
-		s.mu.Unlock()
-		select {
-		case <-c.done:
-			return c.r, c.err
-		case <-ctx.Done():
-			return Rate{}, ctx.Err()
-		}
-	}
-	c := &call{done: make(chan struct{})}
-	s.inflight[region] = c
-	s.mu.Unlock()
-
-	// Re-check: a fetch that finished between our cache read and taking the
-	// inflight slot has already recorded a fresh rate (lastGood and Put both
-	// happen before its inflight entry is cleared).
-	if r, ok := s.cachedRate(ctx, region); ok && s.now().Sub(r.FetchedAt) < s.ttl {
-		c.r = r
-		s.finish(region, c)
-		return c.r, nil
-	}
-
-	// Detach from the request's cancellation so one impatient caller doesn't
-	// fail the fetch for everyone coalesced onto it; the client has its own
-	// timeout.
-	c.r, c.err = s.fetcher.LatestResidentialPrice(context.WithoutCancel(ctx), region)
-	if c.err == nil {
-		if c.r.FetchedAt.IsZero() {
-			c.r.FetchedAt = s.now().UTC()
-		}
-		// Remember it before the cache write, so a failed write can't send
-		// the next request back to EIA.
-		s.mu.Lock()
-		s.lastGood[region] = c.r
-		s.mu.Unlock()
-		if err := s.cache.Put(context.WithoutCancel(ctx), c.r); err != nil {
-			s.log.Warn("energyrate: cache write failed; serving in-memory rates", "region", region, "err", err)
-			s.markCacheDown()
-		}
-	} else {
-		s.log.Warn("energyrate: EIA fetch failed", "region", region, "err", c.err)
-	}
-	s.finish(region, c)
-	return c.r, c.err
-}
-
-// finish clears region's inflight slot, records the backoff outcome, and
-// releases coalesced waiters.
-func (s *Service) finish(region string, c *call) {
-	s.mu.Lock()
-	delete(s.inflight, region)
-	if c.err != nil {
-		s.failUntil[region] = s.now().Add(failureBackoff)
-	} else {
-		delete(s.failUntil, region)
-	}
-	s.mu.Unlock()
-	close(c.done)
 }
 
 // Routes registers GET /energy/rates relative to r (the caller mounts r under

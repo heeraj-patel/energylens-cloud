@@ -111,6 +111,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 	if c.Role == RoleAPI || c.Role == RoleAll {
 		modules = append(modules, Module{Name: "auth-capabilities", Mount: c.authCapabilitiesRoutes})
 		var cache energyrate.Cache
+		var gasCache energyrate.GasCache
 		if rt.Pool != nil {
 			var err error
 			cache, err = energyrate.NewPgCache(ctx, rt.Pool)
@@ -118,12 +119,11 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 				rt.Close()
 				return nil, err
 			}
-		}
-		var fetcher energyrate.RateFetcher
-		var gasFetcher energyrate.GasRateFetcher
-		if c.EIAAPIKey != "" {
-			eia := energyrate.NewEIAClient("", c.EIAAPIKey)
-			fetcher, gasFetcher = eia, eia
+			gasCache, err = energyrate.NewPgGasCache(ctx, rt.Pool)
+			if err != nil {
+				rt.Close()
+				return nil, err
+			}
 		}
 		var rateResearch *datawizfacts.Store
 		if rt.Pool != nil {
@@ -131,8 +131,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 		}
 		rates := energyrate.NewService(energyrate.Options{
 			Research: rateResearch,
-			Fetcher:  fetcher, HasKey: c.EIAAPIKey != "", Cache: cache,
-			GasFetcher: gasFetcher,
+			Cache:    cache, GasCache: gasCache,
 			GasStatic: energyrate.GasStaticRate{
 				USDPerTherm: 1.481, // EIA 2025 annual residential $15.34/Mcf / 10.36 Mcf-to-therm divisor
 				AsOf:        time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC),
