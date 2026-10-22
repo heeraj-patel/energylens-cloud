@@ -270,7 +270,8 @@ func tipApplies(context, category, ruleID string, applicable, excluded []string)
 			break
 		}
 	}
-	if !matched {
+	// Habits tips are general low-cost behavior tips with no category list.
+	if !matched && !(context == "habits" && len(applicable) == 0) {
 		return false
 	}
 	switch context {
