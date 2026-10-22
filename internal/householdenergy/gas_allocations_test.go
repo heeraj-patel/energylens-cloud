@@ -725,3 +725,18 @@ func TestGasHeatingWithoutBurnerInputOrOnPropaneHasNoThermsOrCost(t *testing.T) 
 		absent(t, deviceRow(t, day, id), "gas_energy", "gas_energy_kwh_eq", "gas_cost", "total_cost")
 	}
 }
+
+func TestGasWaterHeaterUsesHouseholdSizeAnswer(t *testing.T) {
+	h := newGasHarness(t, fixedGasRate(energyrate.GasBasisStatic, 1.481))
+	p := h.product("water_heater", "natural_gas", "W3", map[[2]string]float64{{"annual_energy", "kWh"}: 0}, `{}`)
+	id := h.appliance("water_heater", "natural_gas", "W3", &p)
+	h.answer(id, "water_heater.household_size", "64")
+	row := deviceRow(t, h.get("/dashboard"), id)
+	if row["gas_basis"] != "typical" {
+		t.Fatalf("basis: %+v", row)
+	}
+	near(t, "therms/day", amountOf(t, row, "gas_energy"), 365*64*8.24*67/0.5803/100000/365, 1e-4)
+	h.answer(id, "water_heater.household_size", "")
+	row = deviceRow(t, h.get("/dashboard"), id)
+	absent(t, row, "gas_energy")
+}

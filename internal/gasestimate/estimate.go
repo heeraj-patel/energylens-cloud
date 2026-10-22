@@ -28,6 +28,10 @@ const (
 	waterTempRiseF        = 67.0  // 10 CFR 430 Appendix E 6.3.9
 	waterDrawDaysPerYear  = 365.0 // 10 CFR 430 Appendix E 6.3.9
 	weeksPerYear          = 52.0
+	// Federal minimum UEF, medium draw (10 CFR 430.32(d)): storage 0.6483 - 0.0017 x 40 gal; instantaneous.
+	defaultStorageUEF    = 0.5803
+	defaultTanklessUEF   = 0.81
+	maxHotWaterGalPerDay = 500.0
 )
 
 // Typical electric standby watts, used only when a gas appliance has no per-model figure.
@@ -70,6 +74,8 @@ type Usage struct {
 	CyclesPerWeek *float64
 	HoursPerWeek  *float64
 	SeasonShare   *float64
+	// HotWaterGalPerDay is the household-size answer's hot water use.
+	HotWaterGalPerDay *float64
 }
 
 // Input is one appliance's class, fuel, active catalog facts and usage answers.
@@ -196,6 +202,17 @@ func Compute(in Input) (Estimate, bool) {
 		if f.AnnualFuelTherm != nil {
 			e.GasBasis = BasisRatedFact
 			e.setGas(in.Fuel, *f.AnnualFuelTherm, 0)
+		} else if gpd := in.Usage.HotWaterGalPerDay; gpd != nil && *gpd > 0 && *gpd <= maxHotWaterGalPerDay {
+			uef, basis := defaultStorageUEF, BasisTypical
+			if tankless {
+				uef = defaultTanklessUEF
+			}
+			if f.UEF != nil && f.UEF.Value > 0 && !math.IsInf(f.UEF.Value, 0) {
+				uef, basis = f.UEF.Value, BasisRatedFact
+			}
+			btu := waterDrawDaysPerYear * *gpd * waterDensityLbPerGal * waterSpecificHeat * waterTempRiseF / uef
+			e.GasBasis = basis
+			e.setGas(in.Fuel, math.Max(0, btu-btuPerKWh**e.ElectricKWh)/btuPerTherm, 0)
 		} else if f.UEF != nil {
 			pattern, _ := f.UEF.TestBasis["draw_pattern"].(string)
 			if btu, ok := WaterHeaterAnnualBtu(f.UEF.Value, pattern); ok {
@@ -366,6 +383,10 @@ func ReadUsage(ctx context.Context, db Queries, applianceID string, version int6
 		case "hours_per_week":
 			if v <= 168 {
 				u.HoursPerWeek = &v
+			}
+		case "household_size":
+			if v > 0 && v <= maxHotWaterGalPerDay {
+				u.HotWaterGalPerDay = &v
 			}
 		case "season_share":
 			if v <= 1 {

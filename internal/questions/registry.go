@@ -43,20 +43,24 @@ var (
 	// DOE 2014 standard = 1.0; 2001 standard ~1.2-1.4x (DOE 2011 final rule govinfo 2011-22329); 2008-2015 mixes both.
 	ageOptions   = []Option{{"2016_or_newer", 1}, {"2008_2015", 1.25}, {"2007_or_older", 1.3}}
 	spaceOptions = []Option{{"no", 0}, {"yes", 1}}
+	// Hot gal/day for 2, 4 and 6 people: Building America fixture method as in LBNL Home Energy Score, 67 F rise.
+	householdOptions = []Option{{"people_0_2", 38}, {"people_3_5", 64}, {"people_6_plus", 91}}
 )
 
 const (
-	hoursPrompt  = "About how many hours a day is this on?"
-	tvPrompt     = "About how many hours a day is this TV on?"
-	seasonPrompt = "How much of the year do you use it?"
-	loadsPrompt  = "About how many loads a week?"
-	agePrompt    = "About when was it made?"
-	garagePrompt = "Is it in a garage or unconditioned space?"
-	hoursUnit    = "hours/week"
-	cyclesUnit   = "cycles/week"
-	seasonUnit   = "fraction of year"
-	ageUnit      = "energy factor"
-	flagUnit     = "flag"
+	hoursPrompt     = "About how many hours a day is this on?"
+	tvPrompt        = "About how many hours a day is this TV on?"
+	seasonPrompt    = "How much of the year do you use it?"
+	loadsPrompt     = "About how many loads a week?"
+	agePrompt       = "About when was it made?"
+	garagePrompt    = "Is it in a garage or unconditioned space?"
+	householdPrompt = "How many people live in your home?"
+	hotWaterUnit    = "gallons/day"
+	hoursUnit       = "hours/week"
+	cyclesUnit      = "cycles/week"
+	seasonUnit      = "fraction of year"
+	ageUnit         = "energy factor"
+	flagUnit        = "flag"
 )
 
 func hours(category, id, prompt string) definition {
@@ -95,6 +99,7 @@ var onboarding = map[string][]definition{
 	"fan":             {hours("fan", "fan", hoursPrompt), season("fan")},
 	"dehumidifier":    {hours("dehumidifier", "dehumidifier", hoursPrompt), season("dehumidifier")},
 	"hvac":            {hours("hvac", "hvac", hoursPrompt), season("hvac")},
+	"water_heater":    {{"water_heater", "water_heater.household_size", "choice", householdPrompt, hotWaterUnit, householdOptions}},
 	"refrigerator":    fridge("refrigerator"),
 	"freezer":         fridge("freezer"),
 }

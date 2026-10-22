@@ -352,3 +352,41 @@ func TestElectricAppliancesIgnoreUsage(t *testing.T) {
 	wh, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: catalog.GasFacts{AnnualFuelTherm: fp(135.2)}, Usage: use})
 	near(t, "water heater therms", wh.GasTherms, 135.2, 0)
 }
+
+func TestGasWaterHeaterHouseholdSizeTherms(t *testing.T) {
+	facts := catalog.GasFacts{AnnualEnergyKWh: fp(0), UEF: uef(0.58, "medium")}
+	for gpd, therms := range map[float64]float64{38: 132, 64: 222.9, 91: 316.2} {
+		e, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: facts, Usage: Usage{HotWaterGalPerDay: fp(gpd)}})
+		near(t, "therms", e.GasTherms, therms, 0.6)
+		if e.GasBasis != BasisRatedFact {
+			t.Fatalf("basis %q", e.GasBasis)
+		}
+	}
+}
+
+func TestGasWaterHeaterRatedThermsBeatHouseholdSize(t *testing.T) {
+	facts := catalog.GasFacts{AnnualFuelTherm: fp(150), UEF: uef(0.58, "medium")}
+	e, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: facts, Usage: Usage{HotWaterGalPerDay: fp(91)}})
+	near(t, "therms", e.GasTherms, 150, 0)
+}
+
+func TestGasWaterHeaterNotSureKeepsDrawPattern(t *testing.T) {
+	facts := catalog.GasFacts{AnnualEnergyKWh: fp(47), UEF: uef(0.81, "medium")}
+	want, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: facts})
+	got, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Facts: facts, Usage: Usage{CyclesPerWeek: fp(3)}})
+	near(t, "therms", got.GasTherms, *want.GasTherms, 0)
+	none, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas"})
+	isNil(t, "therms without UEF", none.GasTherms)
+}
+
+func TestGasWaterHeaterHouseholdSizeDefaultUEF(t *testing.T) {
+	use := Usage{HotWaterGalPerDay: fp(64)}
+	storage, _ := Compute(Input{Class: ClassWaterHeater, Fuel: "natural_gas", Usage: use})
+	tankless, _ := Compute(Input{Class: ClassWaterHeater, Tankless: true, Fuel: "natural_gas", Usage: use})
+	btu := func(uef float64) float64 { return 365*64*8.24*67/uef - 3412*29 }
+	near(t, "storage therms", storage.GasTherms, btu(0.5803)/100000, 1e-9)
+	near(t, "tankless therms", tankless.GasTherms, (365*64*8.24*67/0.81-3412*38)/100000, 1e-9)
+	if storage.GasBasis != BasisTypical || tankless.GasBasis != BasisTypical {
+		t.Fatalf("basis %q/%q", storage.GasBasis, tankless.GasBasis)
+	}
+}
