@@ -206,6 +206,7 @@ func (g gasAppliance) estimatedAllocation(f gasFigures, tariff *marginalTariff, 
 // and a known electric cost, so the UI falls back to cost otherwise.
 func applyGas(a *allocation, g gasAppliance, f gasFigures, rate *GasRate) {
 	a.Fuel = g.fuel
+	a.TotalCost = nil
 	if f.therms == nil || f.kwhEq == nil {
 		return
 	}
@@ -347,7 +348,7 @@ func (s *fallbackSum) add(a allocation) {
 }
 
 // mergeInto adds the fallback to a period row; fields the row lacks count as
-// zero, and cost fields are dropped when either part has no electric price.
+// zero, and cost fields (and total_cost) are dropped when either part has no electric price.
 func (s fallbackSum) mergeInto(p *allocation, measured bool, rateBasis, wasteBasis string) {
 	if s.energy == nil {
 		return
@@ -387,7 +388,7 @@ func (s fallbackSum) mergeInto(p *allocation, measured bool, rateBasis, wasteBas
 	}
 	cur, isMoney := p.Cost.(money)
 	if s.unpriced || s.currency == "" || measured && (!isMoney || cur.Currency != s.currency) {
-		p.Cost, p.UsefulCost, p.WasteCost, p.UnclassifiedCost, p.StandbyCost = nil, nil, nil, nil, nil
+		p.Cost, p.UsefulCost, p.WasteCost, p.UnclassifiedCost, p.StandbyCost, p.TotalCost = nil, nil, nil, nil, nil, nil
 		return
 	}
 	set := func(old any, add *big.Rat) any {

@@ -3,6 +3,7 @@ package householdenergy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -421,7 +422,16 @@ func TestDecorateProratesMeteredGasOverFullPeriod(t *testing.T) {
 // only the first 10 carry a measured row, as the dashboard does.
 func meteredGasFallback(t *testing.T, est gasestimate.Estimate, measured func(i int) allocation) ([]bucket, []deviceAllocation) {
 	t.Helper()
+	return meteredGasFallbackRate(t, est, measured, nil)
+}
+
+// meteredGasFallbackRate is meteredGasFallback with an optional national rate override.
+func meteredGasFallbackRate(t *testing.T, est gasestimate.Estimate, measured func(i int) allocation, national NationalRate) ([]bucket, []deviceAllocation) {
+	t.Helper()
 	h := newGasHarness(t, nil)
+	if national != nil {
+		h.svc.NationalRate = national
+	}
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	buckets := make([]bucket, 30)
 	rows := make([][]deviceAllocation, 30)
@@ -613,4 +623,27 @@ func TestMeteredGasWithoutStandbyFigureGetsEstimateButNoWaste(t *testing.T) {
 func ratFloat(v any) float64 {
 	f, _ := ratOf(v).Float64()
 	return f
+}
+
+func TestMeteredGasUnpricedFallbackClearsPeriodCostAndTotal(t *testing.T) {
+	therms, kwh, elec, standby := 365.0, 365.0*29.3, 87.6, 87.6
+	est := gasestimate.Estimate{GasTherms: &therms, GasKWhEq: &kwh, ElectricKWh: &elec, StandbyKWh: &standby}
+	noTariff := func(context.Context) (float64, error) { return 0, errors.New("no national rate") }
+	buckets, period := meteredGasFallbackRate(t, est, func(int) allocation {
+		return allocation{Energy: &quantity{Value: "0.500000000000", Unit: "kWh"}, Cost: money{Amount: "0.091550", Currency: "USD"}, Availability: "partial", EvidenceBasis: "measured"}
+	}, noTariff)
+	p := period[0].Allocation
+	if p.Cost != nil || p.TotalCost != nil || p.UsefulCost != nil || p.WasteCost != nil || p.StandbyCost != nil {
+		t.Fatalf("period cost not cleared: %+v", p)
+	}
+	near(t, "period gas_cost", ratFloat(p.GasCost), 60, 1e-9)
+	for i, b := range buckets {
+		a := b.DeviceAllocations[0].Allocation
+		if i >= 10 && (a.Cost != nil || a.TotalCost != nil) {
+			t.Fatalf("unpriced bucket %d has electric or total cost: %+v", i, a)
+		}
+		if i < 10 {
+			near(t, "measured bucket total", ratFloat(a.TotalCost), ratFloat(a.Cost)+ratFloat(a.GasCost), 1e-5)
+		}
+	}
 }
