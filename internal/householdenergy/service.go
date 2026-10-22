@@ -143,6 +143,9 @@ type marginalTariff struct {
 	SourceAsOf   time.Time
 	Segments     []marginalTariff
 	Basis        string
+	Rank         int
+	Periods      []touPeriod
+	Loc          *time.Location
 }
 
 func (s Service) Routes(r chi.Router) {

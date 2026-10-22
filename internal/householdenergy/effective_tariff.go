@@ -98,7 +98,8 @@ func readEffectiveTariff(ctx context.Context, tx pgx.Tx, home string, now time.T
 		}
 		first, last = minTime(first, item.Start), maxTime(last, item.End)
 	}
-	rows, err := tx.Query(ctx, `SELECT id::text,revision,rate::text,currency,effective_from,effective_to,source_as_of
+	rows, err := tx.Query(ctx, `SELECT id::text,revision,rate::text,currency,effective_from,effective_to,source_as_of,
+ CASE WHEN rate_kind='user_tariff' OR plan_chosen_by='user' THEN 0 ELSE 1 END
  FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity' AND rate_unit='kWh'
  AND rate_kind IN ('user_tariff','official_tariff') AND NOT is_fallback
  AND effective_from<$3 AND (effective_to IS NULL OR effective_to>$2)
@@ -110,7 +111,7 @@ func readEffectiveTariff(ctx context.Context, tx pgx.Tx, home string, now time.T
 	for rows.Next() {
 		var v marginalTariff
 		var rate string
-		if err = rows.Scan(&v.ID, &v.Revision, &rate, &v.Currency, &v.From, &v.To, &v.SourceAsOf); err != nil {
+		if err = rows.Scan(&v.ID, &v.Revision, &rate, &v.Currency, &v.From, &v.To, &v.SourceAsOf, &v.Rank); err != nil {
 			rows.Close()
 			return latestID, latestRevision, nil, err
 		}
@@ -127,11 +128,21 @@ func readEffectiveTariff(ctx context.Context, tx pgx.Tx, home string, now time.T
 	if err != nil {
 		return latestID, latestRevision, nil, err
 	}
+	if err = readTariffPeriods(ctx, tx, home, segments); err != nil {
+		return latestID, latestRevision, nil, err
+	}
 	selected := selectTariffSchedule(now, items, segments)
 	return latestID, latestRevision, selected, nil
 }
 
-func selectTariffSchedule(now time.Time, items []interval, segments []marginalTariff) *marginalTariff {
+// selectTariffSchedule keeps the fresh revisions; at each instant the lowest rank, then the latest revision, applies.
+func selectTariffSchedule(now time.Time, items []interval, all []marginalTariff) *marginalTariff {
+	segments := []marginalTariff{}
+	for _, t := range all {
+		if !t.SourceAsOf.After(now) && t.SourceAsOf.After(now.Add(-tariffpkg.ElectricityMaxAge)) {
+			segments = append(segments, t)
+		}
+	}
 	currency := ""
 	for _, item := range items {
 		cuts := tariffCuts(item.Start, item.End, segments)
@@ -142,7 +153,7 @@ func selectTariffSchedule(now time.Time, items []interval, segments []marginalTa
 		}
 		for i := 0; i+1 < len(cuts); i++ {
 			selected := tariffAt(cuts[i], segments)
-			if selected == nil || selected.SourceAsOf.After(now) || !selected.SourceAsOf.After(now.Add(-tariffpkg.ElectricityMaxAge)) {
+			if selected == nil {
 				return nil
 			}
 			if currency == "" {
@@ -182,10 +193,11 @@ func tariffAt(at time.Time, segments []marginalTariff) *marginalTariff {
 	var selected *marginalTariff
 	for i := range segments {
 		t := &segments[i]
-		if !at.Before(t.From) && (t.To == nil || at.Before(*t.To)) {
-			if selected != nil {
-				return nil
-			}
+		if at.Before(t.From) || t.To != nil && !at.Before(*t.To) {
+			continue
+		}
+		if selected == nil || t.Rank < selected.Rank || t.Rank == selected.Rank &&
+			(t.From.After(selected.From) || t.From.Equal(selected.From) && t.Revision > selected.Revision) {
 			selected = t
 		}
 	}
@@ -207,9 +219,16 @@ func priceIntervalRange(item interval, from, to time.Time, schedule marginalTari
 		if t == nil {
 			return nil
 		}
-		share := new(big.Rat).SetFrac(big.NewInt(cuts[i+1].Sub(cuts[i]).Nanoseconds()), big.NewInt(item.End.Sub(item.Start).Nanoseconds()))
-		wh := new(big.Rat).Mul(item.Wh, share)
-		amount.Add(amount, new(big.Rat).Mul(new(big.Rat).Quo(wh, big.NewRat(1000, 1)), t.Rate))
+		pieces := t.pricedPieces(cuts[i], cuts[i+1])
+		// A retained hour cannot be split at a TOU price change inside it.
+		if item.Summarized && len(pieces) > 1 {
+			return nil
+		}
+		for _, piece := range pieces {
+			share := new(big.Rat).SetFrac(big.NewInt(piece.to.Sub(piece.from).Nanoseconds()), big.NewInt(item.End.Sub(item.Start).Nanoseconds()))
+			wh := new(big.Rat).Mul(item.Wh, share)
+			amount.Add(amount, new(big.Rat).Mul(new(big.Rat).Quo(wh, big.NewRat(1000, 1)), piece.rate))
+		}
 	}
 	return amount
 }

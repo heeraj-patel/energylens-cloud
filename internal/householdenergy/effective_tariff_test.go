@@ -39,13 +39,44 @@ func TestEffectiveTariffCoverageAndExactSplit(t *testing.T) {
 		segments []marginalTariff
 	}{
 		{"gap", []marginalTariff{first}},
-		{"overlap", []marginalTariff{first, {Rate: second.Rate, Currency: "USD", From: middle.Add(-time.Minute), SourceAsOf: fresh}}},
 		{"stale", []marginalTariff{first, {Rate: second.Rate, Currency: "USD", From: middle, SourceAsOf: now.Add(-tariffpkg.ElectricityMaxAge)}}},
 		{"currency conflict", []marginalTariff{first, {Rate: second.Rate, Currency: "EUR", From: middle, SourceAsOf: fresh}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := selectTariffSchedule(now, items, tc.segments); got != nil {
 				t.Fatalf("invalid schedule was priced: %+v", got)
+			}
+		})
+	}
+}
+
+func TestEffectiveTariffOverlapUsesRankThenLatest(t *testing.T) {
+	now := time.Date(2026, 10, 6, 18, 0, 0, 0, time.UTC)
+	start := now.Add(-2 * time.Hour)
+	middle, end := start.Add(30*time.Minute), start.Add(time.Hour)
+	fuel := "electricity"
+	items := []interval{{Start: start, End: end, Wh: big.NewRat(1000, 1), Fuel: &fuel}}
+	fresh := now.Add(-24 * time.Hour)
+	userTariff := marginalTariff{Rate: big.NewRat(1, 10), Currency: "USD", From: start.Add(-time.Hour), SourceAsOf: fresh, Revision: 1}
+	laterDefault := marginalTariff{Rate: big.NewRat(2, 10), Currency: "USD", From: middle, SourceAsOf: fresh, Revision: 2, Rank: 1}
+	laterUser := marginalTariff{Rate: big.NewRat(3, 10), Currency: "USD", From: middle, SourceAsOf: fresh, Revision: 3}
+	for _, tc := range []struct {
+		name     string
+		segments []marginalTariff
+		want     string
+	}{
+		{"user beats a later default", []marginalTariff{userTariff, laterDefault}, "0.100000"},
+		{"latest of one rank wins", []marginalTariff{userTariff, laterDefault, laterUser}, "0.200000"},
+		{"stale higher rank is skipped", []marginalTariff{{Rate: big.NewRat(1, 10), Currency: "USD", From: start.Add(-time.Hour), SourceAsOf: now.Add(-tariffpkg.ElectricityMaxAge)},
+			{Rate: big.NewRat(2, 10), Currency: "USD", From: start.Add(-time.Hour), SourceAsOf: fresh, Rank: 1}}, "0.200000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			schedule := selectTariffSchedule(now, items, tc.segments)
+			if schedule == nil {
+				t.Fatal("overlapping fresh revisions were not priced")
+			}
+			if got := priceIntervalRange(items[0], start, end, *schedule).FloatString(6); got != tc.want {
+				t.Fatalf("price %s, want %s", got, tc.want)
 			}
 		})
 	}

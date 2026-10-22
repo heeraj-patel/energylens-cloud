@@ -901,7 +901,7 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 		end  time.Time
 		want bool
 	}{
-		{"overlapping historical revision", end.Add(time.Minute), false},
+		{"overlapping historical revision", end.Add(time.Minute), true},
 		{"adjacent historical revision", start, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
