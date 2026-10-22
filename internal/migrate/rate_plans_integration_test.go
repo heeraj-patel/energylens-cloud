@@ -247,3 +247,25 @@ func TestDatawizRunsAcceptRatePlansRoute(t *testing.T) {
 		t.Error("unknown route accepted")
 	}
 }
+
+func TestUtilityRatePlanReplacedByIsMutable(t *testing.T) {
+	ctx, conn, _ := migratedSchemaConn(t)
+	urdb := validPlan()
+	urdb.key, urdb.kind = "urdb:69de6fa62aa9e9994f0ed2bd", "urdb"
+	id, err := insertPlan(ctx, conn, urdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Exec(ctx, `UPDATE utility_rate_plans SET replaced_by_plan_key='official:pge:e-tou-c:p' WHERE id=$1`, id); err != nil {
+		t.Fatalf("replaced_by_plan_key set rejected: %v", err)
+	}
+	if _, err = conn.Exec(ctx, `UPDATE utility_rate_plans SET replaced_by_plan_key=NULL WHERE id=$1`, id); err != nil {
+		t.Fatalf("replaced_by_plan_key clear rejected: %v", err)
+	}
+	if _, err = conn.Exec(ctx, `UPDATE utility_rate_plans SET replaced_by_plan_key='urdb:x' WHERE id=$1`, id); err == nil {
+		t.Error("non-official replaced_by_plan_key accepted")
+	}
+	if _, err = conn.Exec(ctx, `UPDATE utility_rate_plans SET replaced_by_plan_key='official:pge:e-tou-c:p',plan_name='x' WHERE id=$1`, id); err == nil {
+		t.Error("plan_name update with replaced_by_plan_key accepted")
+	}
+}
