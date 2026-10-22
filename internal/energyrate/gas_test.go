@@ -144,14 +144,66 @@ func TestEIAGasMeanOfDistinctMonths(t *testing.T) {
 	}
 }
 
-func TestEIAGasFewerThanTwelveMonthsIsNoData(t *testing.T) {
+func caGasBody(vals ...string) string {
+	rows := ""
+	for i, v := range vals {
+		p := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC).AddDate(0, -i, 0)
+		if i > 0 {
+			rows += ","
+		}
+		rows += fmt.Sprintf(`{"period":"%s","series":"N3010CA3","value":%s,"units":"$/MCF"}`, p.Format("2006-01"), v)
+	}
+	return `{"response":{"data":[` + rows + `]}}`
+}
+
+func TestEIAGasMeanSkipsNullMonths(t *testing.T) {
+	// Real EIA CA data (2026-10-21): two null months; mean of 10 = 21.957 $/Mcf.
+	body := caGasBody(`"21.35"`, `"20.33"`, `null`, `null`, `"20.72"`, `"22.45"`, `"22.96"`, `"23.78"`, `"22.19"`, `"21.81"`, `"21.89"`, `"22.09"`)
+	r, err := gasClient(t, body, nil).ResidentialGasPrice(context.Background(), "CA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := math.Round(21.957/10.36*10000) / 10000; want != 2.1194 || math.Abs(r.USDPerTherm-want) > 1e-9 {
+		t.Fatalf("USDPerTherm = %v, want %v", r.USDPerTherm, want)
+	}
+	if !r.Period.Equal(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("period = %v", r.Period)
+	}
+}
+
+func TestEIAGasMeanOfTenOfTwelve(t *testing.T) {
+	r, err := gasClient(t, gasBody(10, `20`), nil).ResidentialGasPrice(context.Background(), "TX")
+	if err != nil || math.Abs(r.USDPerTherm-math.Round(20/10.36*10000)/10000) > 1e-9 {
+		t.Fatalf("rate = %+v err=%v", r, err)
+	}
+}
+
+func TestEIAGasNoDataMonthsIsNoData(t *testing.T) {
 	for name, body := range map[string]string{
-		"11 rows": gasBody(11, `"15"`),
-		"null":    gasBody(12, `null`),
+		"all null": gasBody(12, `null`),
+		"all zero": gasBody(12, `0`),
+		"empty":    `{"response":{"data":[]}}`,
 	} {
 		if _, err := gasClient(t, body, nil).ResidentialGasPrice(context.Background(), "TX"); !errors.Is(err, ErrNoData) {
 			t.Fatalf("%s: err = %v", name, err)
 		}
+	}
+}
+
+func TestResolveGasAllNullStateFallsThroughToUS(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.RawQuery, "N3010CA3") {
+			_, _ = w.Write([]byte(strings.ReplaceAll(gasBody(12, `null`), "N3010TX3", "N3010CA3")))
+			return
+		}
+		_, _ = w.Write([]byte(strings.ReplaceAll(gasBody(12, `"10.36"`), "N3010TX3", "N3010US3")))
+	}))
+	defer srv.Close()
+	c := NewEIAClient(srv.URL, "k")
+	c.Now = func() time.Time { return gasNow }
+	got, err := gasService(c, true, nil, GasStaticRate{}).ResolveGas(context.Background(), "90001")
+	if err != nil || got.Basis != GasBasisNational || got.USDPerTherm != 1 {
+		t.Fatalf("got %+v err=%v", got, err)
 	}
 }
 

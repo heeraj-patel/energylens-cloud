@@ -21,7 +21,7 @@ const eiaGasPricePath = "/v2/natural-gas/pri/sum/data/"
 // mcfPerTherm converts $/Mcf to $/therm: 1 ft3 = 1,036 Btu, 1 therm = 100,000 Btu.
 const mcfPerTherm = 10.36
 
-// GasMonths is how many consecutive monthly values make up the mean.
+// GasMonths is how many of the latest monthly periods are requested for the mean.
 const GasMonths = 12
 
 // Gas rate bases (stored later as gas_rate_basis).
@@ -34,8 +34,8 @@ const (
 // GasRate is one region's mean residential gas price over the latest 12 months.
 type GasRate struct {
 	Region      string    // two-letter state code, or NationalRegion
-	USDPerTherm float64   // mean of the 12 monthly values, converted from $/Mcf
-	Period      time.Time // first day of the latest month in the mean (UTC)
+	USDPerTherm float64   // mean of the months with data, converted from $/Mcf
+	Period      time.Time // first day of the latest month with data (UTC)
 	FetchedAt   time.Time
 }
 
@@ -72,8 +72,8 @@ type eiaGasResponse struct {
 	} `json:"response"`
 }
 
-// ResidentialGasPrice implements GasRateFetcher. It needs the latest 12
-// consecutive monthly values; fewer, a gap or a null is ErrNoData.
+// ResidentialGasPrice implements GasRateFetcher. It averages the months with
+// data among the latest 12; none at all is ErrNoData.
 func (c *EIAClient) ResidentialGasPrice(ctx context.Context, region string) (GasRate, error) {
 	if c.APIKey == "" {
 		return GasRate{}, errors.New("energyrate: no EIA API key configured")
@@ -114,38 +114,35 @@ func (c *EIAClient) ResidentialGasPrice(ctx context.Context, region string) (Gas
 
 func gasSeries(region string) string { return "N3010" + strings.ToUpper(region) + "3" }
 
-// gasMean averages the first 12 rows (newest first), requiring consecutive
-// valid months so a partial year never skews the seasonal mean.
+// gasMean averages the non-null, positive values among the rows (newest first),
+// dividing by the months that had data. No such month is ErrNoData.
 func gasMean(er eiaGasResponse, region string, now time.Time) (GasRate, error) {
 	var sum float64
-	var latest, prev time.Time
-	n := 0
+	var latest time.Time
+	n, rows := 0, 0
 	for _, d := range er.Response.Data {
 		if d.Series != "" && !strings.EqualFold(d.Series, gasSeries(region)) {
 			continue
 		}
+		if rows++; rows > GasMonths {
+			break
+		}
 		period, err := time.Parse("2006-01", d.Period)
 		if err != nil || !d.Value.valid || d.Value.v <= 0 {
-			return GasRate{}, ErrNoData
+			continue
 		}
 		if n == 0 {
 			latest = period
-		} else if !period.Equal(prev.AddDate(0, -1, 0)) {
-			return GasRate{}, ErrNoData
 		}
-		prev = period
 		sum += d.Value.v
 		n++
-		if n == GasMonths {
-			break
-		}
 	}
-	if n < GasMonths {
+	if n == 0 {
 		return GasRate{}, ErrNoData
 	}
 	return GasRate{
 		Region:      region,
-		USDPerTherm: math.Round(sum/GasMonths/mcfPerTherm*10000) / 10000,
+		USDPerTherm: math.Round(sum/float64(n)/mcfPerTherm*10000) / 10000,
 		Period:      latest.UTC(),
 		FetchedAt:   now,
 	}, nil
