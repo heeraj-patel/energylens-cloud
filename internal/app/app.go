@@ -205,7 +205,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "reviewed-catalog", Mount: products.Routes})
 			usageFacts := usagefactapi.Service{Store: usagefactapi.PGStore{Pool: rt.Pool}, Auth: accounts.Auth}
 			modules = append(modules, Module{Name: "reviewed-usage-facts", Mount: usageFacts.Routes})
-			tariffs := tariff.Service{Store: tariff.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
+			tariffs := tariff.Service{Store: tariff.PGStore{Pool: rt.Pool}, Plans: tariff.PGRatePlanStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-tariffs", Mount: tariffs.Routes})
 			estimates := estimation.Service{Store: estimation.PGRunStore{Pool: rt.Pool, NationalRate: rates.NationalUSDPerKWh}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-estimates", Mount: estimates.Routes})
@@ -394,7 +394,8 @@ func Serve(ctx context.Context, c Config) error {
 	}
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
-	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.DatawizRequestsDir != "" {
+	ratePlanSweep := rt.Pool != nil && c.Role != RoleAPI
+	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.DatawizRequestsDir != "" || ratePlanSweep {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -460,6 +461,14 @@ func Serve(ctx context.Context, c Config) error {
 				go func() {
 					defer close(finished)
 					runDatawizRequests(workerCtx, datawizrequests.Requeuer{DB: rt.Pool}, time.Hour)
+				}()
+			}
+			if ratePlanSweep {
+				finished := make(chan struct{})
+				jobs = append(jobs, finished)
+				go func() {
+					defer close(finished)
+					runRatePlanSweeps(workerCtx, tariff.RatePlanSweep{Pool: rt.Pool}, ratePlanChangeInterval, ratePlanSweepInterval)
 				}()
 			}
 			for _, finished := range jobs {

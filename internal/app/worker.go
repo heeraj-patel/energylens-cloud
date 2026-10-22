@@ -187,3 +187,47 @@ func runProgramRefreshes(ctx context.Context, job programRefreshJob, interval ti
 		}
 	}
 }
+
+const (
+	ratePlanChangeInterval = 5 * time.Minute
+	ratePlanSweepInterval  = 24 * time.Hour
+	ratePlanSweepDeadline  = 10 * time.Minute
+)
+
+type ratePlanSweepJob interface {
+	RunOnce(context.Context, time.Time, *time.Time) (int, error)
+}
+
+// runRatePlanSweeps runs the full default and refresh sweep daily (and at start), and a pass over moved homes in between.
+func runRatePlanSweeps(ctx context.Context, job ratePlanSweepJob, changeInterval, fullInterval time.Duration) {
+	ticker := time.NewTicker(changeInterval)
+	defer ticker.Stop()
+	var lastFull, lastPass time.Time
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		now := time.Now().UTC()
+		var since *time.Time
+		if !lastFull.IsZero() && now.Sub(lastFull) < fullInterval {
+			since = &lastPass
+		}
+		runCtx, cancel := context.WithTimeout(ctx, ratePlanSweepDeadline)
+		written, err := job.RunOnce(runCtx, now, since)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			slog.Error("rate plan sweep failed", "error", err)
+		} else if written > 0 {
+			slog.Info("rate plan sweep wrote tariff revisions", "count", written)
+		}
+		if since == nil {
+			lastFull = now
+		}
+		lastPass = now
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}

@@ -73,7 +73,7 @@ func buildResolutionRun(ctx context.Context, tx pgx.Tx, home string, a appliance
         AND (effective_to IS NULL OR effective_to>=$3) AND source_as_of<=$4
         AND source_as_of>$4::timestamptz-`+tariffpkg.ElectricityMaxAgeInterval+`
         AND rate_kind IN ('user_tariff','official_tariff') AND NOT is_fallback
-      ORDER BY CASE rate_kind WHEN 'user_tariff' THEN 0 ELSE 1 END,
+      ORDER BY `+tariffpkg.RankSQL+`,
                effective_from DESC,revision DESC,id DESC LIMIT 1`, home, startTime, endTime, now).Scan(&rate.ID, &rate.Revision, &rate.Rate, &rate.Currency, &rate.Kind)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, err

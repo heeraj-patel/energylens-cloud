@@ -232,7 +232,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			 WHERE home_id=$1 AND fuel='natural_gas' AND rate_unit='therm' AND currency='USD'
 			 AND effective_from<=$2 AND (effective_to IS NULL OR effective_to>$2)
 			 AND source_as_of<=$2 AND source_as_of>=$2::timestamptz - interval '18 months'
-			 ORDER BY CASE rate_kind WHEN 'user_tariff' THEN 0 WHEN 'official_tariff' THEN 1 ELSE 2 END,
+			 ORDER BY `+tariffpkg.RankSQL+`,
 			 effective_from DESC,revision DESC,id DESC LIMIT 1`, home, now).Scan(&rateID, &rateRevision)
 			if err == nil {
 				item.GasTariff = &Evidence{ID: rateID, Kind: "gas_tariff", Revision: rateRevision}

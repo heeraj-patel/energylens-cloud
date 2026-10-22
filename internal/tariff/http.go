@@ -18,6 +18,7 @@ import (
 
 type Service struct {
 	Store  Store
+	Plans  RatePlanStore
 	Auth   func(http.Handler) http.Handler
 	UserID func(*http.Request) string
 }
@@ -28,6 +29,11 @@ func (s Service) Routes(r chi.Router) {
 		r.Get("/", s.list)
 		r.Post("/", s.create)
 	})
+	if s.Plans != nil {
+		r.With(s.Auth).Get("/homes/{home}/utility-rate-plans", s.listPlans)
+		r.With(s.Auth).Put("/homes/{home}/electric-utility", s.putUtility)
+		r.With(s.Auth).Put("/homes/{home}/utility-rate-plan", s.putPlan)
+	}
 }
 
 func respond(w http.ResponseWriter, status int, value any) {
@@ -52,6 +58,12 @@ func storeError(w http.ResponseWriter, err error) {
 		fail(w, 404, "not_found", "home not found")
 	case errors.Is(err, ErrKeyReuse):
 		fail(w, 409, "idempotency_key_reuse", "key used with another request")
+	case errors.Is(err, ErrUnknownUtility):
+		fail(w, 400, "invalid_request", "unknown electric utility")
+	case errors.Is(err, ErrPlanNotOffered):
+		fail(w, 409, "plan_not_offered", "plan is not offered for the home's utility")
+	case errors.Is(err, ErrNoBaseRate):
+		fail(w, 409, "base_rate_unavailable", "plan has no base rate and the home has no current rate")
 	default:
 		slog.Error("tariff store failed", "error", err)
 		fail(w, 500, "internal_error", "tariff request failed")

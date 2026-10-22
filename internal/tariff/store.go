@@ -74,7 +74,7 @@ func (s PGStore) List(ctx context.Context, owner, home string) ([]Tariff, error)
           AND source_as_of <= now()
           AND (fuel <> 'electricity' OR source_as_of > now() - `+ElectricityMaxAgeInterval+`)
           AND (fuel = 'electricity' OR source_as_of >= now() - interval '18 months')
-        ORDER BY fuel, CASE rate_kind WHEN 'user_tariff' THEN 0 WHEN 'official_tariff' THEN 1 ELSE 2 END,
+        ORDER BY fuel, `+RankSQL+`,
                  effective_from DESC, revision DESC, id DESC
       ) ORDER BY fuel`, home)
 	if err != nil {
