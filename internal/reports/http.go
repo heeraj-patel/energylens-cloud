@@ -36,6 +36,7 @@ type directDeliveryStore interface {
 func (s Service) Routes(r chi.Router) {
 	r.With(s.Auth).Post("/homes/{home}/reports/preview", s.create)
 	r.With(s.Auth).Get("/homes/{home}/reports/previews/{preview}", s.get)
+	r.With(s.Auth).Get("/homes/{home}/reports/previews/{preview}/pdf", s.getPDF)
 	r.With(s.Auth).Post("/homes/{home}/reports/previews/{preview}/deliveries", s.enqueue)
 }
 
@@ -248,6 +249,50 @@ func (s Service) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, preview)
+}
+
+func (s Service) getPDF(w http.ResponseWriter, r *http.Request) {
+	home, id := chi.URLParam(r, "home"), chi.URLParam(r, "preview")
+	if !canonicalUUID(home) || !canonicalUUID(id) {
+		respondError(w, http.StatusNotFound, "not_found")
+		return
+	}
+	digest := r.Header.Get("X-Report-Snapshot-SHA256")
+	if len(digest) != 64 || strings.ToLower(digest) != digest {
+		respondError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	preview, err := s.Store.Get(r.Context(), s.UserID(r), home, id, time.Now().UTC())
+	if errors.Is(err, ErrNotFound) {
+		respondError(w, http.StatusNotFound, "not_found")
+		return
+	}
+	if err != nil {
+		slog.Error("report PDF preview read failed", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	pdf, err := RenderApprovedPDF(preview, digest)
+	switch {
+	case errors.Is(err, ErrStalePreview):
+		respondError(w, http.StatusConflict, "preview_stale")
+	case errors.Is(err, ErrSnapshotMismatch):
+		respondError(w, http.StatusConflict, "snapshot_mismatch")
+	case err != nil:
+		slog.Error("report PDF render failed", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error")
+	default:
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="energylens-report.pdf"`)
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(pdf)
+	}
 }
 
 func canonicalUUID(raw string) bool {

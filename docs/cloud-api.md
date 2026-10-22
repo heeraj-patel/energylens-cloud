@@ -157,6 +157,7 @@ Owner energy-resolution refresh queues one Datawiz re-resolution (reason `owner_
 |---|---|---|---|---|---|---|---|
 | `POST` | `/homes/{home}/reports/preview` | `createReportPreview` | `bearer` / `active` | `header Idempotency-Key*` | object | 201 [`ReportPreview`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-ReportPreview) | — |
 | `GET` | `/homes/{home}/reports/previews/{preview}` | `getReportPreview` | `bearer` / `active` | — | — | 200 [`ReportPreview`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-ReportPreview) | — |
+| `GET` | `/homes/{home}/reports/previews/{preview}/pdf` | `getReportPreviewPdf` | `bearer` / `active` | `header X-Report-Snapshot-SHA256*` | — | 200 `application/pdf` | `Cache-Control`, `Content-Disposition` |
 | `POST` | `/homes/{home}/reports/previews/{preview}/deliveries` | `queueManualReportDelivery` | `bearer` / `active` | `header Idempotency-Key*` | [`ReportDeliveryCreate`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-ReportDeliveryCreate) | 201 [`ReportDeliveryRequest`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-ReportDeliveryRequest) | — |
 
 ### Metering

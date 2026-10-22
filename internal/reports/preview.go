@@ -115,6 +115,7 @@ func safeCategory(raw string) string {
 func snapshotDigest(preview Preview) (string, error) {
 	preview.SnapshotSHA256 = ""
 	preview.Stale = false
+	preview.LatestDelivery = nil
 	body, err := json.Marshal(preview)
 	if err != nil {
 		return "", err
