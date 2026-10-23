@@ -21,9 +21,10 @@ type ECCC struct {
 // Attribution is the wording the ECCC licence requires next to its data.
 const Attribution = "Data Source: Environment and Climate Change Canada"
 
-// Heat and cold alert names from canada.ca .../severeweather/extreme-heat-warning.html and .../extreme-cold-warning.html (checked 2026-10-23).
+// Heat and cold alert_name_en values: canada.ca extreme-heat/extreme-cold pages, be-prepared-for-winter.html (arctic outflow), live GeoMet feed (frost advisory); checked 2026-10-23.
 var ecccAlertKinds = map[string]string{
 	"heat warning": KindHot, "cold warning": KindCold, "extreme cold warning": KindCold,
+	"arctic outflow warning": KindCold, "frost advisory": KindCold,
 }
 
 var ecccSitePattern = regexp.MustCompile(`^[a-z]{2}-[0-9]{1,4}$`)

@@ -145,7 +145,7 @@ func TestAlertKindUsesOfficialNames(t *testing.T) {
 		{ProviderNWS, "Cold Weather Advisory"}: KindCold, {ProviderNWS, "Extreme Cold Watch"}: KindCold, {ProviderNWS, "Extreme Cold Warning"}: KindCold,
 		{ProviderNWS, "Freeze Watch"}: KindCold, {ProviderNWS, "Freeze Warning"}: KindCold, {ProviderNWS, "Frost Advisory"}: "",
 		{ProviderNWS, "heat advisory"}: "", {ProviderECCC, "heat warning"}: KindHot, {ProviderECCC, "Cold warning"}: KindCold,
-		{ProviderECCC, "extreme cold warning"}: KindCold, {ProviderECCC, "frost advisory"}: "", {ProviderECCC, "Heat Advisory"}: "",
+		{ProviderECCC, "extreme cold warning"}: KindCold, {ProviderECCC, "frost advisory"}: KindCold, {ProviderECCC, "Arctic Outflow Warning"}: KindCold, {ProviderECCC, "arctic outflow warning"}: KindCold, {ProviderECCC, "Heat Advisory"}: "",
 	}
 	for in, want := range cases {
 		if got := AlertKind(in[0], in[1]); got != want {
