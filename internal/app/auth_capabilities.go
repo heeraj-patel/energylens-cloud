@@ -27,6 +27,7 @@ func (c Config) authCapabilitiesRoutes(r chi.Router) {
 		case c.RuntimeEnvironment == "local":
 			response.Methods = append(response.Methods, "username_password")
 			response.RegistrationEnabled = true
+			response.PasswordRecoveryEnabled = true
 			response.SessionLogoutRevokesAccess = true
 		default:
 			if c.LocalAuthEnabled {

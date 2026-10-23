@@ -50,9 +50,9 @@ func (h LocalAuthHTTP) Routes(r chi.Router) {
 		r.Post("/logout", h.logout)
 		if h.Login.Codec.Profile != LocalUsernameProfile {
 			r.Post("/recovery", h.recovery)
-			r.Post("/reset-password", h.reset)
 			r.Post("/change-email", h.changeEmail)
 		}
+		r.Post("/reset-password", h.reset)
 		r.Post("/change-password", h.changePassword)
 	})
 }
@@ -273,6 +273,30 @@ func (h LocalAuthHTTP) recovery(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, 202, out)
 }
 func (h LocalAuthHTTP) reset(w http.ResponseWriter, r *http.Request) {
+	if h.Login.Codec.Profile == LocalUsernameProfile {
+		var in struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if !localAuthDecode(w, r, &in) {
+			return
+		}
+		if _, err := NormalizeLocalUsername(in.Username); err != nil || !validPassword(in.Password) {
+			fail(w, http.StatusBadRequest, "invalid_request", "invalid username or password")
+			return
+		}
+		source, err := h.SourcePolicy.Source(r)
+		if err != nil {
+			localAuthError(w, err)
+			return
+		}
+		if err := h.Login.ResetUsernamePassword(r.Context(), in.Username, in.Password, source, time.Now().UTC()); err != nil {
+			localAuthError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	var in struct {
 		Token    string `json:"token"`
 		Password string `json:"password"`

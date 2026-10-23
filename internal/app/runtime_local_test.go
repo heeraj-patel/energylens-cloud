@@ -145,7 +145,7 @@ func TestAuthCapabilitiesAllowlist(t *testing.T) {
 			if len(got) != 6 || got["schema_version"] != float64(1) || got["methods"].([]any)[0] != setup.methods {
 				t.Fatalf("unexpected capability DTO: %v", got)
 			}
-			if name == "local" && (got["email_verification_required"] != false || got["password_recovery_enabled"] != false || got["session_logout_revokes_access"] != true) {
+			if name == "local" && (len(got["methods"].([]any)) != 1 || got["registration_enabled"] != true || got["email_verification_required"] != false || got["password_recovery_enabled"] != true || got["session_logout_revokes_access"] != true) {
 				t.Fatalf("local capability flags: %v", got)
 			}
 			if name == "email" && (got["registration_enabled"] != true || got["email_verification_required"] != false || got["password_recovery_enabled"] != true) {

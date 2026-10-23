@@ -308,7 +308,7 @@ func TestUsernameHTTPStrictDispatch(t *testing.T) {
 		r.ServeHTTP(w, req)
 		return w
 	}
-	for _, path := range []string{"verify-email", "recovery", "reset-password", "change-email"} {
+	for _, path := range []string{"verify-email", "recovery", "change-email"} {
 		if got := post("/v1/auth/local/"+path, map[string]string{}).Code; got != 404 {
 			t.Fatalf("email route %s mounted: %d", path, got)
 		}
@@ -339,5 +339,66 @@ func TestUsernameHTTPStrictDispatch(t *testing.T) {
 	}
 	if w := post("/v1/auth/local/login", map[string]string{"username": "alice", "password": "correct long password"}); w.Code != 200 || !strings.Contains(w.Body.String(), `"access_token"`) {
 		t.Fatalf("login %d %s", w.Code, w.Body.String())
+	}
+	for _, body := range []any{
+		map[string]string{"email": "alice@example.test", "password": "another long password"},
+		map[string]string{"token": strings.Repeat("a", 43), "password": "another long password"},
+		map[string]string{"username": "alice", "password": "another long password", "email": "alice@example.test"},
+	} {
+		if w := post("/v1/auth/local/reset-password", body); w.Code != 400 {
+			t.Fatalf("invalid reset %d %s", w.Code, w.Body.String())
+		}
+	}
+	if w := post("/v1/auth/local/reset-password", map[string]string{"username": "unknown", "password": "another long password"}); w.Code != 204 {
+		t.Fatalf("unknown reset %d %s", w.Code, w.Body.String())
+	}
+	if w := post("/v1/auth/local/reset-password", map[string]string{"username": "ALICE", "password": "another long password"}); w.Code != 204 {
+		t.Fatalf("username reset %d %s", w.Code, w.Body.String())
+	}
+	if w := post("/v1/auth/local/login", map[string]string{"username": "alice", "password": "another long password"}); w.Code != 200 {
+		t.Fatalf("reset login %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUsernameResetRevokesSessionsAndThrottles(t *testing.T) {
+	pool, _ := usernameTestDatabase(t, false)
+	ctx := context.Background()
+	registration, login, refresh := usernameServices(t, pool)
+	now := time.Now().UTC()
+	if _, err := registration.RegisterUsername(ctx, "Owner.Name", "original long password", "192.0.2.1", now); err != nil {
+		t.Fatal(err)
+	}
+	old, err := login.Login(ctx, "owner.name", "original long password", "192.0.2.2", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := login.ResetUsernamePassword(ctx, " OWNER.NAME ", "new secure password", "192.0.2.3", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (LocalAccessVerifier{DB: pool, Codec: login.Codec}).Verify(ctx, old.AccessToken); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("old access remained valid: %v", err)
+	}
+	if _, err := refresh.Rotate(ctx, old.RefreshToken, now.Add(2*time.Minute)); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("old refresh remained valid: %v", err)
+	}
+	if _, err := login.Login(ctx, "owner.name", "original long password", "192.0.2.4", now.Add(2*time.Minute)); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("old password remained valid: %v", err)
+	}
+	if _, err := login.Login(ctx, "owner.name", "new secure password", "192.0.2.5", now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("new password login: %v", err)
+	}
+	if err := login.ResetUsernamePassword(ctx, "unknown.name", "another long password", "192.0.2.6", now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("unknown account response: %v", err)
+	}
+	for _, password := range []string{"second secure password", "third secure password", "fourth secure password"} {
+		if err := login.ResetUsernamePassword(ctx, "owner.name", password, "192.0.2.7", now.Add(4*time.Minute)); err != nil {
+			t.Fatalf("reset response: %v", err)
+		}
+	}
+	if _, err := login.Login(ctx, "owner.name", "third secure password", "192.0.2.8", now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("last allowed password: %v", err)
+	}
+	if _, err := login.Login(ctx, "owner.name", "fourth secure password", "192.0.2.9", now.Add(5*time.Minute)); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("throttled reset changed password: %v", err)
 	}
 }
