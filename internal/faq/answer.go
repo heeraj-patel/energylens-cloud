@@ -3,11 +3,16 @@
 package faq
 
 import (
+	"slices"
 	"sort"
 	"time"
 )
 
-const Insufficient = "More usage information is needed."
+const (
+	Insufficient   = "More usage information is needed."
+	NoWeatherTips  = "No weather tips apply right now."
+	weatherTipsFAQ = "weather_tips"
+)
 
 type Evidence struct {
 	ID       string `json:"id"`
@@ -16,9 +21,10 @@ type Evidence struct {
 }
 
 type Finding struct {
-	Label       string     `json:"label"` // observation or estimate
+	Label       string     `json:"label"` // observation, estimate or hypothesis
 	Text        string     `json:"text"`
 	EvidenceRef []Evidence `json:"evidence_refs"`
+	SourceURL   string     `json:"source_url,omitempty"`
 }
 
 type Input struct {
@@ -27,6 +33,9 @@ type Input struct {
 	ObservedPatterns []Finding
 	Actions          []Finding
 	Programs         []Finding
+	WeatherFindings  []Finding
+	// WeatherUnavailable makes weather_tips answer with the insufficient-information fallback.
+	WeatherUnavailable bool
 	AsOf             time.Time
 }
 
@@ -63,6 +72,7 @@ var intents = map[string]bool{
 	"device_operating_cost":           true,
 	"reduce_cost":                     true,
 	"programs_for_device":             true,
+	weatherTipsFAQ:                    true,
 }
 
 // Render uses only supplied evidence-backed findings. A high-bill answer is
@@ -82,6 +92,8 @@ func Render(in Input) (Answer, bool) {
 		findings = in.Actions
 	case "programs_for_device":
 		findings = in.Programs
+	case weatherTipsFAQ:
+		findings = in.WeatherFindings
 	case "device_operating_cost":
 		if c := in.OperatingCost; c != nil && c.Amount != "" && c.Currency != "" && c.PeriodStart != "" && c.PeriodEnd != "" {
 			findings = []Finding{{Label: "estimate", Text: "Estimated operating cost: " + c.Amount + " " + c.Currency + " for " + c.PeriodStart + " to " + c.PeriodEnd + ".", EvidenceRef: c.Evidence}}
@@ -103,14 +115,24 @@ func Render(in Input) (Answer, bool) {
 		}
 		if valid {
 			out.Findings = append(out.Findings, f)
-			out.EvidenceRefs = append(out.EvidenceRefs, f.EvidenceRef...)
+			for _, ref := range f.EvidenceRef {
+				if in.QuestionID != weatherTipsFAQ || !slices.Contains(out.EvidenceRefs, ref) {
+					out.EvidenceRefs = append(out.EvidenceRefs, ref)
+				}
+			}
 		}
+	}
+	if len(out.Findings) == 0 && in.QuestionID == weatherTipsFAQ && !in.WeatherUnavailable {
+		out.Status, out.Text = "supported", NoWeatherTips
+		return out, true
 	}
 	if len(out.Findings) == 0 {
 		out.NextAction = &NextAction{Kind: "adaptive_questions", FlowID: "faq-contributors/v1"}
 		return out, true
 	}
-	sort.Slice(out.Findings, func(i, j int) bool { return out.Findings[i].Text < out.Findings[j].Text })
+	if in.QuestionID != weatherTipsFAQ {
+		sort.Slice(out.Findings, func(i, j int) bool { return out.Findings[i].Text < out.Findings[j].Text })
+	}
 	out.Status = "partial"
 	switch in.QuestionID {
 	case "high_bill_possible_contributors":

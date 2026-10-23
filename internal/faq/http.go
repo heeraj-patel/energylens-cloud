@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -20,6 +21,9 @@ import (
 type Service struct {
 	Store           EvidenceStore
 	Weather         *weather.Service
+	WeatherTips     interface {
+		ActiveWeather(ctx context.Context, owner, home string, now time.Time) (*recommendation.WeatherPage, []recommendation.ActiveWeatherTip, error)
+	}
 	Recommendations recommendation.EvidenceStore
 	Programs        programs.OwnerStore
 	Auth            func(http.Handler) http.Handler
@@ -111,6 +115,24 @@ func (s Service) answer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var expires time.Time
+	var tipsStatus, tipsReason string
+	if question == weatherTipsFAQ {
+		tipsStatus, tipsReason = "missing", "provider_unconfigured"
+		if s.WeatherTips != nil {
+			page, tips, readErr := s.WeatherTips.ActiveWeather(r.Context(), s.UserID(r), home, now)
+			if readErr != nil {
+				slog.Error("FAQ weather tips read failed", "error", readErr)
+				fail(w, http.StatusInternalServerError, "internal_error")
+				return
+			}
+			tipsStatus, tipsReason = "missing", page.Reason
+			if page.Status == weather.StatusAvailable {
+				tipsStatus, tipsReason = "available", ""
+				in.WeatherFindings = WeatherTipFindings(page, tips)
+			}
+		}
+		in.WeatherUnavailable = tipsStatus != "available"
+	}
 	weatherStatus, weatherReason := "unavailable", "provider_unconfigured"
 	if question == "high_bill_possible_contributors" {
 		if s.Weather != nil {
@@ -216,6 +238,9 @@ func (s Service) answer(w http.ResponseWriter, r *http.Request) {
 	if question == "high_bill_possible_contributors" {
 		answer.WeatherStatus, answer.WeatherReason = weatherStatus, weatherReason
 	}
+	if question == weatherTipsFAQ {
+		answer.WeatherStatus, answer.WeatherReason = tipsStatus, tipsReason
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(answer)
 }
@@ -224,4 +249,47 @@ func fail(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"code": code, "message": http.StatusText(status), "request_id": uuid.NewString(), "details": map[string]any{}})
+}
+
+const maxWeatherFindings = 20
+
+// WeatherTipFindings lists active hot and cold alerts as observations, then the
+// active weather tips as hypotheses with their source page.
+func WeatherTipFindings(page *recommendation.WeatherPage, tips []recommendation.ActiveWeatherTip) []Finding {
+	var out []Finding
+	for _, alert := range page.Alerts {
+		text := alert.Event
+		if alert.Headline != "" {
+			text += ". " + alert.Headline
+		}
+		out = append(out, Finding{Label: "observation", Text: text, SourceURL: httpsURL(alert.SourceURL),
+			EvidenceRef: []Evidence{{ID: alert.EvidenceRef.ID, Kind: alert.EvidenceRef.Kind, Revision: alert.EvidenceRef.Revision}}})
+	}
+	for _, tip := range tips {
+		var value struct {
+			Text string `json:"action_source_text"`
+		}
+		var source struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(tip.Fact.Value, &value) != nil || json.Unmarshal(tip.Fact.Source, &source) != nil || httpsURL(source.URL) == "" {
+			continue
+		}
+		refs := make([]Evidence, 0, len(tip.Refs))
+		for _, ref := range tip.Refs {
+			refs = append(refs, Evidence{ID: ref.ID, Kind: ref.Kind, Revision: ref.Revision})
+		}
+		out = append(out, Finding{Label: "hypothesis", Text: value.Text, SourceURL: source.URL, EvidenceRef: refs})
+	}
+	if len(out) > maxWeatherFindings {
+		out = out[:maxWeatherFindings]
+	}
+	return out
+}
+
+func httpsURL(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Scheme == "https" && u.Host != "" {
+		return raw
+	}
+	return ""
 }

@@ -8,6 +8,7 @@ import (
 	"energylens.local/cloud/internal/weather"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -273,4 +274,87 @@ func (s Service) withWeather(ctx context.Context, owner, home string, now time.T
 		out[i] = a
 	}
 	return out, page, nil
+}
+
+// ActiveWeatherTip is a weather tip that applies now, with the weather
+// evidence behind its trigger.
+type ActiveWeatherTip struct {
+	Fact    datawizfacts.Fact
+	Trigger string
+	Refs    []Evidence
+}
+
+const maxRunEvidenceDays = 14
+
+// ActiveWeather returns the weather block and every weather tip whose trigger
+// is active. A snapshot failure reports weather unavailable, never an error.
+func (s Service) ActiveWeather(ctx context.Context, owner, home string, now time.Time) (*WeatherPage, []ActiveWeatherTip, error) {
+	if s.Weather == nil {
+		return unavailablePage(weather.ReasonProviderUnavailable), nil, nil
+	}
+	snap, err := s.Weather.Snapshot(ctx, owner, home, now)
+	if err != nil {
+		slog.Error("weather snapshot failed", "error", err)
+		return unavailablePage(weather.ReasonProviderUnavailable), nil, nil
+	}
+	page, state := weatherView(snap)
+	if !state.active() {
+		return page, nil, nil
+	}
+	store, ok := s.Store.(weatherTipStore)
+	if !ok {
+		return page, nil, nil
+	}
+	tips, err := store.WeatherTips(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	refs := map[string][]Evidence{
+		triggerHeatAlert: alertRefs(snap, weather.KindHot), triggerColdAlert: alertRefs(snap, weather.KindCold),
+		triggerHotRun:  runRefs(snap, snap.Hot, func(d weather.StoredDay) bool { return d.HighF != nil }),
+		triggerColdRun: runRefs(snap, snap.Cold, func(d weather.StoredDay) bool { return d.LowF != nil }),
+	}
+	var out []ActiveWeatherTip
+	seen := map[string]bool{}
+	for _, tip := range tips {
+		v, ok := parseTip(tip)
+		if !ok || seen[tip.ID] {
+			continue
+		}
+		if trigger := state.trigger(v.Context); trigger != "" && len(refs[trigger]) > 0 {
+			seen[tip.ID] = true
+			out = append(out, ActiveWeatherTip{Fact: tip, Trigger: trigger, Refs: refs[trigger]})
+		}
+	}
+	slices.SortStableFunc(out, func(a, b ActiveWeatherTip) int { return triggerRank(a.Trigger) - triggerRank(b.Trigger) })
+	return page, out, nil
+}
+
+func alertRefs(snap weather.Snapshot, kind string) []Evidence {
+	var out []Evidence
+	for _, alert := range snap.Alerts {
+		if alert.Kind == kind {
+			out = append(out, Evidence{ID: alert.ID, Kind: "weather_alert", Revision: 1})
+		}
+	}
+	return out
+}
+
+// runRefs cites the newest days of an active run, at most maxRunEvidenceDays.
+func runRefs(snap weather.Snapshot, run weather.Run, present func(weather.StoredDay) bool) []Evidence {
+	if !run.Active {
+		return nil
+	}
+	var days []weather.StoredDay
+	for _, d := range snap.Days {
+		if d.Source == weather.SourceObserved && d.Date <= run.LastDay && present(d) {
+			days = append(days, d)
+		}
+	}
+	slices.SortFunc(days, func(a, b weather.StoredDay) int { return strings.Compare(b.Date, a.Date) })
+	out := []Evidence{}
+	for _, d := range days[:min(len(days), run.Days, maxRunEvidenceDays)] {
+		out = append(out, Evidence{ID: d.ID, Kind: "weather_day", Revision: int64(d.Revision)})
+	}
+	return out
 }

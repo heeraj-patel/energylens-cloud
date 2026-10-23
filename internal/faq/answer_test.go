@@ -34,3 +34,28 @@ func TestOperatingCostNeedsSource(t *testing.T) {
 		t.Fatalf("sourced estimate missing: %+v", got)
 	}
 }
+
+func TestWeatherTipsWithoutFindingsIsSupportedWithFixedAnswer(t *testing.T) {
+	got, ok := Render(Input{QuestionID: "weather_tips", AsOf: time.Now()})
+	if !ok || got.Status != "supported" || got.Text != NoWeatherTips || len(got.Findings) != 0 || len(got.EvidenceRefs) != 0 || got.NextAction != nil {
+		t.Fatalf("no trigger: %+v", got)
+	}
+	got, _ = Render(Input{QuestionID: "weather_tips", WeatherUnavailable: true, AsOf: time.Now()})
+	if got.Status != "insufficient_information" || got.Text != Insufficient || got.NextAction == nil {
+		t.Fatalf("unavailable: %+v", got)
+	}
+}
+
+func TestWeatherTipsKeepOrderAndDedupeTopLevelRefs(t *testing.T) {
+	alert := Evidence{ID: "alert-1", Kind: "weather_alert", Revision: 1}
+	day := Evidence{ID: "day-1", Kind: "weather_day", Revision: 2}
+	got, _ := Render(Input{QuestionID: "weather_tips", AsOf: time.Now(), WeatherFindings: []Finding{
+		{Label: "observation", Text: "Zeta advisory", EvidenceRef: []Evidence{alert}},
+		{Label: "hypothesis", Text: "Alpha tip", SourceURL: "https://example.org/a", EvidenceRef: []Evidence{alert, day}},
+		{Label: "hypothesis", Text: "Beta tip", EvidenceRef: []Evidence{day}},
+		{Label: "hypothesis", Text: "No refs"},
+	}})
+	if got.Status != "partial" || got.Text == "" || len(got.Findings) != 3 || got.Findings[0].Text != "Zeta advisory" || len(got.EvidenceRefs) != 2 {
+		t.Fatalf("with findings: %+v", got)
+	}
+}
