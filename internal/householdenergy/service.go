@@ -449,7 +449,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		for _, r := range periodRows {
 			metered[r.ApplianceID] = true
 		}
-		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: selectedItems, Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered, Away: away, Habits: habits, Standby: standby, Lookback: lookback}
+		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: peakDeviceItems(buckets, items), Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered, Away: away, Habits: habits, Standby: standby, Lookback: lookback}
 		gas.decorate(buckets, realRows, periodRows)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)
@@ -927,4 +927,29 @@ func fail(w http.ResponseWriter, status int, code string) {
 func internal(w http.ResponseWriter, err error) {
 	slog.Error("household energy read failed", "error", err)
 	fail(w, 500, "internal_error")
+}
+
+// peakDeviceItems gathers each bucket's device intervals once, so peak sees plugs behind a whole-home meter.
+func peakDeviceItems(buckets []bucket, items []interval) []interval {
+	type key struct {
+		hub, event, attachment string
+		epoch, revision        int64
+		start, end             time.Time
+	}
+	seen := map[key]bool{}
+	var out []interval
+	for _, b := range buckets {
+		devices := b.deviceItems
+		if devices == nil {
+			_, devices, _ = selectBucketSources(items, b.Start, b.End)
+		}
+		for _, v := range devices {
+			k := key{v.HubID, v.EventID, v.AttachmentID, v.Epoch, v.Revision, v.Start, v.End}
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, v)
+			}
+		}
+	}
+	return out
 }
