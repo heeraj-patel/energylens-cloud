@@ -78,7 +78,7 @@ func TestProducerSavedInputsAndRevisions(t *testing.T) {
 	}
 	dir := t.TempDir()
 	p := Producer{DB: pool, Dir: dir}
-	if count, err := p.RunOnce(ctx); err != nil || count != 11 {
+	if count, err := p.RunOnce(ctx); err != nil || count != 14 {
 		t.Fatalf("first pass: %d %v", count, err)
 	}
 	assertPayload := func(route string, want map[string]any) {

@@ -29,6 +29,9 @@ type candidate struct {
 	payload         any
 }
 
+// efficiencyContexts must stay within the contexts Datawiz and the request schema accept.
+var efficiencyContexts = []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance", "weather_hot", "weather_cold", "peak_demand_day"}
+
 var usZIP = regexp.MustCompile(`^[0-9]{5}$`)
 
 func subjectID(subject string) string {
@@ -98,7 +101,7 @@ ORDER BY l.recorded_at,l.id`)
 	if err != nil {
 		return nil, err
 	}
-	for _, contextName := range []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"} {
+	for _, contextName := range efficiencyContexts {
 		id := uuid.NewSHA1(uuid.NameSpaceURL, []byte("energylens:datawiz:efficiency:"+contextName)).String()
 		out = append(out, candidate{"efficiency", "context", id, 1, map[string]string{"context": contextName}})
 	}
