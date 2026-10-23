@@ -341,3 +341,62 @@ func TestCurrentReadsNonIntegerV2AnswerOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestWeatherTipsAreReadSeparatelyFromLegacyResearch(t *testing.T) {
+	dsn := os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("ENERGYLENS_CLOUD_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	schema := "recommendation_weather_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if err = migrate.Apply(ctx, conn, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	run := uuid.NewString()
+	if _, err = pool.Exec(ctx, `INSERT INTO datawiz_runs(id,route,request,mode,status) VALUES($1,'efficiency','{}','realtime','complete')`, run); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"habits", "weather_hot", "weather_cold"} {
+		observation := uuid.NewString()
+		value := `{"context":"` + c + `","applicable_categories":["home"]}`
+		if _, err = pool.Exec(ctx, `INSERT INTO datawiz_observations(id,run_id,route,subject_key,field,record_key,value,source,approval_status,collected_at) VALUES($1,$2,'efficiency',$3,'efficiency_tip',$4,$5,'{"adapter":"fixture_official","url":"https://example.org/tip","retrieved_at":"2026-10-12T00:00:00Z"}','approved','2026-10-12T00:00:00Z')`, observation, run, "efficiency:"+c, c, value); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, `INSERT INTO datawiz_current(route,subject_key,field,record_key,observation_id) VALUES('efficiency',$1,'efficiency_tip',$2,$3)`, "efficiency:"+c, c, observation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := PGStore{Pool: pool}
+	legacy, err := store.Research(ctx)
+	if err != nil || len(legacy) != 1 || legacy[0].RecordKey != "habits" {
+		t.Fatalf("legacy research: %+v, %v", legacy, err)
+	}
+	weatherTips, err := store.WeatherTips(ctx)
+	if err != nil || len(weatherTips) != 2 || weatherTips[0].RecordKey != "weather_hot" || weatherTips[1].RecordKey != "weather_cold" {
+		t.Fatalf("weather tips: %+v, %v", weatherTips, err)
+	}
+}

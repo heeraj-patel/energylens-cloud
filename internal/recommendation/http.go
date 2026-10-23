@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/householdenergy"
+	"energylens.local/cloud/internal/weather"
 	"errors"
 	"io"
 	"log/slog"
@@ -21,6 +22,13 @@ type Service struct {
 	UserID func(*http.Request) string
 	Waste  interface {
 		DeviceMonthlyWaste(ctx context.Context, owner, home string) ([]householdenergy.DeviceWaste, error)
+	}
+	// Weather and TOU serve only weather_tips_v1; a nil Weather reports unavailable.
+	Weather interface {
+		Snapshot(ctx context.Context, owner, home string, now time.Time) (weather.Snapshot, error)
+	}
+	TOU interface {
+		TOUDay(ctx context.Context, owner, home string, now time.Time) (*householdenergy.TOUDay, error)
 	}
 }
 
@@ -48,7 +56,21 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actions := []Action{}
-	evaluate := EvaluatorFor(r.URL.Query().Get("capability"))
+	capability := r.URL.Query().Get("capability")
+	evaluate := EvaluatorFor(capability)
+	var page *WeatherPage
+	if capability == CapabilityWeatherTips {
+		var err error
+		if appliances, page, err = s.withWeather(r.Context(), s.UserID(r), home, now, appliances); err != nil {
+			if errors.Is(err, householdenergy.ErrNotFound) {
+				fail(w, http.StatusNotFound, "not_found")
+				return
+			}
+			slog.Error("recommendation weather read failed", "error", err)
+			fail(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
 	for _, appliance := range appliances {
 		actions = append(actions, evaluate(appliance)...)
 	}
@@ -79,7 +101,8 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		Actions       []Action            `json:"actions"`
 		AsOf          string              `json:"as_of"`
 		ResearchFacts []datawizfacts.Fact `json:"research_facts,omitempty"`
-	}{actions, now.Format(time.RFC3339), research})
+		Weather       *WeatherPage        `json:"weather,omitempty"`
+	}{actions, now.Format(time.RFC3339), research, page})
 }
 
 func (s Service) record(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +214,7 @@ func (s Service) record(w http.ResponseWriter, r *http.Request) {
 // or missing capability keeps the legacy rules.
 func EvaluatorFor(capability string) func(Appliance) []Action {
 	switch capability {
-	case "gas_appliance_recommendations_v1":
+	case "gas_appliance_recommendations_v1", CapabilityWeatherTips:
 		return EvaluateGasAppliances
 	case "gas_dryer_recommendations_v1":
 		return EvaluateGasEnabled

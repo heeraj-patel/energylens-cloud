@@ -223,7 +223,7 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			}
 			modules = append(modules, Module{Name: "home-faq-answers", Mount: answersFAQ.Routes})
 			rt.Weather = weather.NewLive(rt.Pool, c.WeatherUserAgent)
-			recommendations := recommendation.Service{Store: recommendation.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID, Waste: liveEnergy}
+			recommendations := recommendation.Service{Store: recommendation.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID, Waste: liveEnergy, Weather: rt.Weather, TOU: liveEnergy}
 			modules = append(modules, Module{Name: "home-recommendations", Mount: recommendations.Routes})
 			ownerPrograms := programs.OwnerService{Store: programs.PGOwnerStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-programs", Mount: ownerPrograms.Routes})

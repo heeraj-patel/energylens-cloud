@@ -31,9 +31,19 @@ func (s PGStore) Research(ctx context.Context) ([]datawizfacts.Fact, error) {
 	return currentEfficiencyTips(ctx, s.Pool)
 }
 
+// WeatherTips reads the weather_hot and weather_cold tips; only the
+// weather_tips_v1 capability asks for them.
+func (s PGStore) WeatherTips(ctx context.Context) ([]datawizfacts.Fact, error) {
+	return efficiencyTips(ctx, s.Pool, []string{"weather_hot", "weather_cold"})
+}
+
 func currentEfficiencyTips(ctx context.Context, db datawizfacts.Querier) ([]datawizfacts.Fact, error) {
+	return efficiencyTips(ctx, db, []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"})
+}
+
+func efficiencyTips(ctx context.Context, db datawizfacts.Querier, contexts []string) ([]datawizfacts.Fact, error) {
 	tips := []datawizfacts.Fact{}
-	for _, contextName := range []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"} {
+	for _, contextName := range contexts {
 		facts, err := datawizfacts.Current(ctx, db, "efficiency", "efficiency:"+contextName)
 		if err != nil {
 			return nil, err

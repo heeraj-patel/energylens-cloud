@@ -4,7 +4,6 @@
 package recommendation
 
 import (
-	"encoding/json"
 	"energylens.local/cloud/internal/datawizfacts"
 	"fmt"
 	"math/big"
@@ -41,6 +40,7 @@ type Appliance struct {
 	Gas              *GasValues          // catalog gas values and estimates; nil when none loaded
 	ElectricRate     *float64            // USD/kWh of Tariff
 	GasRate          *float64            // USD/therm of GasTariff
+	Weather          *WeatherState       // active weather triggers; nil unless weather_tips_v1
 }
 
 func (a Appliance) matchesRuleCategory(ruleCategory string) bool {
@@ -83,6 +83,7 @@ type Action struct {
 	SavingsBasis     string              `json:"savings_basis,omitempty"`
 	ScenarioRefs     []Evidence          `json:"scenario_refs,omitempty"`
 	SourceURL        string              `json:"source_url,omitempty"`
+	WeatherContext   *WeatherContext     `json:"weather_context,omitempty"`
 	usageFrequency   float64
 	usageUnit        string
 }
@@ -226,13 +227,14 @@ func evaluate(a Appliance, gasEnabled, gasAppliances bool) []Action {
 	return rankActions(ApplyBenefitScenarios(out, a.Scenarios))
 }
 
-// Category-matched tips attach first; at most one general habits tip follows.
+// Active weather tips attach first, then category-matched tips; at most one
+// general habits tip follows. Inactive weather tips never attach.
 func attachResearchTips(a Appliance, actions []Action) {
 	attached := 0
 	seen := make(map[string]struct{})
 	for _, general := range []bool{false, true} {
 		for i := range actions {
-			for _, tip := range a.ResearchTips {
+			for _, tip := range weatherFirst(a.ResearchTips, a.Weather) {
 				if attached == maxResearchTipsPerAppliance {
 					return
 				}
@@ -242,18 +244,17 @@ func attachResearchTips(a Appliance, actions []Action) {
 				if _, exists := seen[tip.ID]; exists {
 					continue
 				}
-				var value struct {
-					Context    string   `json:"context"`
-					Applicable []string `json:"applicable_categories"`
-					Excluded   []string `json:"excluded_categories"`
-					Fuels      []string `json:"applicable_fuels"`
-				}
-				if json.Unmarshal(tip.Value, &value) != nil || isGeneralTip(value.Context, value.Applicable) != general ||
+				value, ok := parseTip(tip)
+				trigger := a.Weather.trigger(value.Context)
+				if !ok || isGeneralTip(value.Context, value.Applicable) != general || isWeatherContext(value.Context) && trigger == "" ||
 					!tipApplies(value.Context, a.Category, actions[i].RuleID, value.Applicable, value.Excluded) || !tipFuelApplies(a.Fuel, value.Fuels) {
 					continue
 				}
 				actions[i].ResearchEvidence = append(actions[i].ResearchEvidence, tip)
 				actions[i].EvidenceRefs = append(actions[i].EvidenceRefs, Evidence{ID: tip.ID, Kind: "datawiz_efficiency_tip", Revision: 1})
+				if trigger != "" {
+					actions[i].WeatherContext = a.Weather.contextFor(trigger, value.SavingsType == "load_shift", actions[i].WeatherContext)
+				}
 				seen[tip.ID] = struct{}{}
 				attached++
 				if general {
@@ -318,7 +319,7 @@ func tipApplies(context, category, ruleID string, applicable, excluded []string)
 		return ruleID == "general.gather_information" || strings.Contains(ruleID, "settings")
 	case "maintenance":
 		return strings.Contains(ruleID, "maintenance") || strings.Contains(ruleID, "operating_guidance") || ruleID == "general.gather_information"
-	case "habits", "appliance_type", "upgrades":
+	case "habits", "appliance_type", "upgrades", "weather_hot", "weather_cold":
 		return true
 	default:
 		return false
