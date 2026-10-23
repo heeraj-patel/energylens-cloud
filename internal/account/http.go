@@ -266,8 +266,25 @@ func decode(w http.ResponseWriter, r *http.Request, v any) ([]byte, bool) {
 	return body, true
 }
 func validCreate(h HomeCreate) bool {
-	return validName(h.Name) && validTimezone(h.Timezone) && validLocation(h.Location)
+	if !validName(h.Name) || !validLocation(h.Location) {
+		return false
+	}
+	if h.Location.CountryCode == "US" {
+		if !validUSZIPPostal(h.Location.PostalCode) {
+			return false
+		}
+		if _, resolved := resolveUSZIPTimeZone(h.Location.PostalCode); resolved {
+			return true
+		}
+	}
+	return validCreateExplicitTimezone(h.Timezone)
 }
+
+func validCreateExplicitTimezone(z string) bool {
+	// LoadLocation treats Local as a special process setting, not an IANA zone.
+	return z != "Local" && validTimezone(z)
+}
+
 func validPatch(h HomePatch) bool {
 	if h.Name == nil && h.Timezone == nil && h.Location == nil {
 		return false
