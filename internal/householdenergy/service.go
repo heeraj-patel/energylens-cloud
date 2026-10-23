@@ -427,6 +427,19 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		if err != nil {
 			return nil, err
 		}
+		standby, err := loadStandbyWatts(ctx, tx, home)
+		if err != nil {
+			return nil, err
+		}
+		// The inferred-away baseline also reads the 7 days before the period; nothing prices them.
+		back := period{Start: p.Start.In(loc).AddDate(0, 0, -awayBaselineDays), End: p.Start}
+		lookback, _, err := readIntervals(ctx, tx, home, back, now)
+		if err != nil {
+			return nil, err
+		}
+		if lookback, err = mergeRetainedIntervals(ctx, tx, home, back, lookback); err != nil {
+			return nil, err
+		}
 		var national *marginalTariff
 		if tariff == nil {
 			national = s.NationalRate.schedule(ctx)
@@ -436,7 +449,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		for _, r := range periodRows {
 			metered[r.ApplianceID] = true
 		}
-		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: selectedItems, Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered, Away: away, Habits: habits}
+		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: selectedItems, Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered, Away: away, Habits: habits, Standby: standby, Lookback: lookback}
 		gas.decorate(buckets, realRows, periodRows)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)

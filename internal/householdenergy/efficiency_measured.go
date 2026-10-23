@@ -23,6 +23,8 @@ type componentInput struct {
 	Cost       money
 	Away       awaySchedule
 	Habits     []habitCycle
+	Standby    map[string]*big.Rat
+	Lookback   []interval
 }
 
 // deviceAmount is one device's component cost; a nil Amount is null with Basis.
