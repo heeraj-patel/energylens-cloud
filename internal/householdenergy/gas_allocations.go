@@ -181,7 +181,9 @@ func (g gasAppliance) estimatedAllocation(f gasFigures, tariff *marginalTariff, 
 			a.UnclassifiedCost = a.Cost
 			a.RateBasis = rateBasis
 		}
-		if f.standby != nil {
+		// A typical electric figure no larger than standby is no evidence of waste.
+		clamped := g.estimate.ElectricBasis == gasestimate.BasisTypical && f.standby != nil && f.standby.Cmp(f.electric) >= 0
+		if f.standby != nil && !clamped {
 			standby := f.standby
 			if standby.Cmp(f.electric) > 0 {
 				standby = f.electric

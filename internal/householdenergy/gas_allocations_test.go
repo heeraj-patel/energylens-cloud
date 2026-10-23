@@ -272,7 +272,7 @@ func TestGasWasteFromStandbyFactElseCitedTypical(t *testing.T) {
 		id    string
 		basis string
 		kwh   float64
-	}{{furnace, "standby", 96.36}, {pool, "standby", 63.072}, {rng, "standby", 27.156}, {dryer, "standby", 13.14}, {tank, "standby", 29}, {boiler, "rated_standby", 78.84}} {
+	}{{dryer, "standby", 13.14}, {boiler, "rated_standby", 78.84}} {
 		row := deviceRow(t, day, c.id)
 		if row == nil {
 			t.Fatalf("row %s missing", c.id)
@@ -284,6 +284,15 @@ func TestGasWasteFromStandbyFactElseCitedTypical(t *testing.T) {
 		near(t, c.basis+" standby kWh", amountOf(t, row, "waste_energy"), c.kwh/365, 1e-5)
 		near(t, "standby cost", amountOf(t, row, "standby_cost"), c.kwh/365*0.1831, 1e-5)
 		near(t, "waste_cost = standby_cost", amountOf(t, row, "waste_cost"), amountOf(t, row, "standby_cost"), 1e-9)
+	}
+	// A typical electric use at or below typical standby is not labelled waste.
+	for _, id := range []string{furnace, pool, rng, tank} {
+		if row := deviceRow(t, day, id); row != nil {
+			absent(t, row, "waste_basis", "standby_cost")
+			if row["waste_energy"] != nil || row["useful_energy"] != nil {
+				t.Fatalf("clamped typical labelled waste: %+v", row)
+			}
+		}
 	}
 	d := deviceRow(t, day, dryer)
 	near(t, "dryer useful", amountOf(t, d, "useful_energy"), (59.43-13.14)/365, 1e-4)
@@ -585,7 +594,7 @@ func TestMeteredGasFurnaceGapBucketsUseTypicalStandby(t *testing.T) {
 
 func TestGasStandbyWasteIsCappedAtElectric(t *testing.T) {
 	elec, standby := 10.0, 13.14
-	g := gasAppliance{id: "a", fuel: "natural_gas", estimate: gasestimate.Estimate{ElectricKWh: &elec, StandbyKWh: &standby, StandbyBasis: gasestimate.BasisTypical}}
+	g := gasAppliance{id: "a", fuel: "natural_gas", estimate: gasestimate.Estimate{ElectricKWh: &elec, ElectricBasis: gasestimate.BasisRatedFact, StandbyKWh: &standby, StandbyBasis: gasestimate.BasisTypical}}
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	f := g.figures(start, start.AddDate(1, 0, 0), nil)
 	a := g.estimatedAllocation(f, nil, "", nil)
