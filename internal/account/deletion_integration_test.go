@@ -65,6 +65,7 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	}
 	home, secondHome, hub, cert := uuid.NewString(), uuid.NewString(), uuid.NewString(), "deletion-cert"
 	previewID, applianceID := uuid.NewString(), uuid.NewString()
+	planID, planRevisionID := uuid.NewString(), uuid.NewString()
 	sensorID, attachmentID, interventionID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	for _, row := range []struct {
 		sql  string
@@ -86,6 +87,10 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 		{`INSERT INTO report_delivery_requests(owner_user_id,home_id,preview_id,idempotency_key,request_hash,recipient_hash,recipients,approved_snapshot_sha256) VALUES($1,$2,$3,$4,$5,$5,ARRAY['private@example.test'],repeat('a',64))`, []any{owner.ID, home, previewID, uuid.NewString(), make([]byte, 32)}},
 		{`INSERT INTO account_home_idempotency(owner_user_id,operation,key,request_hash,response_json,response_status) VALUES($1,'create_home',$2,$3,$4,201)`, []any{owner.ID, uuid.NewString(), make([]byte, 32), `{"id":"` + home + `","postal_code":"60601"}`}},
 		{`INSERT INTO tariff_revisions(home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from) VALUES($1,1,'electricity',0.1,'kWh','USD','user_tariff','private tariff',now(),false,now())`, []any{home}},
+		{`INSERT INTO utility_rate_plans(id,eiaid,utility_name,sector,plan_key,version,plan_name,is_standard,base_label,currency,effective_from,source_kind,source_url,source_file_url,source_sha256,retrieved_at,checked_at) VALUES($1,'14328','Public Power','residential','official:public:tou',1,'TOU',false,'base','USD','2026-01-01','official_tariff','https://example.test','https://example.test',repeat('a',64),now(),now())`, []any{planID}},
+		{`INSERT INTO tariff_revisions(id,home_id,revision,fuel,rate,rate_unit,currency,rate_kind,source_ref,source_as_of,is_fallback,effective_from,utility_rate_plan_id,plan_chosen_by) VALUES($1,$2,2,'electricity',0.3,'kWh','USD','official_tariff','https://example.test',now(),false,now(),$3,'user')`, []any{planRevisionID, home, planID}},
+		{`INSERT INTO tariff_revision_periods(tariff_revision_id,ordinal,name,adder,days,start_local,end_local,months) VALUES($1,1,'peak',0.1,ARRAY['mon'],'16:00','21:00',ARRAY[6]::smallint[])`, []any{planRevisionID}},
+		{`INSERT INTO home_electric_utility(home_id,revision,eiaid,chosen_by) VALUES($1,1,'14328','user')`, []any{home}},
 	} {
 		if _, err = pool.Exec(ctx, row.sql, row.args...); err != nil {
 			t.Fatal(err)
@@ -277,7 +282,7 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	if err = store.PurgeHome(ctx, home, archive); err != nil {
 		t.Fatalf("repeat home purge: %v", err)
 	}
-	for _, table := range []string{"home_location_revisions", "report_previews", "report_delivery_requests", "account_home_idempotency", "tariff_revisions", "interventions", "intervention_idempotency"} {
+	for _, table := range []string{"home_location_revisions", "report_previews", "report_delivery_requests", "account_home_idempotency", "tariff_revisions", "tariff_revision_periods", "home_electric_utility", "interventions", "intervention_idempotency"} {
 		var count int
 		if err = pool.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("private table %s: count=%d err=%v", table, count, err)
@@ -297,5 +302,8 @@ func TestDeletionRevokesHubAndReplaysAfterRestore(t *testing.T) {
 	}
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM energy_rating_catalog WHERE brand='Public'`).Scan(&publicCount); err != nil || publicCount != 1 {
 		t.Fatalf("public catalog after purge: %d %v", publicCount, err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM utility_rate_plans WHERE id=$1`, planID).Scan(&publicCount); err != nil || publicCount != 1 {
+		t.Fatalf("public rate plan after purge: %d %v", publicCount, err)
 	}
 }
