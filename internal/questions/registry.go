@@ -106,6 +106,14 @@ var onboarding = map[string][]definition{
 	"freezer":         fridge("freezer"),
 }
 
+// askedForFuel hides questions that only change a gas estimate for other fuels.
+func askedForFuel(questionID, fuel string) bool {
+	if questionID == "water_heater.household_size" {
+		return fuel == "natural_gas" || fuel == "propane"
+	}
+	return true
+}
+
 func isUsageQuestion(id string) bool {
 	for _, defs := range onboarding {
 		for _, q := range defs {

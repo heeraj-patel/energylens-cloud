@@ -90,7 +90,7 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT a.id,a.category,COALESCE(c.key,alias.category_key,a.category),a.version FROM appliances a LEFT JOIN energy_categories c ON c.key=a.category LEFT JOIN energy_category_aliases alias ON alias.alias=a.category WHERE a.home_id=$1 AND a.archived_at IS NULL AND ($2::uuid IS NULL OR a.id=$2) ORDER BY a.created_at,a.id`, home, appliance)
+	rows, err := s.Pool.Query(ctx, `SELECT a.id,a.category,COALESCE(c.key,alias.category_key,a.category),a.version,COALESCE(a.identity->>'fuel','') FROM appliances a LEFT JOIN energy_categories c ON c.key=a.category LEFT JOIN energy_category_aliases alias ON alias.alias=a.category WHERE a.home_id=$1 AND a.archived_at IS NULL AND ($2::uuid IS NULL OR a.id=$2) ORDER BY a.created_at,a.id`, home, appliance)
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +103,17 @@ func (s PGStore) List(ctx context.Context, owner, home, purpose string, applianc
 	var cycleCandidates []applianceCandidate
 	found := false
 	for rows.Next() {
-		var id, category, canonical string
+		var id, category, canonical, fuel string
 		var version int64
-		if err = rows.Scan(&id, &category, &canonical, &version); err != nil {
+		if err = rows.Scan(&id, &category, &canonical, &version, &fuel); err != nil {
 			return nil, err
 		}
 		found = true
-		candidates = append(candidates, questionsForMapped(category, canonical, id, version, purpose)...)
+		for _, q := range questionsForMapped(category, canonical, id, version, purpose) {
+			if askedForFuel(q.ID, fuel) {
+				candidates = append(candidates, q)
+			}
+		}
 		if purpose == "onboarding" {
 			cycleCandidates = append(cycleCandidates, applianceCandidate{id: id, category: category, canonical: canonical, version: version})
 		}

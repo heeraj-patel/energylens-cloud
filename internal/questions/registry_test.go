@@ -40,3 +40,14 @@ func TestBoilerGetsHvacUsageQuestions(t *testing.T) {
 		}
 	}
 }
+
+func TestHouseholdSizeAskedOnlyForGasFuels(t *testing.T) {
+	for fuel, want := range map[string]bool{"natural_gas": true, "propane": true, "electricity": false, "": false, "fuel_oil": false} {
+		if got := askedForFuel("water_heater.household_size", fuel); got != want {
+			t.Fatalf("fuel %q: got %v", fuel, got)
+		}
+	}
+	if !askedForFuel("hvac.hours_per_week", "electricity") {
+		t.Fatal("other questions must not be gated")
+	}
+}
