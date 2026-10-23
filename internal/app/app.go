@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"energylens.local/cloud/internal/account"
+	"energylens.local/cloud/internal/appliancefacts"
 	"energylens.local/cloud/internal/attachments"
 	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/cyclecomparison"
@@ -246,6 +247,8 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 			modules = append(modules, Module{Name: "home-metered-export", Mount: meteredExport.Routes})
 			answers := questions.Service{Store: questions.PGStore{Pool: rt.Pool}, Auth: accounts.Auth, UserID: account.UserID}
 			modules = append(modules, Module{Name: "home-questions", Mount: answers.Routes})
+			applianceFacts := appliancefacts.Service{Composer: appliancefacts.Composer{Appliances: appliances.Store, Resolutions: resolutions.Store, Estimates: estimates.Store, Programs: ownerPrograms.Store, Recommendations: recommendations.Store, Answers: answers.Store, Revisions: appliancefacts.PGRevisions{Pool: rt.Pool}}, Auth: accounts.Auth, UserID: account.UserID}
+			modules = append(modules, Module{Name: "appliance-facts", Mount: applianceFacts.Routes})
 			hubModule.Auth = accounts.Auth
 			hubModule.UserID = account.UserID
 			hubModule.SessionID = account.SessionID
