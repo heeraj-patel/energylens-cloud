@@ -30,6 +30,9 @@ type Service struct {
 	TOU interface {
 		TOUDay(ctx context.Context, owner, home string, now time.Time) (*householdenergy.TOUDay, error)
 	}
+	WeatherSavings interface {
+		WeatherDeviceSavings(ctx context.Context, owner, home string) (householdenergy.WeatherSavings, error)
+	}
 }
 
 func (s Service) Routes(r chi.Router) {

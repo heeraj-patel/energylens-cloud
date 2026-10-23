@@ -252,6 +252,7 @@ type computed struct {
 	buckets            []bucket
 	efficiency         *efficiencyMonthToDate
 	trailingEfficiency *efficiencyTrailing30Days
+	component          *componentInput
 }
 
 func (s Service) compute(ctx context.Context, owner, home, granularity, window string) (*computed, error) {
@@ -543,7 +544,13 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &computed{base: b, totals: a, deviceRows: sampleDeviceRows, unattributed: sampleUnattributed, buckets: buckets, efficiency: efficiency, trailingEfficiency: trailingEfficiency}, nil
+	var component *componentInput
+	if measuredIn != nil {
+		in := *measuredIn
+		in.DeviceRows = sampleDeviceRows
+		component = &in
+	}
+	return &computed{base: b, totals: a, deviceRows: sampleDeviceRows, unattributed: sampleUnattributed, buckets: buckets, efficiency: efficiency, trailingEfficiency: trailingEfficiency, component: component}, nil
 }
 
 func allocationSnapshotState(a allocation) string {

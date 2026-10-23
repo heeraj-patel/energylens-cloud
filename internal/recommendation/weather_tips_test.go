@@ -183,14 +183,10 @@ func (f fakeTOU) TOUDay(context.Context, string, string, time.Time) (*householde
 	return f.day, nil
 }
 
-type fakeWaste struct{ ids []string }
+type fakeSavings struct{ sv householdenergy.WeatherSavings }
 
-func (f fakeWaste) DeviceMonthlyWaste(context.Context, string, string) ([]householdenergy.DeviceWaste, error) {
-	out := []householdenergy.DeviceWaste{}
-	for _, id := range f.ids {
-		out = append(out, householdenergy.DeviceWaste{ApplianceID: id, MonthlyWaste: big.NewRat(1, 1)})
-	}
-	return out, nil
+func (f fakeSavings) WeatherDeviceSavings(context.Context, string, string) (householdenergy.WeatherSavings, error) {
+	return f.sv, nil
 }
 
 type weatherStubStore struct {
@@ -223,7 +219,9 @@ func weatherService(f *fakeWeather) (Service, string, string) {
 		{ID: unmetered, Category: "hvac", Fuel: "electricity"},
 	}}, tips: []datawizfacts.Fact{habit}}
 	tou := &householdenergy.TOUDay{Currency: "USD", SavingPerKWh: big.NewRat(1, 4), PeakStart: "16:00", PeakEnd: "21:00"}
-	return Service{Store: weatherStubStore{base, []datawizfacts.Fact{hot, home}}, Weather: f, TOU: fakeTOU{tou}, Waste: fakeWaste{[]string{metered}}}, metered, unmetered
+	savings := householdenergy.WeatherSavings{ShiftCurrency: "USD", ElectricMonthly: big.NewRat(150, 1), ElectricCurrency: "USD",
+		Devices: map[string]householdenergy.WeatherDevice{metered: {Metered: true, MonthlyShiftSaving: big.NewRat(25, 1)}}}
+	return Service{Store: weatherStubStore{base, []datawizfacts.Fact{hot, home}}, Weather: f, TOU: fakeTOU{tou}, WeatherSavings: fakeSavings{savings}}, metered, unmetered
 }
 
 func availableSnapshot() weather.Snapshot {

@@ -30,6 +30,7 @@ type WeatherState struct {
 	HeatAlert, ColdAlert, HotRun, ColdRun bool
 	MeasuredUse                           bool
 	TOU                                   *householdenergy.TOUDay
+	ordered                               bool // the appliance's weather tips are already in final order
 }
 
 func (w *WeatherState) active() bool {
@@ -105,7 +106,7 @@ func parseTip(tip datawizfacts.Fact) (tipValue, bool) {
 // weatherFirst moves active weather tips ahead of the rest, alert-backed first;
 // every other tip keeps its order.
 func weatherFirst(tips []datawizfacts.Fact, w *WeatherState) []datawizfacts.Fact {
-	if !w.active() {
+	if !w.active() || w.ordered {
 		return tips
 	}
 	out := slices.Clone(tips)
@@ -254,23 +255,21 @@ func (s Service) withWeather(ctx context.Context, owner, home string, now time.T
 			return nil, nil, err
 		}
 	}
-	measured := map[string]bool{}
-	if s.Waste != nil {
-		waste, err := s.Waste.DeviceMonthlyWaste(ctx, owner, home)
-		if err != nil {
+	var savings householdenergy.WeatherSavings
+	if s.WeatherSavings != nil && len(tips) > 0 {
+		if savings, err = s.WeatherSavings.WeatherDeviceSavings(ctx, owner, home); err != nil {
 			return nil, nil, err
-		}
-		for _, item := range waste {
-			measured[item.ApplianceID] = true
 		}
 	}
 	page.HomeTips = homeTips(tips, state)
 	out := make([]Appliance, len(appliances))
 	for i, a := range appliances {
 		w := *state
-		w.MeasuredUse = measured[a.ID]
+		w.MeasuredUse = savings.Devices[a.ID].Metered
+		w.ordered = true
 		a.Weather = &w
-		a.ResearchTips = append(slices.Clone(a.ResearchTips), tips...)
+		qualified := qualifyingWeatherTips(a, tips, state, savings)
+		a.ResearchTips = append(qualified[:min(len(qualified), maxDeviceWeatherTips)], withoutWeatherTips(a.ResearchTips)...)
 		out[i] = a
 	}
 	return out, page, nil
@@ -314,12 +313,22 @@ func (s Service) ActiveWeather(ctx context.Context, owner, home string, now time
 		triggerHotRun:  runRefs(snap, snap.Hot, func(d weather.StoredDay) bool { return d.HighF != nil }),
 		triggerColdRun: runRefs(snap, snap.Cold, func(d weather.StoredDay) bool { return d.LowF != nil }),
 	}
+	deviceTips, err := s.qualifiedDeviceTips(ctx, owner, home, now, state, tips)
+	if err != nil {
+		return nil, nil, err
+	}
 	var out []ActiveWeatherTip
 	seen := map[string]bool{}
 	for _, tip := range tips {
 		v, ok := parseTip(tip)
 		if !ok || seen[tip.ID] {
 			continue
+		}
+		if isDeviceWeatherTip(v) {
+			if !deviceTips[tip.ID] || seen[tipDedupeKey(tip)] {
+				continue
+			}
+			seen[tipDedupeKey(tip)] = true
 		}
 		if trigger := state.trigger(v.Context); trigger != "" && len(refs[trigger]) > 0 {
 			seen[tip.ID] = true
@@ -328,6 +337,43 @@ func (s Service) ActiveWeather(ctx context.Context, owner, home string, now time
 	}
 	slices.SortStableFunc(out, func(a, b ActiveWeatherTip) int { return triggerRank(a.Trigger) - triggerRank(b.Trigger) })
 	return page, out, nil
+}
+
+// isDeviceWeatherTip is a weather tip aimed at appliance categories; tips for
+// the home itself, or for no category, are not.
+func isDeviceWeatherTip(v tipValue) bool {
+	return isWeatherContext(v.Context) && len(v.Applicable) > 0 && !slices.Contains(v.Applicable, "home")
+}
+
+// qualifiedDeviceTips returns the ids of device weather tips that qualify for
+// at least one appliance in the home.
+func (s Service) qualifiedDeviceTips(ctx context.Context, owner, home string, now time.Time, state *WeatherState, tips []datawizfacts.Fact) (map[string]bool, error) {
+	out := map[string]bool{}
+	hasDevice := false
+	for _, tip := range tips {
+		if v, ok := parseTip(tip); ok && isDeviceWeatherTip(v) {
+			hasDevice = true
+		}
+	}
+	if !hasDevice {
+		return out, nil
+	}
+	appliances, err := s.Store.Current(ctx, owner, home, now)
+	if err != nil {
+		return nil, err
+	}
+	var savings householdenergy.WeatherSavings
+	if s.WeatherSavings != nil {
+		if savings, err = s.WeatherSavings.WeatherDeviceSavings(ctx, owner, home); err != nil {
+			return nil, err
+		}
+	}
+	for _, a := range appliances {
+		for _, tip := range qualifyingWeatherTips(a, tips, state, savings) {
+			out[tip.ID] = true
+		}
+	}
+	return out, nil
 }
 
 func alertRefs(snap weather.Snapshot, kind string) []Evidence {
