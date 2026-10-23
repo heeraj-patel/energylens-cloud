@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"energylens.local/cloud/internal/datawizfacts"
+	"energylens.local/cloud/internal/catalog"
+	"energylens.local/cloud/internal/gasestimate"
 	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -67,9 +71,13 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	if err != nil {
 		return nil, err
 	}
-	ruleCategories := make([]string, 0, len(initial))
-	for _, r := range initial {
-		ruleCategories = append(ruleCategories, r.category)
+	ruleCategories := make([]string, 0, len(initial)+len(gasRules))
+	seenCategory := map[string]bool{}
+	for _, c := range ruleCategoryNames() {
+		if !seenCategory[c] {
+			seenCategory[c] = true
+			ruleCategories = append(ruleCategories, c)
+		}
 	}
 	ruleKeys := map[string]string{}
 	ruleCounts := map[string]int{}
@@ -96,6 +104,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	var tariffID string
 	var tariffRevision int64
 	var tariffRate string
+	var electricRate *float64
 	err = tx.QueryRow(ctx, `SELECT id,revision,rate::text FROM tariff_revisions WHERE home_id=$1 AND fuel='electricity'
 	 AND rate_unit='kWh' AND currency='USD'
 	 AND effective_from <= $2 AND (effective_to IS NULL OR effective_to > $2)
@@ -103,6 +112,9 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	 ORDER BY is_fallback ASC,revision DESC LIMIT 1`, home, now).Scan(&tariffID, &tariffRevision, &tariffRate)
 	if err == nil {
 		tariff = &Evidence{ID: tariffID, Kind: "tariff", Revision: tariffRevision}
+		if v, parseErr := strconv.ParseFloat(tariffRate, 64); parseErr == nil {
+			electricRate = &v
+		}
 	}
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
@@ -118,6 +130,8 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	}
 	type current struct {
 		Appliance
+		hotWaterGPD     *float64
+		householdUnsure bool
 		Version   int64
 		ProductID *string
 		Details   storedIdentity
@@ -139,6 +153,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		item.Details = identity
 		item.ruleCategoryKeys, item.ruleKeyCounts = ruleKeys, ruleCounts
 		item.Tariff = tariff
+		item.ElectricRate = electricRate
 		item.Answers = map[string]Evidence{}
 		// An inconsistent product link cannot satisfy an exact-source gate.
 		if item.ProductID == nil || item.Identity != "confirmed_exact" || catalogCategory == nil ||
@@ -275,8 +290,18 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 			if queryErr = answerRows.Scan(&answerID, &questionID, &questionVersion, &revision, &status, &answerValue); queryErr != nil {
 				break
 			}
+			if status == "unknown" && questionID == item.Category+".household_size" {
+				item.householdUnsure = true
+			}
 			if status != "confirmed" || (questionVersion != 1 && questionVersion != 2) {
 				continue
+			}
+			if questionID == item.Category+".household_size" {
+				var gallons float64
+				if json.Unmarshal(answerValue, &gallons) == nil && gallons > 0 && gallons <= 500 {
+					item.Answers["household_size"] = Evidence{ID: answerID, Kind: "confirmed_answer", Revision: revision}
+					item.hotWaterGPD = &gallons
+				}
 			}
 			for _, kind := range []string{"hours_per_week", "cycles_per_week"} {
 				if questionID == item.Category+"."+kind {
@@ -300,6 +325,9 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		answerRows.Close()
 		if queryErr != nil {
 			return nil, queryErr
+		}
+		if err = loadGasValues(ctx, tx, &item.Appliance, item.ProductID, item.hotWaterGPD, item.householdUnsure, home, now); err != nil {
+			return nil, err
 		}
 		if item.Identity == "confirmed_exact" && item.Fuel == "electricity" && item.Tariff != nil &&
 			item.Details.Brand != "" && item.Details.FullModel != "" && item.Details.Variant != nil && *item.Details.Variant != "" {
@@ -381,4 +409,67 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		out = append(out, item.Appliance)
 	}
 	return out, nil
+}
+
+func ruleCategoryNames() []string {
+	out := make([]string, 0, len(initial)+len(gasRules))
+	for _, r := range initial {
+		out = append(out, r.category)
+	}
+	for _, r := range gasRules {
+		out = append(out, r.category)
+	}
+	return out
+}
+
+// loadGasValues reads catalog gas facts, estimates and the gas rate for an
+// exact gas appliance covered by gasRules. Propane gets no gas rate (D-2e).
+func loadGasValues(ctx context.Context, tx pgx.Tx, a *Appliance, productID *string, gallons *float64, unsure bool, home string, now time.Time) error {
+	covered := false
+	for _, r := range gasRules {
+		covered = covered || a.matchesRuleCategory(r.category)
+	}
+	if !covered || a.Identity != "confirmed_exact" || (a.Fuel != "natural_gas" && a.Fuel != "propane") {
+		return nil
+	}
+	var facts catalog.GasFacts
+	if productID != nil {
+		var err error
+		if facts, err = catalog.ReadGasFacts(ctx, tx, *productID); err != nil && !errors.Is(err, catalog.ErrNotFound) {
+			return err
+		}
+	}
+	class, tankless := gasestimate.ClassOf(a.Category)
+	est, ok := gasestimate.Compute(gasestimate.Input{Class: class, Tankless: tankless, Fuel: a.Fuel, Facts: facts,
+		Usage: gasestimate.Usage{HoursPerWeek: a.HoursPerWeek, HotWaterGalPerDay: gallons}})
+	g := &GasValues{AFUE: facts.AFUE, HouseholdNotSure: unsure,
+		Tankless: tankless || strings.Contains(strings.ToLower(facts.ProductGroup), "instantaneous")}
+	if facts.UEF != nil {
+		uef := facts.UEF.Value
+		g.UEF = &uef
+		g.DrawPattern, _ = facts.UEF.TestBasis["draw_pattern"].(string)
+	}
+	if ok {
+		g.StandbyKWh, g.StandbyRated, g.Therms = est.StandbyKWh, est.StandbyBasis == gasestimate.BasisRatedFact, est.GasTherms
+	}
+	a.Gas = g
+	if a.Fuel != "natural_gas" {
+		return nil
+	}
+	var rateID string
+	var rateRevision int64
+	var rate float64
+	err := tx.QueryRow(ctx, `SELECT id,revision,rate::float8 FROM tariff_revisions
+	 WHERE home_id=$1 AND fuel='natural_gas' AND rate_unit='therm' AND currency='USD'
+	 AND effective_from<=$2 AND (effective_to IS NULL OR effective_to>$2)
+	 AND source_as_of<=$2 AND source_as_of>=$2::timestamptz - interval '18 months'
+	 ORDER BY `+tariffpkg.RankSQL+`,
+	 effective_from DESC,revision DESC,id DESC LIMIT 1`, home, now).Scan(&rateID, &rateRevision, &rate)
+	if err == nil {
+		a.GasTariff, a.GasRate = &Evidence{ID: rateID, Kind: "gas_tariff", Revision: rateRevision}, &rate
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	return nil
 }

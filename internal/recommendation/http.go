@@ -48,13 +48,9 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actions := []Action{}
-	gasEnabled := r.URL.Query().Get("capability") == "gas_dryer_recommendations_v1"
+	evaluate := evaluatorFor(r.URL.Query().Get("capability"))
 	for _, appliance := range appliances {
-		if gasEnabled {
-			actions = append(actions, EvaluateGasEnabled(appliance)...)
-		} else {
-			actions = append(actions, Evaluate(appliance)...)
-		}
+		actions = append(actions, evaluate(appliance)...)
 	}
 	actions = rankActions(actions)
 	var research []datawizfacts.Fact
@@ -195,6 +191,18 @@ func (s Service) record(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// evaluatorFor maps the client capability to its rule vocabulary; an unknown
+// or missing capability keeps the legacy rules.
+func evaluatorFor(capability string) func(Appliance) []Action {
+	switch capability {
+	case "gas_appliance_recommendations_v1":
+		return EvaluateGasAppliances
+	case "gas_dryer_recommendations_v1":
+		return EvaluateGasEnabled
+	}
+	return Evaluate
 }
 
 func fail(w http.ResponseWriter, status int, code string) {
