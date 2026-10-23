@@ -16,12 +16,15 @@ import (
 const standbyThresholdFactor = 1.5
 
 // splitSpec is a device's datawiz standby watts and waste floor in dollars
-// per day; either may be zero.
-type splitSpec struct{ StandbyWatts, FloorUSDPerDay float64 }
+// per day; either may be zero. Category is the appliance category.
+type splitSpec struct {
+	StandbyWatts, FloorUSDPerDay float64
+	Category                     string
+}
 
 // readSplitSpecs returns the current datawiz record's split inputs per appliance.
 func readSplitSpecs(ctx context.Context, tx pgx.Tx, home string) (map[string]splitSpec, error) {
-	rows, err := tx.Query(ctx, `SELECT a.id::text,r.record->'values'->>'standby_watts',r.record->'waste_floor'->>'usd_per_day',COALESCE(a.identity->>'fuel','electricity'),COALESCE(r.record->'source'->>'tier','') FROM appliances a JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id::text AND r.record->'appliance_version'=to_jsonb(a.version) WHERE a.home_id=$1 AND a.archived_at IS NULL`, home)
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.category,r.record->'values'->>'standby_watts',r.record->'waste_floor'->>'usd_per_day',COALESCE(a.identity->>'fuel','electricity'),COALESCE(r.record->'source'->>'tier','') FROM appliances a JOIN datawiz_energy_resolutions r ON r.appliance_ref='cloud:'||a.id::text AND r.record->'appliance_version'=to_jsonb(a.version) WHERE a.home_id=$1 AND a.archived_at IS NULL`, home)
 	if err != nil {
 		return nil, err
 	}
@@ -30,11 +33,11 @@ func readSplitSpecs(ctx context.Context, tx pgx.Tx, home string) (map[string]spl
 	for rows.Next() {
 		var id string
 		var standby, floor *string
-		var fuel, tier string
-		if err = rows.Scan(&id, &standby, &floor, &fuel, &tier); err != nil {
+		var fuel, tier, category string
+		if err = rows.Scan(&id, &category, &standby, &floor, &fuel, &tier); err != nil {
 			return nil, err
 		}
-		specs[id] = specForFuel(fuel, tier, splitSpec{positiveFloat(standby), positiveFloat(floor)})
+		specs[id] = specForFuel(fuel, tier, splitSpec{positiveFloat(standby), positiveFloat(floor), category})
 	}
 	return specs, rows.Err()
 }
