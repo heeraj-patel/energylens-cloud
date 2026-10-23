@@ -66,26 +66,27 @@ func (a Appliance) frequencyFor(kind string) float64 {
 }
 
 type Action struct {
-	ResearchEvidence []datawizfacts.Fact `json:"research_evidence,omitempty"`
-	RuleID           string              `json:"rule_id"`
-	RuleVersion      int                 `json:"rule_version"`
-	ApplianceID      string              `json:"appliance_id"`
-	State            string              `json:"state"` // candidate or active
-	Title            string              `json:"title"`
-	Explanation      string              `json:"explanation"`
-	NextQuestion     string              `json:"next_question,omitempty"`
-	BenefitGroup     string              `json:"benefit_group"`
-	TipCategory      TipCategory         `json:"tip_category"`
-	EvidenceRefs     []Evidence          `json:"evidence_refs"`
-	SavingsAmount    *string             `json:"savings_amount"` // absent until a comparable scenario exists
-	SavingsPeriod    string              `json:"savings_period,omitempty"`
-	SavingsCurrency  string              `json:"savings_currency,omitempty"`
-	SavingsBasis     string              `json:"savings_basis,omitempty"`
-	ScenarioRefs     []Evidence          `json:"scenario_refs,omitempty"`
-	SourceURL        string              `json:"source_url,omitempty"`
-	WeatherContext   *WeatherContext     `json:"weather_context,omitempty"`
-	usageFrequency   float64
-	usageUnit        string
+	ResearchEvidence  []datawizfacts.Fact `json:"research_evidence,omitempty"`
+	RuleID            string              `json:"rule_id"`
+	RuleVersion       int                 `json:"rule_version"`
+	ApplianceID       string              `json:"appliance_id"`
+	State             string              `json:"state"` // candidate or active
+	Title             string              `json:"title"`
+	Explanation       string              `json:"explanation"`
+	NextQuestion      string              `json:"next_question,omitempty"`
+	BenefitGroup      string              `json:"benefit_group"`
+	TipCategory       TipCategory         `json:"tip_category"`
+	EvidenceRefs      []Evidence          `json:"evidence_refs"`
+	SavingsAmount     *string             `json:"savings_amount"` // absent until a comparable scenario exists
+	SavingsPeriod     string              `json:"savings_period,omitempty"`
+	SavingsCurrency   string              `json:"savings_currency,omitempty"`
+	SavingsBasis      string              `json:"savings_basis,omitempty"`
+	ScenarioRefs      []Evidence          `json:"scenario_refs,omitempty"`
+	SourceURL         string              `json:"source_url,omitempty"`
+	WeatherContext    *WeatherContext     `json:"weather_context,omitempty"`
+	PeakDemandContext string              `json:"peak_demand_context,omitempty"`
+	usageFrequency    float64
+	usageUnit         string
 }
 
 // TipCategory identifies the kind of action at its source. BenefitGroup is
@@ -255,6 +256,9 @@ func attachResearchTips(a Appliance, actions []Action) {
 				if trigger != "" {
 					actions[i].WeatherContext = a.Weather.contextFor(trigger, value.SavingsType == "load_shift", actions[i].WeatherContext)
 				}
+				if value.Context == contextPeakDemandDay {
+					actions[i].PeakDemandContext = contextPeakDemandDay
+				}
 				seen[tip.ID] = struct{}{}
 				attached++
 				if general {
@@ -319,7 +323,7 @@ func tipApplies(context, category, ruleID string, applicable, excluded []string)
 		return ruleID == "general.gather_information" || strings.Contains(ruleID, "settings")
 	case "maintenance":
 		return strings.Contains(ruleID, "maintenance") || strings.Contains(ruleID, "operating_guidance") || ruleID == "general.gather_information"
-	case "habits", "appliance_type", "upgrades", "weather_hot", "weather_cold":
+	case "habits", "appliance_type", "upgrades", "weather_hot", "weather_cold", contextPeakDemandDay:
 		return true
 	default:
 		return false

@@ -62,7 +62,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 	capability := r.URL.Query().Get("capability")
 	evaluate := EvaluatorFor(capability)
 	var page *WeatherPage
-	if capability == CapabilityWeatherTips {
+	if capability == CapabilityWeatherTips || capability == CapabilityPeakDemand {
 		var err error
 		if appliances, page, err = s.withWeather(r.Context(), s.UserID(r), home, now, appliances); err != nil {
 			if errors.Is(err, householdenergy.ErrNotFound) {
@@ -70,6 +70,18 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			slog.Error("recommendation weather read failed", "error", err)
+			fail(w, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	var peak *PeakDemandPage
+	if capability == CapabilityPeakDemand {
+		if appliances, peak, err = s.withPeakDemand(r.Context(), s.UserID(r), home, now, appliances); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				fail(w, http.StatusNotFound, "not_found")
+				return
+			}
+			slog.Error("recommendation peak demand read failed", "error", err)
 			fail(w, http.StatusInternalServerError, "internal_error")
 			return
 		}
@@ -105,7 +117,8 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		AsOf          string              `json:"as_of"`
 		ResearchFacts []datawizfacts.Fact `json:"research_facts,omitempty"`
 		Weather       *WeatherPage        `json:"weather,omitempty"`
-	}{actions, now.Format(time.RFC3339), research, page})
+		PeakDemand    *PeakDemandPage     `json:"peak_demand,omitempty"`
+	}{actions, now.Format(time.RFC3339), research, page, peak})
 }
 
 func (s Service) record(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +230,7 @@ func (s Service) record(w http.ResponseWriter, r *http.Request) {
 // or missing capability keeps the legacy rules.
 func EvaluatorFor(capability string) func(Appliance) []Action {
 	switch capability {
-	case "gas_appliance_recommendations_v1", CapabilityWeatherTips:
+	case "gas_appliance_recommendations_v1", CapabilityWeatherTips, CapabilityPeakDemand:
 		return EvaluateGasAppliances
 	case "gas_dryer_recommendations_v1":
 		return EvaluateGasEnabled
