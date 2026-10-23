@@ -23,9 +23,17 @@ type awayBlock struct {
 type awaySchedule []awayBlock
 
 const (
-	awaySourceUser    = "user_schedule"
-	awaySourceDefault = "default_schedule"
+	awaySourceUser     = "user_schedule"
+	awaySourceInferred = "baseline_inferred"
+	awaySourceDefault  = "default_schedule"
 )
+
+// awayWindow returns the away parts of [from,to), already outside the night window.
+type awayWindow func(from, to time.Time) [][2]time.Time
+
+func scheduleWindow(loc *time.Location, sched awaySchedule) awayWindow {
+	return func(from, to time.Time) [][2]time.Time { return awaySpans(from, to, loc, sched) }
+}
 
 var defaultAwaySchedule = awaySchedule{{
 	Days:       []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"},
@@ -149,9 +157,9 @@ func subtractSpans(spans, cut [][2]time.Time) [][2]time.Time {
 	return out
 }
 
-func awayPriced(item interval, from, to time.Time, tariff marginalTariff, loc *time.Location, sched awaySchedule) *big.Rat {
+func awayPriced(item interval, from, to time.Time, tariff marginalTariff, window awayWindow) *big.Rat {
 	total := new(big.Rat)
-	for _, s := range awaySpans(maxTime(item.Start, from), minTime(item.End, to), loc, sched) {
+	for _, s := range window(maxTime(item.Start, from), minTime(item.End, to)) {
 		if part := priceIntervalRange(item, s[0], s[1], tariff); part != nil {
 			total.Add(total, part)
 		}
@@ -159,7 +167,7 @@ func awayPriced(item interval, from, to time.Time, tariff marginalTariff, loc *t
 	return total
 }
 
-func awayCoveredShare(energyItems []interval, id string, b bucket, loc *time.Location, sched awaySchedule) *big.Rat {
+func awayCoveredShare(energyItems []interval, id string, b bucket, window awayWindow) *big.Rat {
 	covered, away := new(big.Rat), new(big.Rat)
 	for _, item := range energyItems {
 		if item.ApplianceID != id || item.Unavailable || !terminalDevice(item) {
@@ -176,7 +184,7 @@ func awayCoveredShare(energyItems []interval, id string, b bucket, loc *time.Loc
 		}
 		covered.Add(covered, seconds)
 		inAway := int64(0)
-		for _, s := range awaySpans(start, end, loc, sched) {
+		for _, s := range window(start, end) {
 			inAway += s[1].Sub(s[0]).Nanoseconds()
 		}
 		away.Add(away, new(big.Rat).Mul(seconds, big.NewRat(inAway, end.Sub(start).Nanoseconds())))
@@ -187,23 +195,25 @@ func awayCoveredShare(energyItems []interval, id string, b bucket, loc *time.Loc
 	return away.Quo(away, covered)
 }
 
-// awayComponent prices waste inside the home's saved away schedule, or the
-// default block when none is saved.
+// awayComponent prices waste inside the home's saved away schedule, else the
+// baseline-inferred away hours, else the default block.
 func awayComponent(in componentInput) componentResult {
 	return awayComponentFor(in, in.Away)
 }
 
 // awayComponentFor returns each metered device's waste cost inside the away
-// window outside the night window. A nil schedule uses the 09:00-16:00 default,
-// labelled estimated; a user schedule is measured.
+// window outside the night window. A user schedule is measured; inferred hours
+// and the 09:00-16:00 default are estimated.
 func awayComponentFor(in componentInput, user awaySchedule) componentResult {
-	sched, source, basis := defaultAwaySchedule, awaySourceDefault, "estimated"
-	if user != nil {
-		sched, source, basis = user, awaySourceUser, "measured"
-	}
 	res := componentResult{Devices: map[string]deviceAmount{}, Basis: "insufficient_data", Source: "none"}
 	if in.Tariff == nil || in.Loc == nil {
 		return res
+	}
+	window, source, basis := scheduleWindow(in.Loc, defaultAwaySchedule), awaySourceDefault, "estimated"
+	if user != nil {
+		window, source, basis = scheduleWindow(in.Loc, user), awaySourceUser, "measured"
+	} else if inferred := inferAwaySpans(in); len(inferred) > 0 {
+		window, source = inferredWindow(inferred), awaySourceInferred
 	}
 	res.Source = source
 	sums := map[string]*big.Rat{}
@@ -227,7 +237,7 @@ func awayComponentFor(in componentInput, user awaySchedule) componentResult {
 				continue
 			}
 			if waste, counted := intervalIsWaste(item, spec.StandbyWatts); counted && waste {
-				add(item.ApplianceID, awayPriced(item, b.Start, b.End, *in.Tariff, in.Loc, sched))
+				add(item.ApplianceID, awayPriced(item, b.Start, b.End, *in.Tariff, window))
 			}
 		}
 		if i >= len(in.Rows) {
@@ -242,7 +252,7 @@ func awayComponentFor(in componentInput, user awaySchedule) componentResult {
 			wasteWh := floorWasteWh(spec.FloorUSDPerDay, *in.Tariff, b, energyItems, row.ApplianceID, totalWh)
 			piece := interval{Start: b.Start, End: b.End, Wh: wasteWh}
 			if cost := priceIntervalRange(piece, b.Start, b.End, *in.Tariff); cost != nil {
-				add(row.ApplianceID, new(big.Rat).Mul(cost, awayCoveredShare(energyItems, row.ApplianceID, b, in.Loc, sched)))
+				add(row.ApplianceID, new(big.Rat).Mul(cost, awayCoveredShare(energyItems, row.ApplianceID, b, window)))
 			}
 		}
 	}
