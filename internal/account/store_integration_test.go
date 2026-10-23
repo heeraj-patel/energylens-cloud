@@ -129,6 +129,33 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 			if err != nil || replay.ID != home.ID {
 				t.Fatalf("create replay: %v %v", replay.ID, err)
 			}
+			for _, tc := range []struct {
+				name, country, postal, submittedZone, savedZone string
+			}{
+				{"missing zone", "US", "78732", "", "America/Chicago"},
+				{"invalid zone", "US", "78732", "not/a/zone", "America/Chicago"},
+				{"mismatched zone", "US", "94107-1234", "America/New_York", "America/Los_Angeles"},
+				{"unresolved ZIP", "US", "85001", "America/Phoenix", "America/Phoenix"},
+				{"non-US", "CA", "M5V 2T6", "America/Toronto", "America/Toronto"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					create := HomeCreate{Name: tc.name, Timezone: tc.submittedZone, Location: Location{CountryCode: tc.country, PostalCode: tc.postal, Precision: "postal_code", Source: "user_entered"}}
+					createKey := uuid.NewString()
+					createHash := sha256.Sum256([]byte(tc.name))
+					created, e := s.Create(ctx, a.ID, create, createKey, createHash[:])
+					if e != nil || created.Timezone != tc.savedZone {
+						t.Fatalf("created timezone = %q, error = %v; want %q", created.Timezone, e, tc.savedZone)
+					}
+					var persisted string
+					if e = pool.QueryRow(ctx, `SELECT timezone FROM homes WHERE id=$1`, created.ID).Scan(&persisted); e != nil || persisted != tc.savedZone {
+						t.Fatalf("persisted timezone = %q, error = %v; want %q", persisted, e, tc.savedZone)
+					}
+					replayed, e := s.Create(ctx, a.ID, create, createKey, createHash[:])
+					if e != nil || !reflect.DeepEqual(replayed, created) {
+						t.Fatalf("create replay = %+v, error = %v; want %+v", replayed, e, created)
+					}
+				})
+			}
 			nameBefore := "Denied rename"
 			if _, err = s.Patch(ctx, b.ID, home.ID, HomePatch{Name: &nameBefore}, 1, uuid.NewString(), hash[:]); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("cross-owner patch = %v", err)

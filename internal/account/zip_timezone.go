@@ -4,7 +4,6 @@ import (
 	"embed"
 	"encoding/csv"
 	"io"
-	"strings"
 	"sync"
 )
 
@@ -38,11 +37,11 @@ var zipTimezoneIndex = sync.OnceValues(func() (map[string]string, error) {
 // resolveUSZIPTimeZone returns only a supported, bounded ZCTA assignment.
 // ZCTAs approximate USPS ZIPs; missing or ambiguous entries are unresolved.
 func resolveUSZIPTimeZone(postal string) (string, bool) {
+	if !validUSZIPPostal(postal) {
+		return "", false
+	}
 	if len(postal) == 10 && postal[5] == '-' {
 		postal = postal[:5]
-	}
-	if len(postal) != 5 || strings.Trim(postal, "0123456789") != "" {
-		return "", false
 	}
 	index, err := zipTimezoneIndex()
 	if err != nil {
@@ -50,4 +49,19 @@ func resolveUSZIPTimeZone(postal string) (string, bool) {
 	}
 	zone, ok := index[postal]
 	return zone, ok
+}
+
+func validUSZIPPostal(postal string) bool {
+	if len(postal) != 5 && (len(postal) != 10 || postal[5] != '-') {
+		return false
+	}
+	for i := range postal {
+		if i == 5 {
+			continue
+		}
+		if postal[i] < '0' || postal[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

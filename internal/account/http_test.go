@@ -105,3 +105,31 @@ func TestRoutesRequireBearerAndHideOtherOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidCreateTimezoneByLocation(t *testing.T) {
+	for _, tc := range []struct {
+		name, country, postal, zone string
+		want                        bool
+	}{
+		{"resolved omitted", "US", "78732", "", true},
+		{"resolved invalid", "US", "78732", "not/a/zone", true},
+		{"resolved mismatch", "US", "78732-1234", "America/Denver", true},
+		{"malformed ZIP+4", "US", "78732-abcd", "America/Chicago", false},
+		{"unresolved explicit", "US", "85001", "America/Phoenix", true},
+		{"unresolved missing", "US", "85001", "", false},
+		{"unresolved invalid", "US", "85001", "not/a/zone", false},
+		{"unresolved Local", "US", "85001", "Local", false},
+		{"non-US explicit", "CA", "M5V 2T6", "America/Toronto", true},
+		{"non-US UTC", "CA", "M5V 2T6", "UTC", true},
+		{"non-US missing", "CA", "M5V 2T6", "", false},
+		{"non-US invalid", "CA", "M5V 2T6", "not/a/zone", false},
+		{"non-US Local", "CA", "M5V 2T6", "Local", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := HomeCreate{Name: "House", Timezone: tc.zone, Location: Location{CountryCode: tc.country, PostalCode: tc.postal, Precision: "postal_code", Source: "user_entered"}}
+			if got := validCreate(in); got != tc.want {
+				t.Fatalf("validCreate(%+v) = %t, want %t", in, got, tc.want)
+			}
+		})
+	}
+}

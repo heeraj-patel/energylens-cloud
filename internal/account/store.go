@@ -213,8 +213,9 @@ func (s PGStore) Create(ctx context.Context, owner string, in HomeCreate, key st
 	if h, found, e := readReplay(ctx, tx, owner, "create_home", key, hash); found || e != nil {
 		return h, e
 	}
+	effectiveTimezone := createTimezone(in)
 	var h Home
-	err = tx.QueryRow(ctx, `INSERT INTO homes(owner_user_id,name,timezone) VALUES($1,$2,$3) RETURNING id,name,timezone,version,created_at,updated_at,first_device_added_at`, owner, in.Name, in.Timezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt, &h.FirstDeviceAddedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO homes(owner_user_id,name,timezone) VALUES($1,$2,$3) RETURNING id,name,timezone,version,created_at,updated_at,first_device_added_at`, owner, in.Name, effectiveTimezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt, &h.FirstDeviceAddedAt)
 	if err != nil {
 		return Home{}, err
 	}
@@ -228,6 +229,16 @@ func (s PGStore) Create(ctx context.Context, owner string, in HomeCreate, key st
 	}
 	return h, tx.Commit(ctx)
 }
+
+func createTimezone(in HomeCreate) string {
+	if in.Location.CountryCode == "US" {
+		if zone, found := resolveUSZIPTimeZone(in.Location.PostalCode); found {
+			return zone
+		}
+	}
+	return in.Timezone
+}
+
 func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, version int64, key string, hash []byte) (Home, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
