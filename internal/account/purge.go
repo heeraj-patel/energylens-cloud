@@ -77,6 +77,7 @@ func (s PGStore) PurgeAccount(ctx context.Context, owner string, archive Journal
 		}
 	}
 	for _, sql := range []string{
+		`DELETE FROM hub_pairing_codes WHERE resolved_owner_user_id=$1`,
 		`DELETE FROM hub_request_idempotency WHERE owner_user_id=$1`,
 		`DELETE FROM account_home_idempotency WHERE owner_user_id=$1`,
 		`DELETE FROM preference_idempotency WHERE owner_user_id=$1`,
@@ -207,6 +208,7 @@ func purgeHomeTx(ctx context.Context, tx pgx.Tx, home string) error {
 		`DELETE FROM account_home_idempotency WHERE owner_user_id=(SELECT owner_user_id FROM homes WHERE id=$1) AND (operation='patch_home:'||$1::text OR response_json->>'id'=$1::text)`,
 		`DELETE FROM hub_request_idempotency WHERE owner_user_id=(SELECT owner_user_id FROM homes WHERE id=$1) AND (response_json->>'home_id'=$1::text OR response_json->>'claim_id' IN (SELECT id::text FROM hub_claims WHERE home_id=$1))`,
 		`DELETE FROM hub_possession_proofs WHERE claim_id IN (SELECT id FROM hub_claims WHERE home_id=$1)`,
+		`DELETE FROM hub_pairing_codes WHERE resolved_home_id=$1`,
 		`DELETE FROM hub_claims WHERE home_id=$1`,
 		`DELETE FROM hub_certificate_renewals WHERE old_serial IN (SELECT c.serial FROM hub_certificates c JOIN hub_ownership_history o ON o.hub_id=c.hub_id AND o.ownership_epoch=c.ownership_epoch WHERE o.home_id=$1) OR new_serial IN (SELECT c.serial FROM hub_certificates c JOIN hub_ownership_history o ON o.hub_id=c.hub_id AND o.ownership_epoch=c.ownership_epoch WHERE o.home_id=$1)`,
 		`DELETE FROM hub_enrollment_nonces WHERE cert_serial IN (SELECT c.serial FROM hub_certificates c JOIN hub_ownership_history o ON o.hub_id=c.hub_id AND o.ownership_epoch=c.ownership_epoch WHERE o.home_id=$1)`,

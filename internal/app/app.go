@@ -95,6 +95,20 @@ func Build(ctx context.Context, c Config) (*Runtime, error) {
 	var hubModule *hubtrust.Service
 	if rt.Pool != nil && (c.Role == RoleAPI || c.Role == RoleAll) {
 		hubModule = &hubtrust.Service{Store: hubtrust.Store{Pool: rt.Pool}}
+		if c.HubPairingKeyFile != "" {
+			key, err := account.LoadLocalRateKey(c.HubPairingKeyFile)
+			if err != nil {
+				rt.Close()
+				return nil, fmt.Errorf("load Hub pairing key: %w", err)
+			}
+			source, err := account.ParseLocalAuthSourcePolicy(c.LocalAuthProxyCIDRs)
+			if err != nil {
+				rt.Close()
+				return nil, err
+			}
+			hubModule.Pairing = &hubtrust.PairingDirectory{Store: hubModule.Store, Key: key}
+			hubModule.PairingSource = source.Source
+		}
 		if c.HubSignCertFile != "" {
 			pair, e := tls.LoadX509KeyPair(c.HubSignCertFile, c.HubSignKeyFile)
 			if e != nil {

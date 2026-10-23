@@ -227,13 +227,18 @@ func (s Store) Begin(ctx context.Context, owner, home, local, requestKey string)
 		return old, e
 	}
 	var hubID string
-	var revoked bool
-	e = tx.QueryRow(ctx, `SELECT b.id,b.revoked_at IS NOT NULL FROM hubs b JOIN homes h ON h.id=$2 AND h.owner_user_id=$1 AND h.deleted_at IS NULL WHERE b.local_hub_id=$3`, owner, home, local).Scan(&hubID, &revoked)
+	var revoked, owned bool
+	e = tx.QueryRow(ctx, `SELECT b.id,b.revoked_at IS NOT NULL,b.home_id IS NOT NULL FROM hubs b JOIN homes h ON h.id=$2 AND h.owner_user_id=$1 AND h.deleted_at IS NULL WHERE b.local_hub_id=$3`, owner, home, local).Scan(&hubID, &revoked, &owned)
 	if errors.Is(e, pgx.ErrNoRows) || revoked {
 		return Challenge{}, ErrNotFound
 	}
 	if e != nil {
 		return Challenge{}, e
+	}
+	// Local pairing does not authorize a transfer. Reject before asking the
+	// Hub for a possession proof that an old bootstrap token cannot obtain.
+	if owned {
+		return Challenge{}, ErrConflict
 	}
 	nonce, e := random32()
 	if e != nil {
@@ -321,6 +326,9 @@ func (s Store) Finish(ctx context.Context, owner, claimID, local, proof, signatu
 	}
 	_, e = tx.Exec(ctx, `UPDATE hub_claims SET consumed_at=now() WHERE id=$1`, claimID)
 	if e != nil {
+		return Ownership{}, e
+	}
+	if _, e = tx.Exec(ctx, `DELETE FROM hub_pairing_codes WHERE hub_id=$1`, hubID); e != nil {
 		return Ownership{}, e
 	}
 	if e = saveReplay(ctx, tx, owner, "finish_claim", requestKey, hash[:], o, 200); e != nil {

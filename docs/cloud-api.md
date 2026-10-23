@@ -55,6 +55,8 @@ Paths below are relative to `/v1`. Schema names resolve to `components/schemas` 
 | Method | Path | Operation | Auth / status | Parameters | Request | Success response | Response headers |
 |---|---|---|---|---|---|---|---|
 | `POST` | `/homes/{home}/hub-claims` | `beginHubClaim` | `bearer` / `active` | `header Idempotency-Key*` | [`HubClaimBegin`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-HubClaimBegin) | 201 [`HubClaimChallenge`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-HubClaimChallenge) | — |
+| `POST` | `/homes/{home}/hub-pairings/resolve` | `resolveHubPairingCode` | `bearer` / `gated` | `header Idempotency-Key*` | `HubPairingResolve` | 200 `HubPairingResolution` | `Cache-Control: no-store` |
+| `PUT` | `/hubs/{hub}/pairing-code` | `publishHubPairingCode` | `hub-mtls` / `gated` | — | `HubPairingPublish` | 200 `HubPairingPublished` | `Cache-Control: no-store` |
 | `GET` | `/homes/{home}/hubs` | `listOwnedHubs` | `bearer` / `active` | — | — | 200 object `{ "hubs": [HubOwnership] }` | — |
 | `POST` | `/hubs/claim` | `finishHubClaim` | `bearer` / `active` | `header Idempotency-Key*` | [`HubClaimFinish`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-HubClaimFinish) | 200 [`HubOwnership`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-HubOwnership) | — |
 | `DELETE` | `/homes/{home}/hubs/{hub}` | `unclaimHub` | `bearer` / `active` | `header If-Match*`, `header Idempotency-Key*` | — | 204 — | — |
