@@ -593,10 +593,6 @@ func spaceHeaterSchedule(a Appliance) gasResult {
 		return res
 	}
 	res.refs = append(res.refs, answer)
-	res.next = "add_gas_rate"
-	if a.Fuel == "natural_gas" && a.gasRateOK() {
-		res.refs = append(res.refs, *a.GasTariff)
-		res.state, res.next = "active", ""
-	}
+	res.state, res.next = "active", ""
 	return res
 }

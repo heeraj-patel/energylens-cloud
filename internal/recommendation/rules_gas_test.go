@@ -193,11 +193,11 @@ func TestPropaneCostRulesStayAtAddGasRate(t *testing.T) {
 		t.Fatalf("propane cost: %+v", got)
 	}
 	heater := Appliance{ID: "h", Category: "space_heater", Fuel: "propane", Identity: "confirmed_exact",
-		Facts:     []Evidence{ev("a", "afue")},
-		Answers:   map[string]Evidence{"hours_per_week": ev("hrs", "confirmed_answer")},
-		GasTariff: &Evidence{ID: "gas", Kind: "gas_tariff", Revision: 1}, GasRate: fp(2)}
-	if got := gasRuleAction(t, heater, "space_heater.gas_schedule"); got.State != "candidate" || got.NextQuestion != "add_gas_rate" {
-		t.Fatalf("propane schedule: %+v", got)
+		Facts:   []Evidence{ev("a", "afue")},
+		Answers: map[string]Evidence{"hours_per_week": ev("hrs", "confirmed_answer")},
+	}
+	if got := gasRuleAction(t, heater, "space_heater.gas_schedule"); got.State != "active" || got.NextQuestion != "" {
+		t.Fatalf("propane schedule needs no rate: %+v", got)
 	}
 }
 
@@ -212,10 +212,7 @@ func TestGasSpaceHeaterScheduleLadder(t *testing.T) {
 		{"candidate", "confirm_model", 0, func(*Appliance) {}},
 		{"candidate", "find_reviewed_energy_source", 0, func(a *Appliance) { a.Identity = "confirmed_exact" }},
 		{"candidate", "hours_per_week", 1, func(a *Appliance) { a.Facts = []Evidence{ev("a", "afue")} }},
-		{"candidate", "add_gas_rate", 2, func(a *Appliance) { a.Answers = map[string]Evidence{"hours_per_week": ev("hrs", "confirmed_answer")} }},
-		{"active", "", 3, func(a *Appliance) {
-			a.GasTariff, a.GasRate = &Evidence{ID: "g", Kind: "gas_tariff", Revision: 1}, fp(1)
-		}},
+		{"active", "", 2, func(a *Appliance) { a.Answers = map[string]Evidence{"hours_per_week": ev("hrs", "confirmed_answer")} }},
 	}
 	for i, s := range steps {
 		s.mutate(&a)
