@@ -192,33 +192,17 @@ func TestPropaneCostRulesStayAtAddGasRate(t *testing.T) {
 	if got := gasRuleAction(t, a, "water_heater.gas_cost"); got.State != "candidate" || got.NextQuestion != "add_gas_rate" {
 		t.Fatalf("propane cost: %+v", got)
 	}
-	heater := Appliance{ID: "h", Category: "space_heater", Fuel: "propane", Identity: "confirmed_exact",
-		Facts:   []Evidence{ev("a", "afue")},
-		Answers: map[string]Evidence{"hours_per_week": ev("hrs", "confirmed_answer")},
-	}
-	if got := gasRuleAction(t, heater, "space_heater.gas_schedule"); got.State != "active" || got.NextQuestion != "" {
-		t.Fatalf("propane schedule needs no rate: %+v", got)
-	}
 }
 
-func TestGasSpaceHeaterScheduleLadder(t *testing.T) {
-	const rule, copy = "space_heater.gas_schedule", "Use this heater's controls to run it only when the room is in use."
-	a := Appliance{ID: "h", Category: "space_heater", Fuel: "natural_gas"}
-	steps := []struct {
-		state, next string
-		refs        int
-		mutate      func(*Appliance)
-	}{
-		{"candidate", "confirm_model", 0, func(*Appliance) {}},
-		{"candidate", "find_reviewed_energy_source", 0, func(a *Appliance) { a.Identity = "confirmed_exact" }},
-		{"candidate", "hours_per_week", 1, func(a *Appliance) { a.Facts = []Evidence{ev("a", "afue")} }},
-		{"active", "", 2, func(a *Appliance) { a.Answers = map[string]Evidence{"hours_per_week": ev("hrs", "confirmed_answer")} }},
-	}
-	for i, s := range steps {
-		s.mutate(&a)
-		got := gasRuleAction(t, a, rule)
-		if got.State != s.state || got.NextQuestion != s.next || len(got.EvidenceRefs) != s.refs || got.Explanation != copy || got.SavingsAmount != nil {
-			t.Fatalf("step %d: %+v", i, got)
+func TestGasSpaceHeaterScheduleIsActiveForAnyGasHeater(t *testing.T) {
+	const copy = "Use this heater's controls to run it only when the room is in use."
+	for _, fuel := range []string{"natural_gas", "propane"} {
+		for _, identity := range []string{"", "unresolved", "confirmed_exact"} {
+			a := Appliance{ID: "h", Category: "space_heater", Fuel: fuel, Identity: identity}
+			got := gasRuleAction(t, a, "space_heater.gas_schedule")
+			if got.State != "active" || got.NextQuestion != "" || got.Explanation != copy || len(got.EvidenceRefs) != 0 || got.SavingsAmount != nil {
+				t.Fatalf("%s/%s: %+v", fuel, identity, got)
+			}
 		}
 	}
 }

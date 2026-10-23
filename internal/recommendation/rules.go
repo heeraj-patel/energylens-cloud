@@ -431,7 +431,7 @@ var gasRules = []gasRule{
 		standbyCheck(false, "This boiler's controls use about %s/yr in electricity while idle.", "This boiler's controls use electricity while idle.")},
 	{"water_heater.gas_cost", "water_heater", "Hot water costs", "water_heating_gas", "", TipGeneral, waterHeaterCost},
 	{"water_heater.gas_efficiency_check", "water_heater", "Your water heater's efficiency", "water_heating_efficiency", "", TipUpgrade, waterHeaterEfficiency},
-	{"space_heater.gas_schedule", "space_heater", "Heat only when needed", "heating_schedule", "hours_per_week", TipGeneral, spaceHeaterSchedule},
+	{"space_heater.gas_schedule", "space_heater", "Heat only when needed", "heating_schedule", "", TipGeneral, spaceHeaterSchedule},
 }
 
 func (a Appliance) gasValues() GasValues {
@@ -575,24 +575,8 @@ func waterHeaterEfficiency(a Appliance) gasResult {
 	return res
 }
 
-func spaceHeaterSchedule(a Appliance) gasResult {
-	next, exact := a.startGasLadder()
-	res := gasResult{state: "candidate", next: next, refs: []Evidence{},
+// spaceHeaterSchedule claims no figures, so any gas space heater gets it.
+func spaceHeaterSchedule(Appliance) gasResult {
+	return gasResult{state: "active", refs: []Evidence{},
 		explanation: "Use this heater's controls to run it only when the room is in use."}
-	if !exact {
-		return res
-	}
-	refs := a.exactFact("afue", "auxiliary_power")
-	if len(refs) == 0 {
-		return res
-	}
-	res.refs = refs
-	answer, ok := a.Answers["hours_per_week"]
-	if !ok || answer.ID == "" || answer.Revision <= 0 {
-		res.next = "hours_per_week"
-		return res
-	}
-	res.refs = append(res.refs, answer)
-	res.state, res.next = "active", ""
-	return res
 }
