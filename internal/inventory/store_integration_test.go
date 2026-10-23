@@ -73,6 +73,9 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if home.FirstDeviceAddedAt != nil {
+		t.Fatal("new home already has first-device milestone")
+	}
 	store := PGStore{Pool: pool}
 	revision := func() string {
 		t.Helper()
@@ -102,8 +105,16 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstSaved, err := accounts.Get(ctx, owner.ID, transientHome.ID)
+	if err != nil || firstSaved.FirstDeviceAddedAt == nil || !firstSaved.FirstDeviceAddedAt.Equal(transient.CreatedAt) {
+		t.Fatalf("first persisted appliance milestone: %+v %v", firstSaved.FirstDeviceAddedAt, err)
+	}
 	if _, err = store.Archive(ctx, owner.ID, transientHome.ID, transient.ID, transient.Version, uuid.NewString(), hash[:]); err != nil {
 		t.Fatal(err)
+	}
+	archivedHome, err := accounts.Get(ctx, owner.ID, transientHome.ID)
+	if err != nil || archivedHome.FirstDeviceAddedAt == nil || !archivedHome.FirstDeviceAddedAt.Equal(*firstSaved.FirstDeviceAddedAt) {
+		t.Fatalf("archive changed first-device milestone: %+v %v", archivedHome.FirstDeviceAddedAt, err)
 	}
 	active, archivedOnlyRevision, err := store.ListWithRevision(ctx, owner.ID, transientHome.ID)
 	if err != nil || len(active) != 0 || archivedOnlyRevision == neverUsedRevision {
@@ -171,6 +182,10 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	again, err := store.Create(ctx, owner.ID, home.ID, input, key, hash[:])
 	if err != nil || again.ID != a.ID {
 		t.Fatalf("create replay %+v %v", again, err)
+	}
+	completedHome, err := accounts.Get(ctx, owner.ID, home.ID)
+	if err != nil || completedHome.FirstDeviceAddedAt == nil || !completedHome.FirstDeviceAddedAt.Equal(a.CreatedAt) {
+		t.Fatalf("replay changed first-device milestone: %+v %v", completedHome.FirstDeviceAddedAt, err)
 	}
 	beforePatchRevision := revision()
 	otherHash := sha256.Sum256([]byte("different"))
@@ -385,6 +400,10 @@ func TestInventoryOwnerVersionReplayAndCatalogLink(t *testing.T) {
 	}
 	if err = householdenergy.ImportDemoCostSnapshot(ctx, pool, owner.ID, demoHome.ID, testfixture.DemoSnapshot()); err != nil {
 		t.Fatal(err)
+	}
+	demoOnlyHome, err := accounts.Get(ctx, owner.ID, demoHome.ID)
+	if err != nil || demoOnlyHome.FirstDeviceAddedAt != nil {
+		t.Fatalf("demo inventory completed first-device milestone: %+v %v", demoOnlyHome.FirstDeviceAddedAt, err)
 	}
 	router := chi.NewRouter()
 	(Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return owner.ID }}).Routes(router)

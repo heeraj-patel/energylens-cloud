@@ -113,12 +113,39 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 		}
 		return rec
 	}
-	post(path, map[string]string{"email": "person@example.test", "password": "original long password"}, 202)
-	if len(sender.verification) != 1 {
-		t.Fatal("registration did not deliver fake challenge")
+	created := post(path, map[string]string{"email": "person@example.test", "password": "original long password"}, 201)
+	if !strings.Contains(created.Body.String(), `"access_token"`) || len(sender.verification) != 0 {
+		t.Fatal("registration did not return an immediate session without verification")
+	}
+	var signupTokens struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err = json.Unmarshal(created.Body.Bytes(), &signupTokens); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := (LocalAccessVerifier{DB: pool, Codec: codec}).Verify(ctx, signupTokens.AccessToken)
+	if err != nil || identity.EmailVerified {
+		t.Fatalf("new session must authenticate without claiming mailbox proof: %v", err)
+	}
+	registered, err := (PGStore{Pool: pool}).Resolve(ctx, identity)
+	if err != nil || registered.Email == nil || *registered.Email != "person@example.test" || registered.EmailVerified {
+		t.Fatalf("new account identity invalid: %+v %v", registered, err)
+	}
+	duplicate := post(path, map[string]string{"email": "person@example.test", "password": "different long password"}, 202)
+	if duplicate.Body.String() != "{\"status\":\"accepted\"}\n" || strings.Contains(duplicate.Body.String(), "token") {
+		t.Fatal("duplicate registration disclosed credentials or account state")
+	}
+	var count int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM auth_password_credentials WHERE email_normalized='person@example.test'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("duplicate registration created a second credential: %d %v", count, err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(email,email_verified) VALUES('external@example.test',true)`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(path, map[string]string{"email": "EXTERNAL@example.test", "password": "different long password"}, 202); strings.Contains(rec.Body.String(), "token") {
+		t.Fatal("existing external account received signup session")
 	}
 	// A spoofed forwarding header must never become the private rate key.
-	var count int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM auth_registration_rate_limits WHERE scope='source_hour' AND key_hash=$1`, h.Registration.rateHash("source", "192.0.2.1")).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("socket peer not used for rate key: %d %v", count, err)
 	}
@@ -132,7 +159,7 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 	proxied := h
 	proxied.SourcePolicy = proxyPolicy
 	proxiedAPI := router(proxied)
-	if rec := request(proxiedAPI, path, map[string]string{"email": "proxy@example.test", "password": "original long password"}, "10.20.1.2:1000"); rec.Code != 202 {
+	if rec := request(proxiedAPI, path, map[string]string{"email": "proxy@example.test", "password": "original long password"}, "10.20.1.2:1000"); rec.Code != 201 {
 		t.Fatalf("trusted proxy single-hop request: %d", rec.Code)
 	}
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM auth_registration_rate_limits WHERE scope='source_hour' AND key_hash=$1`, h.Registration.rateHash("source", "198.51.100.45")).Scan(&count); err != nil || count != 1 {
@@ -147,7 +174,6 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 	if chainRec.Code != 401 {
 		t.Fatalf("prepopulated proxy chain accepted: %d", chainRec.Code)
 	}
-	post("/v1/auth/local/verify-email", map[string]string{"token": sender.verification[0]}, 204)
 	login := post("/v1/auth/local/login", map[string]string{"email": "person@example.test", "password": "original long password"}, 200)
 	var tokens struct {
 		AccessToken  string `json:"access_token"`

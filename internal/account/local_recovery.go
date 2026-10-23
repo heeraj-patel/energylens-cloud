@@ -75,20 +75,20 @@ func (s LocalRecoveryService) RequestReset(ctx context.Context, email, source st
 		return accepted, tx.Commit(ctx)
 	}
 	var userID string
-	var verified, deleted *time.Time
+	var verified, activated, deleted *time.Time
 	var profileVerified bool
-	err = tx.QueryRow(ctx, `SELECT c.user_id,c.verified_at,u.deleted_at,u.email_verified
+	err = tx.QueryRow(ctx, `SELECT c.user_id,c.verified_at,c.activated_at,u.deleted_at,u.email_verified
 		FROM auth_password_credentials c JOIN users u ON u.id=c.user_id
 		JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
 		WHERE c.email_normalized=$1 FOR UPDATE OF c,u`, normalized, LocalIssuer).
-		Scan(&userID, &verified, &deleted, &profileVerified)
+		Scan(&userID, &verified, &activated, &deleted, &profileVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return accepted, tx.Commit(ctx)
 	}
 	if err != nil {
 		return RegistrationAccepted{}, err
 	}
-	if verified == nil || deleted != nil || !profileVerified {
+	if deleted != nil || !LocalEmailProfile.eligible(verified, activated, profileVerified) {
 		return accepted, tx.Commit(ctx)
 	}
 	raw, hash, err := NewLocalOpaqueToken("reset_password")
@@ -160,11 +160,11 @@ func (s LocalRecoveryService) ResetPassword(ctx context.Context, raw, password s
 			return err
 		}
 	}
-	var verified, deleted *time.Time
+	var verified, activated, deleted *time.Time
 	var profileVerified bool
-	err = tx.QueryRow(ctx, `SELECT c.verified_at,u.deleted_at,u.email_verified FROM auth_password_credentials c
+	err = tx.QueryRow(ctx, `SELECT c.verified_at,c.activated_at,u.deleted_at,u.email_verified FROM auth_password_credentials c
 		JOIN users u ON u.id=c.user_id JOIN auth_identities i ON i.user_id=u.id AND i.issuer=$2 AND i.subject=u.id::text
-		WHERE c.user_id=$1 FOR UPDATE OF c,u`, userID, LocalIssuer).Scan(&verified, &deleted, &profileVerified)
+		WHERE c.user_id=$1 FOR UPDATE OF c,u`, userID, LocalIssuer).Scan(&verified, &activated, &deleted, &profileVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrInvalidCredential
 	}
@@ -180,10 +180,14 @@ func (s LocalRecoveryService) ResetPassword(ctx context.Context, raw, password s
 	if err != nil {
 		return err
 	}
-	if verified == nil || deleted != nil || !profileVerified || consumed != nil || !now.Before(expires) {
+	if deleted != nil || !LocalEmailProfile.eligible(verified, activated, profileVerified) || consumed != nil || !now.Before(expires) {
 		return ErrInvalidCredential
 	}
-	if _, err = tx.Exec(ctx, `UPDATE auth_password_credentials SET password_hash=$2,access_version=access_version+1,updated_at=$3 WHERE user_id=$1`, userID, newHash, now.UTC()); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE auth_password_credentials SET password_hash=$2,access_version=access_version+1,
+		verified_at=COALESCE(verified_at,$3),activated_at=NULL,updated_at=$3 WHERE user_id=$1`, userID, newHash, now.UTC()); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE users SET email_verified=true,updated_at=$2 WHERE id=$1`, userID, now.UTC()); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE auth_password_reset_tokens SET consumed_at=$2 WHERE user_id=$1 AND consumed_at IS NULL`, userID, now.UTC()); err != nil {

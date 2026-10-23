@@ -27,7 +27,7 @@ Paths below are relative to `/v1`. Schema names resolve to `components/schemas` 
 
 | Method | Path | Operation | Auth / status | Parameters | Request | Success response | Response headers |
 |---|---|---|---|---|---|---|---|
-| `POST` | `/auth/local/registration` | `requestLocalRegistration` | `public` / `gated` | — | [`LocalRegistrationRequest`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalRegistrationRequest) | 202 [`LocalAccepted`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalAccepted) | — |
+| `POST` | `/auth/local/registration` | `requestLocalRegistration` | `public` / `gated` | — | [`LocalRegistrationRequest`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalRegistrationRequest) or local username request | 201 [`LocalTokens`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalTokens) for new email account, 201 `LocalUsernameCreated` for local username account; 202 [`LocalAccepted`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalAccepted) for existing or throttled email | — |
 | `POST` | `/auth/local/verify-email` | `verifyLocalEmail` | `public` / `gated` | — | [`LocalTokenRequest`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalTokenRequest) | 204 — | — |
 | `POST` | `/auth/local/login` | `loginLocalAccount` | `public` / `gated` | — | [`LocalRegistrationRequest`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalRegistrationRequest) | 200 [`LocalTokens`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalTokens) | — |
 | `POST` | `/auth/local/refresh` | `refreshLocalSession` | `public` / `gated` | — | [`LocalRefreshRequest`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalRefreshRequest) | 200 [`LocalTokens`](../../energylens-common-contracts/api/cloud-openapi.yaml#components-schemas-LocalTokens) | — |
@@ -207,8 +207,9 @@ Owner energy-resolution refresh queues one Datawiz re-resolution (reason `owner_
 - **Documented but not mounted:** `GET /v1/homes/{home}/device-energy` is marked `planned` and has no Go route registration. It is not callable.
 - **Conditionally mounted:** `GET /v1/homes/{home}/design-pages/{page}` requires the sample-fixtures feature flag and allowlisted user and home IDs. Other callers receive not found.
 - **Local auth variant:** local auth mounts the documented `/v1/auth/local/*` operations when enabled. Development auth reuses `/login`, `/refresh`, and `/logout` at those paths when dev auth is enabled, with in-memory sessions. Dev auth does not implement registration, verification, recovery, or reset-password.
+- **Email signup:** `GET /v1/auth/config` advertises email registration without required verification. New email signup returns a session immediately. A duplicate or throttled email request returns generic 202 without tokens. `/v1/me` reports `email_verified: false` until mailbox proof through a recovery challenge. Owned home list/read responses always include nullable `first_device_added_at`; only a persisted real appliance sets it, and archive does not clear it.
 - Provisioning/import/migration commands and worker jobs are not HTTP operations.
-- OpenAPI describes the mixed seeded/persisted behavior above. The validator was **not run** because `openapi_spec_validator` is missing from the environment. Source comparison used `internal/app/app.go` and module route-registration methods.
+- OpenAPI describes the mixed seeded/persisted behavior above. `api/check_cloud_contract.py` validates the schema, route manifest, and golden payloads.
 
 ## Sources
 

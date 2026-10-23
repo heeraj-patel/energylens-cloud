@@ -125,9 +125,10 @@ func TestAuthCapabilitiesAllowlist(t *testing.T) {
 		config  Config
 		methods string
 	}{
-		"local": {localRuntimeTestConfig(RoleAPI), "username_password"},
-		"email": {Config{LocalAuthEnabled: true}, "email_password"},
-		"oidc":  {Config{OIDCIssuer: "https://id.example"}, "oidc"},
+		"local":         {localRuntimeTestConfig(RoleAPI), "username_password"},
+		"email":         {Config{LocalAuthEnabled: true}, "email_password"},
+		"email_and_dev": {Config{LocalAuthEnabled: true, DevAuthEnabled: true}, "email_password"},
+		"oidc":          {Config{OIDCIssuer: "https://id.example"}, "oidc"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := chi.NewRouter()
@@ -146,6 +147,12 @@ func TestAuthCapabilitiesAllowlist(t *testing.T) {
 			}
 			if name == "local" && (got["email_verification_required"] != false || got["password_recovery_enabled"] != false || got["session_logout_revokes_access"] != true) {
 				t.Fatalf("local capability flags: %v", got)
+			}
+			if name == "email" && (got["registration_enabled"] != true || got["email_verification_required"] != false || got["password_recovery_enabled"] != true) {
+				t.Fatalf("email signup capability flags: %v", got)
+			}
+			if name == "email_and_dev" && len(got["methods"].([]any)) != 1 {
+				t.Fatalf("duplicate email capability: %v", got)
 			}
 		})
 	}

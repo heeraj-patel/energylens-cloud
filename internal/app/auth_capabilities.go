@@ -32,13 +32,13 @@ func (c Config) authCapabilitiesRoutes(r chi.Router) {
 			if c.LocalAuthEnabled {
 				response.Methods = append(response.Methods, "email_password")
 				response.RegistrationEnabled = true
-				response.EmailVerificationRequired = true
+				response.EmailVerificationRequired = false
 				response.PasswordRecoveryEnabled = true
 			}
 			if c.OIDCIssuer != "" {
 				response.Methods = append(response.Methods, "oidc")
 			}
-			if c.DevAuthEnabled {
+			if c.DevAuthEnabled && !c.LocalAuthEnabled {
 				response.Methods = append(response.Methods, "email_password")
 			}
 		}

@@ -153,12 +153,20 @@ func (h LocalAuthHTTP) registration(w http.ResponseWriter, r *http.Request) {
 		localAuthError(w, err)
 		return
 	}
-	out, err := h.Registration.RequestRegistration(r.Context(), in.Email, in.Password, source, time.Now().UTC())
+	tokens, created, err := h.Registration.RegisterEmail(r.Context(), h.Login, in.Email, in.Password, source, time.Now().UTC())
+	if errors.Is(err, ErrInvalidCredential) {
+		fail(w, 400, "invalid_request", "invalid email or password")
+		return
+	}
 	if err != nil {
 		localAuthError(w, err)
 		return
 	}
-	jsonOut(w, 202, out)
+	if !created {
+		jsonOut(w, 202, RegistrationAccepted{Status: "accepted"})
+		return
+	}
+	localAuthTokensOutWithStatus(w, http.StatusCreated, tokens)
 }
 func (h LocalAuthHTTP) verify(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -280,7 +288,11 @@ func (h LocalAuthHTTP) reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func localAuthTokensOut(w http.ResponseWriter, t LocalLoginTokens) {
-	jsonOut(w, 200, struct {
+	localAuthTokensOutWithStatus(w, http.StatusOK, t)
+}
+
+func localAuthTokensOutWithStatus(w http.ResponseWriter, status int, t LocalLoginTokens) {
+	jsonOut(w, status, struct {
 		AccessToken      string    `json:"access_token"`
 		TokenType        string    `json:"token_type"`
 		AccessExpiresAt  time.Time `json:"access_expires_at"`
