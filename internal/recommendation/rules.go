@@ -226,35 +226,46 @@ func evaluate(a Appliance, gasEnabled, gasAppliances bool) []Action {
 	return rankActions(ApplyBenefitScenarios(out, a.Scenarios))
 }
 
+// Category-matched tips attach first; at most one general habits tip follows.
 func attachResearchTips(a Appliance, actions []Action) {
 	attached := 0
 	seen := make(map[string]struct{})
-	for i := range actions {
-		for _, tip := range a.ResearchTips {
-			if attached == maxResearchTipsPerAppliance {
-				return
+	for _, general := range []bool{false, true} {
+		for i := range actions {
+			for _, tip := range a.ResearchTips {
+				if attached == maxResearchTipsPerAppliance {
+					return
+				}
+				if tip.Field != "efficiency_tip" || tip.ID == "" {
+					continue
+				}
+				if _, exists := seen[tip.ID]; exists {
+					continue
+				}
+				var value struct {
+					Context    string   `json:"context"`
+					Applicable []string `json:"applicable_categories"`
+					Excluded   []string `json:"excluded_categories"`
+					Fuels      []string `json:"applicable_fuels"`
+				}
+				if json.Unmarshal(tip.Value, &value) != nil || isGeneralTip(value.Context, value.Applicable) != general ||
+					!tipApplies(value.Context, a.Category, actions[i].RuleID, value.Applicable, value.Excluded) || !tipFuelApplies(a.Fuel, value.Fuels) {
+					continue
+				}
+				actions[i].ResearchEvidence = append(actions[i].ResearchEvidence, tip)
+				actions[i].EvidenceRefs = append(actions[i].EvidenceRefs, Evidence{ID: tip.ID, Kind: "datawiz_efficiency_tip", Revision: 1})
+				seen[tip.ID] = struct{}{}
+				attached++
+				if general {
+					return
+				}
 			}
-			if tip.Field != "efficiency_tip" || tip.ID == "" {
-				continue
-			}
-			if _, exists := seen[tip.ID]; exists {
-				continue
-			}
-			var value struct {
-				Context    string   `json:"context"`
-				Applicable []string `json:"applicable_categories"`
-				Excluded   []string `json:"excluded_categories"`
-				Fuels      []string `json:"applicable_fuels"`
-			}
-			if json.Unmarshal(tip.Value, &value) != nil || !tipApplies(value.Context, a.Category, actions[i].RuleID, value.Applicable, value.Excluded) || !tipFuelApplies(a.Fuel, value.Fuels) {
-				continue
-			}
-			actions[i].ResearchEvidence = append(actions[i].ResearchEvidence, tip)
-			actions[i].EvidenceRefs = append(actions[i].EvidenceRefs, Evidence{ID: tip.ID, Kind: "datawiz_efficiency_tip", Revision: 1})
-			seen[tip.ID] = struct{}{}
-			attached++
 		}
 	}
+}
+
+func isGeneralTip(context string, applicable []string) bool {
+	return context == "habits" && len(applicable) == 0
 }
 
 // Research tips are electricity guidance unless tagged with other fuels;

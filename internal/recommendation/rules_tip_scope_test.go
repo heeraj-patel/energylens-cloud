@@ -36,3 +36,17 @@ func TestResearchTipsSkipNonElectricFuelUnlessTagged(t *testing.T) {
 		assertTipAttachments(t, got[0], c.want)
 	}
 }
+
+func TestCategoryTipsPrecedeSingleGeneralTip(t *testing.T) {
+	general := func(id string) datawizfacts.Fact {
+		f := researchTip(id, "habits")
+		f.Value = json.RawMessage(`{"context":"habits","applicable_categories":[]}`)
+		return f
+	}
+	cat := []datawizfacts.Fact{researchTip("c1", "appliance_type"), researchTip("c2", "upgrades")}
+	tips := []datawizfacts.Fact{general("g1"), general("g2"), cat[0], cat[1]}
+	a := Appliance{ID: "hvac-1", Category: "hvac", Fuel: "electricity", ResearchTips: tips}
+	assertTipAttachments(t, Evaluate(a)[0], []datawizfacts.Fact{cat[0], cat[1], tips[0]})
+	a.ResearchTips = tips[:2]
+	assertTipAttachments(t, Evaluate(a)[0], tips[:1])
+}
