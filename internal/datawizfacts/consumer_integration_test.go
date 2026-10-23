@@ -163,22 +163,6 @@ func TestCurrentResearchReachesExistingReaders(t *testing.T) {
 	if err != nil || len(rated) != 1 {
 		t.Fatalf("rated watts: %d %v", len(rated), err)
 	}
-	resolver := programs.OEDIZIPResolver{DB: pool}
-	zip, err := resolver.ResolveZIPDetailed(ctx, "US", "78732")
-	if err != nil || len(zip.Scopes) != 2 {
-		t.Fatalf("ZIP scopes: %+v %v", zip, err)
-	}
-	discovery, err := (programs.DiscoveryRunner{DB: pool, Resolver: resolver}).Run(ctx, programs.DiscoveryRequest{CountryCode: "US", PostalCode: "78732", Category: "heat_pump"})
-	if err != nil || discovery.RunID == uuid.Nil {
-		t.Fatalf("Datawiz ZIP discovery: %+v %v", discovery, err)
-	}
-	var discoveryProvenance []byte
-	if err = pool.QueryRow(ctx, `SELECT resolution_provenance FROM program_discovery_runs WHERE id=$1`, discovery.RunID).Scan(&discoveryProvenance); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(discoveryProvenance), `"datawiz_offer_candidate_count": 1`) && !strings.Contains(string(discoveryProvenance), `"datawiz_offer_candidate_count":1`) {
-		t.Fatalf("discovery offers missing: %s", discoveryProvenance)
-	}
 	rate := energyrate.NewService(energyrate.Options{Research: &datawizfacts.Store{DB: pool}, Static: energyrate.StaticRate{USDPerKWh: 0.15, AsOf: time.Now()}})
 	resolved, err := rate.Resolve(ctx, "US", "78732")
 	if err != nil || len(resolved.ResearchFacts) != 3 || resolved.RateUSDPerKWh == 0.12 {

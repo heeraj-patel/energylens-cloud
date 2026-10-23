@@ -9,14 +9,14 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 - `internal/account` (OIDC verifier, local auth, homes, prefs, deletion, dev auth), `hubtrust` (enroll, claim, certs, epochs),
   `sensors`/`attachments`/`telemetry`/`kasaruntime` (hub sync + owner reads), `meteredhistory|summary|export|rollup`,
   `householdenergy` (dashboard, trends), `catalog`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
-  `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs` (+OEDI, source probe),
+  `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs`,
   `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `designfixture`, `helpexport`, `migrate`, `apierror`.
 - `migrations/` embedded SQL 0016..0094 (0055 unused; 0091 reserved) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
 ## Build / test (verified 2026-10-16)
 - `go build ./...` passes (needs module download on first run).
-- `go test ./...` passes; OEDI ZIP tests read `internal/programs/testdata/`.
+- `go test ./...` passes.
 - Postgres integration tests skip unless `ENERGYLENS_CLOUD_TEST_DATABASE_URL` is set.
 - Deploy build: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/energylens-cloud ./cmd/energylens-cloud`.
 
@@ -43,8 +43,8 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 - Auth: OIDC (`..._OIDC_ISSUER`, `_AUDIENCE`, `_JWKS_URL`, RS256), local (`..._LOCAL_AUTH_*`: ENABLED, ACTIVE_KEY_ID,
   PRIVATE_KEY_FILE, PUBLIC_KEY_FILES JSON, AUDIENCE, RUNTIME_LOCAL_AUTH_AUDIENCE, LINK_ORIGIN, *_RATE_KEY_FILE, MAIL_ENABLED,
   RESEND_API_KEY/FROM, TRUSTED_PROXY_CIDRS), legacy `..._DEV_AUTH_*`. Production API needs OIDC or enabled local auth.
-- Optional jobs/features all default off: METERED_ROLLUP, PROGRAM_REFRESH (+OEDI CSV/SHA vars), PROGRAM_SOURCE_PROBE, REPORT_*,
-  ACCOUNT_DELETION (non-prod), SAMPLE_FIXTURES (dev/test only, allowlists), DATAWIZ_REQUESTS_DIR. EIA rates are read from `energy_rate_cache`/`gas_rate_cache`, which Datawiz `load-energy-rates` writes.
+- Optional jobs/features all default off: METERED_ROLLUP, REPORT_*,
+  ACCOUNT_DELETION (non-prod), SAMPLE_FIXTURES (dev/test only, allowlists), DATAWIZ_REQUESTS_DIR. Program refresh runs in Datawiz (`program-refresh`); Cloud only enqueues jobs. EIA rates are read from `energy_rate_cache`/`gas_rate_cache`, which Datawiz `load-energy-rates` writes.
 
 ## Auth modes
 - `RUNTIME_ENV=local`: username/password. `/v1/auth/config` -> methods `["username_password"]`; no email, OIDC or mail allowed

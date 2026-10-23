@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/migrations"
@@ -112,25 +111,6 @@ func TestRefreshOwnerScopeCoalescingAndFailure(t *testing.T) {
 	}
 	if _, err = store.Enqueue(ctx, owner[0], home[0], appliance[1], key); !errors.Is(err, ErrOwnerHomeNotFound) {
 		t.Fatalf("foreign appliance: %v", err)
-	}
-	// A pending refresh cannot displace the last finished coverage run.
-	old, err := (DiscoveryRunner{DB: pool, Resolver: fixedZIPResolver{scopes: []Scope{{Kind: "state", Key: "TX", Name: "Texas"}}}}).Run(ctx, DiscoveryRequest{CountryCode: "US", PostalCode: "78732", Category: "washer"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, err := (PGOwnerStore{Pool: pool}).List(ctx, owner[0], home[0], appliance[0], time.Now().UTC())
-	if err != nil || page.Coverage == nil || page.Coverage.RunID != old.RunID.String() {
-		t.Fatalf("pending displaced coverage: %+v %v", page.Coverage, err)
-	}
-	consumed, err := (RefreshWorker{DB: pool, Resolver: fixedZIPResolver{err: errors.New("resolver failed")}}).RunOnce(ctx)
-	if err != nil || !consumed {
-		t.Fatalf("worker: %v %v", consumed, err)
-	}
-	for i, request := range []RefreshStatus{first, second} {
-		status, err := store.Status(ctx, owner[i], home[i], request.RequestID)
-		if err != nil || status.State != "failed" || status.FinishedAt == nil || status.Coverage == nil || status.Coverage.State != "failed" {
-			t.Fatalf("failed status %d: %+v %v", i, status, err)
-		}
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,2,'US','78733','postal_code','user_entered')`, home[0]); err != nil {
 		t.Fatal(err)

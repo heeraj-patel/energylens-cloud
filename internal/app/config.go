@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -13,10 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"energylens.local/cloud/internal/account"
-	"energylens.local/cloud/internal/programs"
 	"energylens.local/cloud/internal/reports"
 	"energylens.local/cloud/internal/weather"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -78,13 +75,6 @@ type Config struct {
 	LocalAuthLoginKey            string
 	LocalAuthRecoveryKey         string
 	DatawizRequestsDir           string
-	ProgramRefreshEnabled        bool
-	ProgramSourceProbeEnabled    bool
-	OEDIIOUPath                  string
-	OEDINonIOUPath               string
-	OEDIIOUSHA256                string
-	OEDINonIOUSHA256             string
-	OEDIRetrievedAt              time.Time
 }
 
 func LoadConfig(role string) (Config, error) {
@@ -103,29 +93,7 @@ func LoadConfig(role string) (Config, error) {
 		DevAuthEmail: os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_EMAIL"), DevAuthPassword: os.Getenv("ENERGYLENS_CLOUD_DEV_AUTH_PASSWORD"),
 		SampleFixtureUserIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_USER_IDS"),
 		SampleFixtureHomeIDs: os.Getenv("ENERGYLENS_CLOUD_SAMPLE_FIXTURE_HOME_IDS"),
-		OEDIIOUPath:          os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_CSV"), OEDINonIOUPath: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_CSV"), OEDIIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_IOU_SHA256"), OEDINonIOUSHA256: os.Getenv("ENERGYLENS_CLOUD_OEDI_NON_IOU_SHA256"),
 		DatawizRequestsDir: os.Getenv("ENERGYLENS_CLOUD_DATAWIZ_REQUESTS_DIR"),
-	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED"); raw != "" {
-		enabled, err := strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_PROGRAM_REFRESH_ENABLED: %w", err)
-		}
-		c.ProgramRefreshEnabled = enabled
-	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_PROGRAM_SOURCE_PROBE_ENABLED"); raw != "" {
-		enabled, err := strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid ENERGYLENS_CLOUD_PROGRAM_SOURCE_PROBE_ENABLED: %w", err)
-		}
-		c.ProgramSourceProbeEnabled = enabled
-	}
-	if raw := os.Getenv("ENERGYLENS_CLOUD_OEDI_RETRIEVED_AT"); raw != "" {
-		parsed, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("invalid OEDI retrieval timestamp: %w", err)
-		}
-		c.OEDIRetrievedAt = parsed.UTC()
 	}
 	if raw := os.Getenv("ENERGYLENS_CLOUD_METERED_ROLLUP_ENABLED"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
@@ -368,26 +336,6 @@ func (c Config) Validate() error {
 		}
 	} else if c.LocalAuthEnabled && c.RuntimeEnvironment != "local" {
 		return errors.New("local auth requires API role")
-	}
-	if c.ProgramSourceProbeEnabled && !c.ProgramRefreshEnabled {
-		return errors.New("program source probe requires program refresh")
-	}
-	if c.ProgramRefreshEnabled {
-		if c.Role != RoleWorker && c.Role != RoleAll {
-			return errors.New("program refresh requires worker or all role")
-		}
-		if c.DatabaseURL == "" || c.OEDIIOUPath == "" || c.OEDINonIOUPath == "" || c.OEDIIOUSHA256 == "" || c.OEDINonIOUSHA256 == "" || c.OEDIRetrievedAt.IsZero() {
-			return errors.New("program refresh requires database and both full OEDI CSVs with SHA-256 and retrieval time")
-		}
-		if !filepath.IsAbs(c.OEDIIOUPath) || !filepath.IsAbs(c.OEDINonIOUPath) || filepath.Base(c.OEDIIOUPath) != "iou_zipcodes_2024.csv" || filepath.Base(c.OEDINonIOUPath) != "non_iou_zipcodes_2024.csv" {
-			return errors.New("program refresh requires absolute full OEDI CSV paths")
-		}
-		// Validate both complete operator files before starting a worker that
-		// could otherwise claim private requests and fail every lookup.
-		resolver := programs.OEDIZIPResolver{IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}
-		if _, err := resolver.ResolveZIPDetailed(context.Background(), "US", "00000"); err != nil {
-			return fmt.Errorf("invalid OEDI program refresh files: %w", err)
-		}
 	}
 	if c.MeteredRollupEnabled {
 		if c.Role != RoleWorker && c.Role != RoleAll {

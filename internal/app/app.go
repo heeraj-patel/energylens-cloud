@@ -395,7 +395,7 @@ func Serve(ctx context.Context, c Config) error {
 	var stopWorker context.CancelFunc
 	var workerDone <-chan struct{}
 	ratePlanSweep := rt.Pool != nil && c.Role != RoleAPI
-	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.ProgramRefreshEnabled || c.DatawizRequestsDir != "" || ratePlanSweep {
+	if c.MeteredRollupEnabled || c.KasaRuntimeRetentionEnabled || c.ReportRetentionEnabled || c.ReportDeliveryEnabled || c.DatawizRequestsDir != "" || ratePlanSweep {
 		workerCtx, cancel := context.WithCancel(ctx)
 		stopWorker = cancel
 		done := make(chan struct{})
@@ -433,18 +433,6 @@ func Serve(ctx context.Context, c Config) error {
 				go func() {
 					defer close(finished)
 					runReportDeliveries(workerCtx, reports.DeliveryWorker{DB: rt.Pool, Provider: reportProvider, Enabled: true}, reportDeliveryInterval)
-				}()
-			}
-			if c.ProgramRefreshEnabled {
-				finished := make(chan struct{})
-				jobs = append(jobs, finished)
-				go func() {
-					defer close(finished)
-					worker := programs.RefreshWorker{DB: rt.Pool, Resolver: programs.OEDIZIPResolver{DB: rt.Pool, IOUPath: c.OEDIIOUPath, NonIOUPath: c.OEDINonIOUPath, IOUSHA256: c.OEDIIOUSHA256, NonIOUSHA256: c.OEDINonIOUSHA256, RetrievedAt: c.OEDIRetrievedAt}}
-					if c.ProgramSourceProbeEnabled {
-						worker.Probe = programs.HTTPSPageProbe{}
-					}
-					runProgramRefreshes(workerCtx, worker, 5*time.Second)
 				}()
 			}
 			if c.DatawizRequestsDir != "" {

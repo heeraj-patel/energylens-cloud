@@ -343,3 +343,10 @@ func TestStructuredApplicabilityRejectsAmbiguousScope(t *testing.T) {
 		}
 	}
 }
+
+func nullableText(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
