@@ -22,11 +22,13 @@ import (
 )
 
 type Service struct {
-	Store     Store
-	Signer    tls.Certificate
-	Auth      func(http.Handler) http.Handler
-	UserID    func(*http.Request) string
-	SessionID func(*http.Request) string
+	Store         Store
+	Signer        tls.Certificate
+	Auth          func(http.Handler) http.Handler
+	UserID        func(*http.Request) string
+	SessionID     func(*http.Request) string
+	Pairing       *PairingDirectory
+	PairingSource func(*http.Request) (string, error)
 }
 type apiError struct {
 	Code      string         `json:"code"`
@@ -71,6 +73,7 @@ func uuidOK(s string) bool {
 	return e == nil && id.String() == strings.ToLower(s)
 }
 func (s Service) AccountRoutes(r chi.Router) {
+	r.With(s.Auth).Post("/homes/{home}/hub-pairings/resolve", s.resolvePairingCode)
 	r.With(s.Auth).Post("/homes/{home}/hub-claims", s.begin)
 	r.With(s.Auth).Get("/homes/{home}/hubs", s.listOwner)
 	r.With(s.Auth).Post("/hubs/claim", s.finish)
@@ -96,6 +99,7 @@ func (s Service) listOwner(w http.ResponseWriter, r *http.Request) {
 }
 func (s Service) EnrollmentRoutes(r chi.Router) { r.Post("/hubs/{hub}/enroll", s.enroll) }
 func (s Service) HubRoutes(r chi.Router) {
+	r.Put("/hubs/{hub}/pairing-code", s.publishPairingCode)
 	r.Post("/hubs/{hub}/certificate", s.renew)
 	r.Get("/hubs/{hub}/ownership", s.ownership)
 	r.Put("/hubs/{hub}/connection", s.publishConnection)
@@ -265,6 +269,10 @@ func (s Service) begin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, e := s.Store.Begin(r.Context(), s.UserID(r), home, in.LocalHubID, key)
+	if errors.Is(e, ErrConflict) {
+		fail(w, 409, "claim_conflict")
+		return
+	}
 	if errors.Is(e, ErrNotFound) {
 		fail(w, 404, "not_found")
 		return

@@ -38,6 +38,7 @@ type Config struct {
 	HubCAFile                    string
 	HubSignCertFile              string
 	HubSignKeyFile               string
+	HubPairingKeyFile            string
 	DatabaseURL                  string
 	WeatherOpenMeteoAPIKey       string
 	WeatherCoarseCells           string
@@ -83,6 +84,7 @@ func LoadConfig(role string) (Config, error) {
 		Role: Role(strings.TrimSpace(role)), Environment: strings.TrimSpace(os.Getenv("ENERGYLENS_CLOUD_ENV")),
 		APIListen: os.Getenv("ENERGYLENS_CLOUD_BIND"), HubListen: os.Getenv("ENERGYLENS_CLOUD_HUB_BIND"),
 		HubCertFile: os.Getenv("ENERGYLENS_CLOUD_TLS_CERT"), HubKeyFile: os.Getenv("ENERGYLENS_CLOUD_TLS_KEY"), HubCAFile: os.Getenv("ENERGYLENS_CLOUD_HUB_CLIENT_CA"), HubSignCertFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_CERT"), HubSignKeyFile: os.Getenv("ENERGYLENS_CLOUD_HUB_SIGN_KEY"),
+		HubPairingKeyFile:      os.Getenv("ENERGYLENS_CLOUD_HUB_PAIRING_KEY_FILE"),
 		DatabaseURL:            os.Getenv("ENERGYLENS_CLOUD_DATABASE_URL"),
 		WeatherOpenMeteoAPIKey: os.Getenv("ENERGYLENS_CLOUD_OPEN_METEO_API_KEY"), WeatherCoarseCells: os.Getenv("ENERGYLENS_CLOUD_WEATHER_COARSE_CELLS"),
 		WeatherUserAgent: strings.TrimSpace(os.Getenv("ENERGYLENS_CLOUD_WEATHER_USER_AGENT")),
@@ -278,6 +280,16 @@ func (c Config) Validate() error {
 	}
 	if c.APIListen == "" {
 		return errors.New("API listen address required")
+	}
+	if c.HubPairingKeyFile != "" {
+		if !filepath.IsAbs(c.HubPairingKeyFile) {
+			return errors.New("Hub pairing key path must be absolute")
+		}
+		for _, other := range []string{c.LocalAuthPrivateKey, c.HubSignKeyFile, c.LocalAuthRegisterKey, c.LocalAuthLoginKey, c.LocalAuthRecoveryKey, c.MeteredExportCursorKeyFile, c.MeteredExportPreviousKeyFile} {
+			if c.HubPairingKeyFile == other {
+				return errors.New("Hub pairing key must use a dedicated file")
+			}
+		}
 	}
 	if c.MeteredExportPreviousKeyFile != "" && c.MeteredExportCursorKeyFile == "" {
 		return errors.New("metered export previous cursor key requires active key")

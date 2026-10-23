@@ -138,6 +138,41 @@ func TestHubTrustTransaction(t *testing.T) {
 	if got.HubID != id || got.HomeID != home || got.Epoch != 2 {
 		t.Fatalf("bad ownership: %+v", got)
 	}
+	var otherHome string
+	if e = pool.QueryRow(ctx, `INSERT INTO homes(owner_user_id,name,timezone) VALUES($1,'Other home','America/Chicago') RETURNING id`, other).Scan(&otherHome); e != nil {
+		t.Fatal(e)
+	}
+	for _, attempt := range []struct {
+		name, user, target string
+		status             int
+	}{
+		{"same home", owner, home, 409},
+		{"different account home", other, otherHome, 409},
+		{"unauthorized home", other, home, 404},
+	} {
+		t.Run("begin owned Hub "+attempt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/homes/"+attempt.target+"/hub-claims", strings.NewReader(`{"local_hub_id":"elhub_unit"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", uuid.NewString())
+			rec := httptest.NewRecorder()
+			router := chi.NewRouter()
+			router.Route("/v1", (Service{Store: s, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return attempt.user }}).AccountRoutes)
+			router.ServeHTTP(rec, req)
+			if rec.Code != attempt.status || (rec.Code == 409 && !strings.Contains(rec.Body.String(), `"claim_conflict"`)) {
+				t.Fatalf("begin response: %d %s", rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), home) || strings.Contains(rec.Body.String(), owner) {
+				t.Fatal("begin conflict disclosed current ownership")
+			}
+		})
+	}
+	var claimCount int
+	if e = pool.QueryRow(ctx, `SELECT count(*) FROM hub_claims WHERE hub_id=$1`, id).Scan(&claimCount); e != nil || claimCount != 1 {
+		t.Fatalf("owned Hub attempts created challenges: count=%d error=%v", claimCount, e)
+	}
+	if replay, err := s.Begin(ctx, owner, home, "elhub_unit", beginKey); err != nil || replay.ClaimID != c.ClaimID {
+		t.Fatalf("original begin lost idempotent replay: %v", err)
+	}
 	ownerHubs, e := s.ListOwner(ctx, owner, home)
 	if e != nil || len(ownerHubs) != 1 || ownerHubs[0] != got {
 		t.Fatalf("owner hub readback: %+v %v", ownerHubs, e)

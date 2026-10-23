@@ -67,6 +67,36 @@ After applying migration 0074, a claimed Hub can publish its current RFC1918 IPv
 
 An authenticated account owner begins a claim for one of their homes. The hub's authenticated local pairing channel issues a random possession proof and signs the challenge with its registered Ed25519 key. Cloud verifies the signature, proof hash, owner and expiry before atomically consuming the challenge and assigning the hub. The first claim advances epoch 1 to 2; unclaim advances the epoch again and revokes certificates. A newly claimed hub can use its still valid preclaim certificate once to renew at the new epoch. Claim, finish and unclaim mutations require UUID `Idempotency-Key` headers, and unclaim requires the current strong version `If-Match` value.
 
+Six-character pairing uses migration 0098 and the optional
+`ENERGYLENS_CLOUD_HUB_PAIRING_KEY_FILE`: a dedicated, service-owned, mode-0600
+regular file containing 32 random binary bytes. Provision this file separately
+from auth, signing and export keys; preserve it across API restarts. The existing
+private-key loader enforces permissions and ownership. Changing it invalidates
+outstanding codes, so generate fresh codes after deliberate rotation.
+
+An unclaimed Hub publishes its six-character Crockford Base32 code, private LAN
+HTTPS origin, leaf pin, existing 256-bit enrollment secret and fixed expiry over
+current Hub mTLS. Cloud retains a keyed code hash and AES-GCM-encrypted enrollment
+secret, with separate derived keys/domains and Hub/publication/expiry binding.
+The owner resolver requires an authenticated session ID, owned home, installation
+UUID and `Idempotency-Key`; keep the installation and operation unchanged for an
+uncertain retry. One publication is reserved atomically to that tuple, and each
+retry rechecks expiry, certificate, revocation and unclaimed ownership. Responses
+are `no-store`; never log request or response bodies on these routes. The existing
+local pairing and signed ownership-claim protocol follows resolution.
+
+The pilot directory permits at most 100 live codes, fixed to no more than 15
+minutes and bounded by the publishing certificate. Durable 15-minute lookup
+budgets are 5 per account, 20 per trusted source, and 100 globally; malformed
+authenticated requests also count. Source parsing reuses the local-auth trusted
+proxy policy. The global cap is intentional for the 30-bit code space and must
+be reviewed with the live-code cap before increasing deployment scale. All
+unknown, expired, replaced and differently reserved codes return the same 404.
+No lookup transfers a Hub or relaxes the owned-Hub connection-directory rules.
+Existing local pairing/proof response loss can still require a fresh enrollment
+or challenge; rendezvous replay does not make the underlying one-use exchange
+replayable.
+
 Claimed-Hub customer access also uses `POST /v1/hubs/{hub}/owner-authorizations`:
 the Hub presents its current mTLS certificate and forwards the owner's bearer
 session with `{home_id}`. This exchange currently requires a live local username
