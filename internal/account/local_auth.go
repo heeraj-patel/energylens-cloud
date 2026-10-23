@@ -100,7 +100,7 @@ func NormalizeLocalEmail(raw string) (string, error) {
 }
 
 func validPassword(password string) bool {
-	return len(password) >= 8 && len(password) <= 1024 && utf8.ValidString(password) && !strings.ContainsRune(password, 0)
+	return len(password) <= 1024 && utf8.ValidString(password) && utf8.RuneCountInString(password) >= 8 && !strings.ContainsRune(password, 0)
 }
 
 // HashLocalPassword stores only a bounded Argon2id PHC string. The password

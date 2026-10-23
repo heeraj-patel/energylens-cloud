@@ -13,15 +13,15 @@ import (
 )
 
 func TestLocalPasswordHashAndBounds(t *testing.T) {
-	for _, password := range []string{"12345678", "éééé"} { // Eight UTF-8 bytes in either case.
+	for _, password := range []string{"12345678", "éééééééé", "🔐🔐🔐🔐🔐🔐🔐🔐"} {
 		stored, err := HashLocalPassword(password)
 		if err != nil || !VerifyLocalPassword(stored, password) {
-			t.Fatalf("eight-byte password rejected: %v", err)
+			t.Fatalf("eight-character password rejected: %v", err)
 		}
 	}
-	for _, password := range []string{"1234567", "éééa"} { // Seven UTF-8 bytes in either case.
+	for _, password := range []string{"1234567", "ééééééé", "🔐🔐🔐🔐🔐🔐🔐"} {
 		if _, err := HashLocalPassword(password); !errors.Is(err, ErrInvalidCredential) {
-			t.Fatalf("seven-byte password accepted: %v", err)
+			t.Fatalf("seven-character password accepted: %v", err)
 		}
 	}
 	stored, err := HashLocalPassword("correct long password")

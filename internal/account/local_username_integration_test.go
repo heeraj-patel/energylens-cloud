@@ -318,6 +318,7 @@ func TestUsernameHTTPStrictDispatch(t *testing.T) {
 		map[string]string{"username": "alice", "password": "correct long password", "issuer": LocalUsernameIssuer},
 		map[string]string{"username": "a b", "password": "correct long password"},
 		map[string]string{"username": "alice", "password": "1234567"},
+		map[string]string{"username": "alice", "password": "ééééééé"},
 	} {
 		if w := post("/v1/auth/local/registration", body); w.Code != 400 {
 			t.Fatalf("invalid registration %d %s", w.Code, w.Body.String())
@@ -325,6 +326,15 @@ func TestUsernameHTTPStrictDispatch(t *testing.T) {
 	}
 	if w := post("/v1/auth/local/registration", map[string]string{"username": "alice", "password": "12345678"}); w.Code != 201 || !strings.Contains(w.Body.String(), `"account_created"`) {
 		t.Fatalf("registration %d %s", w.Code, w.Body.String())
+	}
+	if w := post("/v1/auth/local/registration", map[string]string{"username": "unicode", "password": "éééééééé"}); w.Code != 201 {
+		t.Fatalf("eight-character registration %d %s", w.Code, w.Body.String())
+	}
+	if w := post("/v1/auth/local/login", map[string]string{"username": "unicode", "password": "éééééééé"}); w.Code != 200 {
+		t.Fatalf("eight-character login %d %s", w.Code, w.Body.String())
+	}
+	if w := post("/v1/auth/local/login", map[string]string{"username": "unicode", "password": "ééééééé"}); w.Code != 400 {
+		t.Fatalf("seven-character login %d", w.Code)
 	}
 	if w := post("/v1/auth/local/registration", map[string]string{"username": "ALICE", "password": "12345678"}); w.Code != 409 {
 		t.Fatalf("collision %d %s", w.Code, w.Body.String())
@@ -351,13 +361,14 @@ func TestUsernameHTTPStrictDispatch(t *testing.T) {
 		t.Fatalf("login %d %s", w.Code, w.Body.String())
 	}
 	if w := post("/v1/auth/local/login", map[string]string{"username": "alice", "password": "1234567"}); w.Code != 400 {
-		t.Fatalf("seven-byte login %d", w.Code)
+		t.Fatalf("seven-character login %d", w.Code)
 	}
 	for _, body := range []any{
 		map[string]string{"email": "alice@example.test", "password": "another long password"},
 		map[string]string{"token": strings.Repeat("a", 43), "password": "another long password"},
 		map[string]string{"username": "alice", "password": "another long password", "email": "alice@example.test"},
 		map[string]string{"username": "alice", "password": "1234567"},
+		map[string]string{"username": "alice", "password": "ééééééé"},
 	} {
 		if w := post("/v1/auth/local/reset-password", body); w.Code != 400 {
 			t.Fatalf("invalid reset %d %s", w.Code, w.Body.String())
@@ -369,12 +380,18 @@ func TestUsernameHTTPStrictDispatch(t *testing.T) {
 	if w := post("/v1/auth/local/reset-password", map[string]string{"username": "ALICE", "password": "abcdefgh"}); w.Code != 204 {
 		t.Fatalf("username reset %d %s", w.Code, w.Body.String())
 	}
+	if w := post("/v1/auth/local/reset-password", map[string]string{"username": "unicode", "password": "🔐🔐🔐🔐🔐🔐🔐🔐"}); w.Code != 204 {
+		t.Fatalf("eight-character reset %d %s", w.Code, w.Body.String())
+	}
+	if w := post("/v1/auth/local/login", map[string]string{"username": "unicode", "password": "🔐🔐🔐🔐🔐🔐🔐🔐"}); w.Code != 200 {
+		t.Fatalf("reset login %d %s", w.Code, w.Body.String())
+	}
 	if w := post("/v1/auth/local/login", map[string]string{"username": "alice", "password": "abcdefgh"}); w.Code != 200 {
 		t.Fatalf("reset login %d %s", w.Code, w.Body.String())
 	}
 }
 
-func TestUsernamePasswordChangeEightByteBoundary(t *testing.T) {
+func TestUsernamePasswordChangeEightCharacterBoundary(t *testing.T) {
 	pool, _ := usernameTestDatabase(t, false)
 	ctx := context.Background()
 	registration, login, _ := usernameServices(t, pool)
@@ -387,15 +404,18 @@ func TestUsernamePasswordChangeEightByteBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := login.ChangePassword(ctx, userID, "12345678", "1234567", "192.0.2.2", now); !errors.Is(err, ErrInvalidCredential) {
-		t.Fatalf("seven-byte change status: %v", err)
+		t.Fatalf("seven-character change status: %v", err)
 	}
-	if err := login.ChangePassword(ctx, userID, "12345678", "abcdefgh", "192.0.2.3", now); err != nil {
-		t.Fatalf("eight-byte change rejected: %v", err)
+	if err := login.ChangePassword(ctx, userID, "12345678", "ééééééé", "192.0.2.3", now); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("seven-character Unicode change status: %v", err)
+	}
+	if err := login.ChangePassword(ctx, userID, "12345678", "éééééééé", "192.0.2.3", now); err != nil {
+		t.Fatalf("eight-character change rejected: %v", err)
 	}
 	if _, err := login.Login(ctx, "boundary-owner", "12345678", "192.0.2.4", now); !errors.Is(err, ErrInvalidCredential) {
 		t.Fatalf("old password accepted: %v", err)
 	}
-	if _, err := login.Login(ctx, "boundary-owner", "abcdefgh", "192.0.2.5", now); err != nil {
+	if _, err := login.Login(ctx, "boundary-owner", "éééééééé", "192.0.2.5", now); err != nil {
 		t.Fatalf("changed password login rejected: %v", err)
 	}
 }
