@@ -158,13 +158,7 @@ func (s Service) record(w http.ResponseWriter, r *http.Request) {
 		if appliance.ID != event.ApplianceID {
 			continue
 		}
-		var actions []Action
-		if r.URL.Query().Get("capability") == "gas_dryer_recommendations_v1" {
-			actions = EvaluateGasEnabled(appliance)
-		} else {
-			actions = Evaluate(appliance)
-		}
-		for _, action := range actions {
+		for _, action := range EvaluatorFor(r.URL.Query().Get("capability"))(appliance) {
 			if action.RuleID == event.RuleID && action.RuleVersion == event.RuleVersion && (action.State == "active" || (action.State == "candidate" && (event.State == "snoozed" || event.State == "dismissed"))) {
 				eligible = true
 			}

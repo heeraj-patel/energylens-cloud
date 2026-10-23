@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,5 +154,42 @@ func TestGasRuleRequiresExplicitRequestCapability(t *testing.T) {
 	action := request("?capability=gas_dryer_recommendations_v1")
 	if action.RuleID != "dryer.gas_cycle_options" || action.State != "active" || len(action.EvidenceRefs) != 3 || action.SavingsAmount != nil {
 		t.Fatalf("gas action: %+v", action)
+	}
+}
+
+type recordStore struct {
+	*stubStore
+	recorded []LifecycleEvent
+}
+
+func (s *recordStore) Latest(context.Context, string, string) (map[string]LifecycleEvent, error) {
+	return map[string]LifecycleEvent{}, nil
+}
+func (s *recordStore) Replay(context.Context, string, string, string) (*LifecycleEvent, error) {
+	return nil, nil
+}
+func (s *recordStore) Record(_ context.Context, _, _, _ string, e LifecycleEvent) (LifecycleEvent, error) {
+	s.recorded = append(s.recorded, e)
+	return e, nil
+}
+
+func TestRecordUsesCapabilityRuleVocabulary(t *testing.T) {
+	id := uuid.NewString()
+	store := &recordStore{stubStore: &stubStore{appliances: []Appliance{{ID: id, Category: "furnace", Fuel: "natural_gas", Identity: "unresolved"}}}}
+	r := chi.NewRouter()
+	Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return "owner" }}.Routes(r)
+	post := func(query string) int {
+		body := `{"appliance_id":"` + id + `","rule_id":"furnace.gas_efficiency_check","rule_version":1,"state":"dismissed"}`
+		req := httptest.NewRequest(http.MethodPost, "/homes/"+uuid.NewString()+"/recommendation-events"+query, strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", uuid.NewString())
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post("?capability=gas_appliance_recommendations_v1"); code != 200 || len(store.recorded) != 1 {
+		t.Fatalf("gas appliance capability: %d recorded %d", code, len(store.recorded))
+	}
+	if code := post(""); code != http.StatusConflict {
+		t.Fatalf("legacy capability: %d", code)
 	}
 }
