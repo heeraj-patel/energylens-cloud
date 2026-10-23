@@ -341,6 +341,7 @@ func TestPropaneHeatingKeepsBtuWithoutThermsOrCost(t *testing.T) {
 	near(t, "btu", e.AnnualFuelBtu, 58240000, 1e-3)
 	isNil(t, "therms", e.GasTherms)
 	isNil(t, "gas kWh-eq", e.GasKWhEq)
+	near(t, "gallons", e.AnnualFuelGallon, 58240000/91452.0, 1e-6)
 	near(t, "total is electric only", e.TotalKWhEq, 96.36, 1e-9)
 }
 

@@ -21,6 +21,7 @@ const (
 	typicalStorageKWh     = 29.0   // CEC MAEDbS gas storage median, 116 rows
 	btuPerKWh             = 3412.0 // 10 CFR 430 Appendix D2 4.4, Appendix E 6.3.5
 	btuPerTherm           = 100000.0
+	btuPerPropaneGallon   = 91452.0 // EIA propane heat content
 	kWhEqPerTherm         = 29.31 // 100,000 / 3,412
 	standbyHoursPerYear   = 8.76  // thousand h: (4,160 - BOH) + 4,600 h is below 8,760 (Appendix N 10.11)
 	waterDensityLbPerGal  = 8.24  // 10 CFR 430 Appendix E 6.3.9
@@ -265,6 +266,9 @@ func (e *Estimate) setHeatingGas(in Input) {
 	btu := *btuH * *hours * weeksPerYear * share
 	e.AnnualFuelBtu, e.GasBasis = ptr(btu), BasisRatedFact
 	e.setGas(in.Fuel, btu/btuPerTherm, 0)
+	if in.Fuel == "propane" {
+		e.AnnualFuelGallon = ptr(btu / btuPerPropaneGallon)
+	}
 }
 
 // setElectric uses the fact, else the typical when it is non-zero, else leaves nil.
