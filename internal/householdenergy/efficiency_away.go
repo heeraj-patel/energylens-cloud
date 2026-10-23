@@ -187,10 +187,10 @@ func awayCoveredShare(energyItems []interval, id string, b bucket, loc *time.Loc
 	return away.Quo(away, covered)
 }
 
-// awayComponent prices waste inside the default away block; a user schedule
-// is applied through awayComponentFor when the caller has loaded one.
+// awayComponent prices waste inside the home's saved away schedule, or the
+// default block when none is saved.
 func awayComponent(in componentInput) componentResult {
-	return awayComponentFor(in, nil)
+	return awayComponentFor(in, in.Away)
 }
 
 // awayComponentFor returns each metered device's waste cost inside the away

@@ -710,6 +710,26 @@ func TestOwnerLiveReadsAndPartialEvidence(t *testing.T) {
 	if series["totals"].(map[string]any)["cost"].(map[string]any)["amount"] != pricedTotals["cost"].(map[string]any)["amount"] {
 		t.Fatal("dashboard and trend cost do not reconcile")
 	}
+	awaySource := func() any {
+		code, r := get(mtdTrend, "owner")
+		eff, ok := r["efficiency_month_to_date"].(map[string]any)
+		if code != 200 || !ok {
+			t.Fatalf("measured MTD efficiency missing: %d %+v", code, r)
+		}
+		return eff["away_source"]
+	}
+	if got := awaySource(); got != "default_schedule" {
+		t.Fatalf("home without a schedule away_source = %v", got)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE home_preferences SET away_schedule='[{"days":["mon"],"start_local":"10:00","end_local":"12:00"}]'::jsonb WHERE home_id=$1`, home.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := awaySource(); got != "user_schedule" {
+		t.Fatalf("saved schedule away_source = %v", got)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE home_preferences SET away_schedule=NULL WHERE home_id=$1`, home.ID); err != nil {
+		t.Fatal(err)
+	}
 	// A correction must replace its earlier observation in both views. The
 	// corrected value also changes the priced allocation and snapshot identity.
 	correctedEnergy := 500.0

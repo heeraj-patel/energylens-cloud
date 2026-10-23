@@ -21,6 +21,7 @@ type componentInput struct {
 	Tariff     *marginalTariff
 	Metered    map[string]bool
 	Cost       money
+	Away       awaySchedule
 }
 
 // deviceAmount is one device's component cost; a nil Amount is null with Basis.
