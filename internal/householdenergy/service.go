@@ -423,6 +423,10 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		if err != nil {
 			return nil, err
 		}
+		habits, err := loadHabitCycles(ctx, tx, owner, home, p, now)
+		if err != nil {
+			return nil, err
+		}
 		var national *marginalTariff
 		if tariff == nil {
 			national = s.NationalRate.schedule(ctx)
@@ -432,7 +436,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		for _, r := range periodRows {
 			metered[r.ApplianceID] = true
 		}
-		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: selectedItems, Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered, Away: away}
+		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: selectedItems, Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered, Away: away, Habits: habits}
 		gas.decorate(buckets, realRows, periodRows)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)

@@ -22,6 +22,7 @@ type componentInput struct {
 	Metered    map[string]bool
 	Cost       money
 	Away       awaySchedule
+	Habits     []habitCycle
 }
 
 // deviceAmount is one device's component cost; a nil Amount is null with Basis.
