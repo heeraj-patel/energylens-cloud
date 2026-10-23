@@ -573,21 +573,20 @@ func TestMeteredGasBoilerUnmeasuredBucketsFallBackToRatedStandby(t *testing.T) {
 	}
 }
 
-func TestMeteredGasFurnaceGapBucketsUseTypicalStandby(t *testing.T) {
+// A furnace's typical electric use equals its typical standby, so ELR-072 leaves gap buckets unclassified.
+func TestMeteredGasFurnaceGapBucketsStayUnclassifiedWhenTypicalIsClamped(t *testing.T) {
 	est, _ := gasestimate.Compute(gasestimate.Input{Class: gasestimate.ClassFurnace, Fuel: "natural_gas"})
 	buckets, period := meteredGasFallback(t, est, func(int) allocation {
 		return allocation{Energy: &quantity{Value: "0.500000000000", Unit: "kWh"}, Cost: money{Amount: "0.091550", Currency: "USD"}, Availability: "partial", EvidenceBasis: "measured"}
 	})
 	for i := 10; i < 30; i++ {
 		a := buckets[i].DeviceAllocations[0].Allocation
-		if a.WasteBasis != "standby" || a.StandbyCost == nil || a.EvidenceBasis != "estimated" {
+		if a.Energy == nil || a.WasteEnergy != nil || a.UsefulEnergy != nil || a.WasteBasis != "" || a.StandbyCost != nil || a.EvidenceBasis != "estimated" {
 			t.Fatalf("gap bucket %d: %+v", i, a)
 		}
-		near(t, "bucket waste", ratFloat(a.WasteEnergy), 96.36/365, 1e-6)
 	}
 	p := period[0].Allocation
-	near(t, "period waste", ratFloat(p.WasteEnergy), 20*96.36/365, 1e-6)
-	if p.WasteBasis != "standby" || p.EvidenceBasis != "mixed" {
+	if p.WasteEnergy != nil || p.WasteBasis != "" || p.EvidenceBasis != "mixed" {
 		t.Fatalf("period marks: %+v", p)
 	}
 }
