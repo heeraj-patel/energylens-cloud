@@ -407,6 +407,7 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 	}
 	// Real appliance rows are derived from the same observations as the home
 	// total. A bucket with overlapping observations has no safe allocation.
+	var measuredIn *componentInput
 	if !seededTotals {
 		realRows, deviceWh := attributeDeviceBuckets(buckets, items, nil)
 		periodRows := sumDeviceAllocations(deviceWh, nil)
@@ -423,6 +424,11 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 			national = s.NationalRate.schedule(ctx)
 		}
 		applyMeasuredSplit(buckets, realRows, periodRows, items, selectedItems, specs, tariff, national)
+		metered := map[string]bool{}
+		for _, r := range periodRows {
+			metered[r.ApplianceID] = true
+		}
+		measuredIn = &componentInput{Loc: loc, Buckets: buckets, Items: items, Priced: selectedItems, Rows: realRows, Specs: specs, Tariff: tariff, Metered: metered}
 		gas.decorate(buckets, realRows, periodRows)
 		for i := range buckets {
 			buckets[i].DeviceAllocations = append(buckets[i].DeviceAllocations, realRows[i]...)
@@ -481,6 +487,16 @@ func (s Service) compute(ctx context.Context, owner, home, granularity, window s
 		efficiency = syntheticEfficiencyMonthToDate(a)
 	} else if window == "trailing_30_days" && seededTotals {
 		trailingEfficiency = syntheticEfficiencyTrailing30Days(a)
+	} else if measuredIn != nil && (window == "month_to_date" || window == "trailing_30_days") {
+		if cost, ok := a.Cost.(money); ok {
+			in := *measuredIn
+			in.DeviceRows, in.Cost = sampleDeviceRows, cost
+			if window == "month_to_date" {
+				efficiency = measuredEfficiencyMonthToDate(in)
+			} else {
+				trailingEfficiency = measuredEfficiencyTrailing30Days(in)
+			}
+		}
 	}
 	// Tariff eligibility can change as time passes, without a new tariff
 	// revision (for example, at source_as_of + the electricity max age). Include the

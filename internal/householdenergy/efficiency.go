@@ -1,6 +1,7 @@
 package householdenergy
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"sort"
@@ -22,6 +23,15 @@ type efficiencyMonthToDate struct {
 	ChartSegmentWidth     chartSegmentWidthPercent `json:"chart_segment_width_percent"`
 	WasteTimingBasis      string                   `json:"waste_timing_basis"`
 	EvidenceBasis         string                   `json:"evidence_basis"`
+	measured              *MeasuredEfficiency
+}
+
+func (e efficiencyMonthToDate) MarshalJSON() ([]byte, error) {
+	if e.measured != nil {
+		return e.measured.marshalWithCost("month_to_date_cost")
+	}
+	type plain efficiencyMonthToDate
+	return json.Marshal(plain(e))
 }
 
 // The rolling projection shares the same calculation, but names its cost for
@@ -39,6 +49,15 @@ type efficiencyTrailing30Days struct {
 	ChartSegmentWidth     chartSegmentWidthPercent `json:"chart_segment_width_percent"`
 	WasteTimingBasis      string                   `json:"waste_timing_basis"`
 	EvidenceBasis         string                   `json:"evidence_basis"`
+	measured              *MeasuredEfficiency
+}
+
+func (e efficiencyTrailing30Days) MarshalJSON() ([]byte, error) {
+	if e.measured != nil {
+		return e.measured.marshalWithCost("period_cost")
+	}
+	type plain efficiencyTrailing30Days
+	return json.Marshal(plain(e))
 }
 
 func syntheticEfficiencyTrailing30Days(total allocation) *efficiencyTrailing30Days {
