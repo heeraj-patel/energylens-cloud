@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"energylens.local/cloud/internal/catalog"
 	"energylens.local/cloud/internal/datawizfacts"
@@ -138,11 +141,12 @@ func writeFile(dir string, c candidate) error {
 
 // RunOnce finds new saved appliance identities and current US ZIPs. A new UUID
 // names every emitted file. Repeated worker scans are bounded and deduplicated.
-func (p Producer) RunOnce(ctx context.Context) (int, error) {
+func (p Producer) RunOnce(ctx context.Context) (count int, err error) {
 	if p.DB == nil || p.Dir == "" {
 		return 0, errors.New("Datawiz producer needs DB and requests directory")
 	}
-	count, err := p.drainQueue(ctx)
+	defer func() { p.notify(ctx, count) }()
+	count, err = p.drainQueue(ctx)
 	if err != nil {
 		return count, err
 	}
@@ -153,7 +157,7 @@ func (p Producer) RunOnce(ctx context.Context) (int, error) {
 	}
 	candidates, err := p.candidates(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("query Datawiz inputs: %w", err)
+		return count, fmt.Errorf("query Datawiz inputs: %w", err)
 	}
 	seen := map[string]bool{}
 	for _, c := range candidates {
@@ -180,6 +184,19 @@ func (p Producer) RunOnce(ctx context.Context) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+// notify wakes the Datawiz listener once all files of the pass are on disk.
+// A failed notify only logs; the Datawiz timer still processes the files.
+func (p Producer) notify(ctx context.Context, count int) {
+	if count <= 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if _, err := p.DB.Exec(ctx, `SELECT pg_notify('datawiz_requests', $1)`, strconv.Itoa(count)); err != nil {
+		slog.Warn("notify Datawiz requests failed", "count", count, "error", err)
+	}
 }
 
 func deref(s *string) string {

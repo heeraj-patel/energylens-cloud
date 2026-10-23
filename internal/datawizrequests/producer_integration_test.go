@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/democost/testfixture"
@@ -536,5 +537,64 @@ func TestProducerGasLinkWithoutFactsStillSendsDeviceLookup(t *testing.T) {
 	}
 	if found != 1 {
 		t.Fatalf("fact-less gas link device requests: got %d want 1", found)
+	}
+}
+
+func TestProducerNotifiesDatawizAfterFilesExist(t *testing.T) {
+	ctx, pool := testPool(t)
+	listener, err := pgx.Connect(ctx, os.Getenv("ENERGYLENS_CLOUD_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close(ctx)
+	if _, err = listener.Exec(ctx, `LISTEN datawiz_requests`); err != nil {
+		t.Fatal(err)
+	}
+	owner, home, appliance := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users(id) VALUES($1)`, []any{owner}},
+		{`INSERT INTO homes(id,owner_user_id,name,timezone) VALUES($1,$2,'Home','America/Chicago')`, []any{home, owner}},
+		{`INSERT INTO appliances(id,home_id,name,category,identity) VALUES($1,$2,'HVAC','hvac','{"brand":"Acme","full_model":"Heat-100"}')`, []any{appliance, home}},
+	} {
+		if _, err = pool.Exec(ctx, q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := t.TempDir()
+	p := Producer{DB: pool, Dir: dir}
+	done := make(chan error, 1)
+	go func() { _, err := p.RunOnce(ctx); done <- err }()
+	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	n, err := listener.WaitForNotification(waitCtx)
+	if err != nil {
+		t.Fatalf("no notify: %v", err)
+	}
+	for _, route := range []string{"resolve", "device"} {
+		if paths, _ := filepath.Glob(filepath.Join(dir, route, "*.json")); len(paths) != 1 {
+			t.Fatalf("%s files at notify time: %d", route, len(paths))
+		}
+	}
+	if n.Payload == "" || n.Payload == "0" {
+		t.Fatalf("payload %q", n.Payload)
+	}
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	quiet, cancelQuiet := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancelQuiet()
+	if extra, err := listener.WaitForNotification(quiet); err == nil {
+		t.Fatalf("second notify in first pass: %q", extra.Payload)
+	}
+	if count, err := p.RunOnce(ctx); err != nil || count != 0 {
+		t.Fatalf("repeat pass: %d %v", count, err)
+	}
+	quiet2, cancelQuiet2 := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancelQuiet2()
+	if extra, err := listener.WaitForNotification(quiet2); err == nil {
+		t.Fatalf("notify for empty pass: %q", extra.Payload)
 	}
 }
