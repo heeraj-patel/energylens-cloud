@@ -151,7 +151,7 @@ func TestMeasuredEfficiencyDevicesAndHomeSum(t *testing.T) {
 	if eff.WasteBasis != "estimated" || eff.WasteOpportunity.Amount != "0.500480" {
 		t.Fatalf("waste = %+v basis %s", eff.WasteOpportunity, eff.WasteBasis)
 	}
-	if eff.AwayOpportunity != nil || eff.AwayBasis != "not_configured" || eff.AwaySource != "none" ||
+	if eff.AwayOpportunity == nil || eff.AwayOpportunity.Amount != "0.000000" || eff.AwayBasis != "estimated" || eff.AwaySource != "default_schedule" ||
 		eff.PeakRatesOpportunity != nil || eff.PeakRatesBasis != "flat_tariff" ||
 		eff.HabitsOpportunity != nil || eff.HabitsBasis != "insufficient_data" {
 		t.Fatalf("stub components = %+v", eff)

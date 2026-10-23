@@ -262,7 +262,7 @@ func TestAccountHomesFreshAndUpgrade(t *testing.T) {
 				t.Fatalf("home preference patch = %+v %v", changedPref, err)
 			}
 			replayPref, err := prefs.PatchHomePreferences(ctx, a.ID, home.ID, HomePreferencesPatch{Goal: &goal}, 1, prefKey, prefHash[:])
-			if err != nil || replayPref != changedPref {
+			if err != nil || !reflect.DeepEqual(replayPref, changedPref) {
 				t.Fatalf("home preference replay = %+v %v", replayPref, err)
 			}
 			if _, err = prefs.PatchHomePreferences(ctx, a.ID, home.ID, HomePreferencesPatch{Goal: &goal}, 1, prefKey, otherHash[:]); !errors.Is(err, ErrKeyReuse) {
