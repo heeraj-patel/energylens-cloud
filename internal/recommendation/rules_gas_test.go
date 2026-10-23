@@ -230,7 +230,7 @@ func TestEvaluatorForCapability(t *testing.T) {
 	for capability, want := range map[string]string{
 		"": "general.gather_information", "gas_dryer_recommendations_v1": "general.gather_information",
 		"other": "general.gather_information", "gas_appliance_recommendations_v1": "furnace.gas_efficiency_check"} {
-		got := evaluatorFor(capability)(a)
+		got := EvaluatorFor(capability)(a)
 		found := false
 		for _, action := range got {
 			found = found || action.RuleID == want

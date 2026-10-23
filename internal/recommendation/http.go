@@ -48,7 +48,7 @@ func (s Service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actions := []Action{}
-	evaluate := evaluatorFor(r.URL.Query().Get("capability"))
+	evaluate := EvaluatorFor(r.URL.Query().Get("capability"))
 	for _, appliance := range appliances {
 		actions = append(actions, evaluate(appliance)...)
 	}
@@ -193,9 +193,9 @@ func (s Service) record(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-// evaluatorFor maps the client capability to its rule vocabulary; an unknown
+// EvaluatorFor maps the client capability to its rule vocabulary; an unknown
 // or missing capability keeps the legacy rules.
-func evaluatorFor(capability string) func(Appliance) []Action {
+func EvaluatorFor(capability string) func(Appliance) []Action {
 	switch capability {
 	case "gas_appliance_recommendations_v1":
 		return EvaluateGasAppliances

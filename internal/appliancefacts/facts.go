@@ -194,11 +194,7 @@ func (c Composer) actions(ctx context.Context, owner, home, id, capability strin
 		if a.ID != id {
 			continue
 		}
-		if capability != "" {
-			acts = recommendation.EvaluateGasEnabled(a)
-		} else {
-			acts = recommendation.Evaluate(a)
-		}
+		acts = recommendation.EvaluatorFor(capability)(a)
 	}
 	if lifecycle, ok := c.Recommendations.(recommendation.LifecycleStore); ok {
 		events, err := lifecycle.Latest(ctx, owner, home)

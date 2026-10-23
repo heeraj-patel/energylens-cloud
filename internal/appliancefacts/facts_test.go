@@ -183,6 +183,38 @@ func TestGasDevice(t *testing.T) {
 	}
 }
 
+func TestGasFurnaceTipsFollowRecommendationCapability(t *testing.T) {
+	s := electric()
+	s.appliance.Category = "furnace"
+	s.appliance.Identity.Fuel = "natural_gas"
+	s.current = []recommendation.Appliance{{ID: applID, Category: "furnace", Fuel: "natural_gas", Identity: "unresolved"}}
+	has := func(query string) bool {
+		rec := get(handler(s), "/homes/"+homeID+"/appliances/"+applID+"/facts"+query)
+		var body struct {
+			Tips struct {
+				Items []struct {
+					RuleID string `json:"rule_id"`
+				} `json:"items"`
+			} `json:"tips"`
+		}
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body)
+		}
+		for _, it := range body.Tips.Items {
+			if it.RuleID == "furnace.gas_efficiency_check" {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("?capability=gas_appliance_recommendations_v1") {
+		t.Fatal("gas appliance capability must include furnace.gas_efficiency_check")
+	}
+	if has("?capability=gas_dryer_recommendations_v1") || has("") {
+		t.Fatal("dryer-only and legacy capabilities must not include furnace rules")
+	}
+}
+
 func TestIfNoneMatchReturns304WithoutComposing(t *testing.T) {
 	s := electric()
 	h := handler(s)
