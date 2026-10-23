@@ -116,7 +116,7 @@ func TestFirstDeviceMigrationBackfillsPersistedHistoryOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range names {
-		if name == "0093_first_device_signup.sql" {
+		if name == "0096_first_device_signup.sql" {
 			continue
 		}
 		body, readErr := fs.ReadFile(migrations.FS, name)
