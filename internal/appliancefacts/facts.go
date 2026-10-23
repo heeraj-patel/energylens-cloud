@@ -11,6 +11,7 @@ import (
 
 	"energylens.local/cloud/internal/datawizresolution"
 	"energylens.local/cloud/internal/estimation"
+	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/programs"
 	"energylens.local/cloud/internal/questions"
@@ -44,6 +45,10 @@ type Estimate struct {
 }
 type Efficiency struct {
 	Section
+	Window      string                                 `json:"window,omitempty"`
+	NightWindow *householdenergy.EfficiencyNightWindow `json:"night_window,omitempty"`
+	AwaySource  string                                 `json:"away_source,omitempty"`
+	Device      *householdenergy.DeviceEfficiency      `json:"device,omitempty"`
 }
 type Programs struct {
 	Section
@@ -87,6 +92,10 @@ type AnswerReader interface {
 	CurrentAnswers(ctx context.Context, owner, home, appliance string) ([]questions.Answer, error)
 }
 
+type EfficiencyReader interface {
+	TrailingEfficiency(ctx context.Context, owner, home string) (*householdenergy.MeasuredEfficiency, error)
+}
+
 // Revisions fingerprints every input the sections read besides the appliance version.
 type Revisions interface {
 	Fingerprint(ctx context.Context, home, appliance string, now time.Time) (string, error)
@@ -99,6 +108,7 @@ type Composer struct {
 	Programs        programs.OwnerStore
 	Recommendations recommendation.EvidenceStore
 	Answers         AnswerReader
+	Efficiency      EfficiencyReader
 	Revisions       Revisions
 }
 
@@ -107,7 +117,7 @@ func (c Composer) compose(ctx context.Context, owner, home string, a inventory.A
 	f.Identity = Identity{Section{Status: StatusOK}, &a}
 	f.CatalogFacts = c.catalogFacts(ctx, owner, home, a.ID)
 	f.Estimate = c.estimate(ctx, owner, home, a.ID, now)
-	f.Efficiency = Efficiency{Section{Status: StatusUnavailable, Reason: "measured_efficiency_not_built"}}
+	f.Efficiency = c.efficiency(ctx, owner, home, a.ID)
 	f.Programs = c.programs(ctx, owner, home, a.ID, now)
 	f.Tips, f.Care = c.actions(ctx, owner, home, a.ID, capability, now)
 	f.UsageAnswers = c.answers(ctx, owner, home, a.ID)
@@ -155,6 +165,26 @@ func (c Composer) estimate(ctx context.Context, owner, home, id string, now time
 		return Estimate{Section: Section{Status: StatusUnavailable, Reason: reason}}
 	}
 	return Estimate{Section{Status: StatusOK}, runs[0]}
+}
+
+func (c Composer) efficiency(ctx context.Context, owner, home, id string) Efficiency {
+	if c.Efficiency == nil {
+		return Efficiency{Section: Section{Status: StatusUnavailable, Reason: "measured_efficiency_not_built"}}
+	}
+	m, err := c.Efficiency.TrailingEfficiency(ctx, owner, home)
+	switch {
+	case err != nil:
+		return Efficiency{Section: failed("efficiency", err)}
+	case m == nil:
+		return Efficiency{Section: Section{Status: StatusUnavailable, Reason: "measured_efficiency_unavailable"}}
+	}
+	for i := range m.Devices {
+		if m.Devices[i].ApplianceID == id {
+			nw := m.NightWindow
+			return Efficiency{Section{Status: StatusOK}, "trailing_30_days", &nw, m.AwaySource, &m.Devices[i]}
+		}
+	}
+	return Efficiency{Section: Section{Status: StatusUnavailable, Reason: "appliance_not_in_efficiency"}}
 }
 
 func (c Composer) programs(ctx context.Context, owner, home, id string, now time.Time) Programs {

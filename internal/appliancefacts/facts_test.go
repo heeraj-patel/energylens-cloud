@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"energylens.local/cloud/internal/datawizresolution"
+	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/programs"
 	"energylens.local/cloud/internal/questions"
@@ -33,6 +34,8 @@ type stub struct {
 	progErr    error
 	current    []recommendation.Appliance
 	answers    []questions.Answer
+	eff        *householdenergy.MeasuredEfficiency
+	effErr     error
 	fp         string
 	fpCalls    int
 	listCalls  int
@@ -66,6 +69,9 @@ func (s *stub) Current(context.Context, string, string, time.Time) ([]recommenda
 func (s *stub) CurrentAnswers(context.Context, string, string, string) ([]questions.Answer, error) {
 	return s.answers, nil
 }
+func (s *stub) TrailingEfficiency(context.Context, string, string) (*householdenergy.MeasuredEfficiency, error) {
+	return s.eff, s.effErr
+}
 func (s *stub) Fingerprint(context.Context, string, string, time.Time) (string, error) {
 	s.fpCalls++
 	return s.fp, nil
@@ -73,7 +79,7 @@ func (s *stub) Fingerprint(context.Context, string, string, time.Time) (string, 
 
 func handler(s *stub) http.Handler {
 	svc := Service{
-		Composer: Composer{Appliances: s, Resolutions: s, Estimates: s, Programs: s, Recommendations: s, Answers: s, Revisions: s},
+		Composer: Composer{Appliances: s, Resolutions: s, Estimates: s, Programs: s, Recommendations: s, Answers: s, Efficiency: s, Revisions: s},
 		Auth:     func(next http.Handler) http.Handler { return next },
 		UserID:   func(*http.Request) string { return "owner" },
 	}
@@ -90,7 +96,15 @@ func electric() *stub {
 		programs:   []programs.OwnerProgram{{ProgramID: "p1"}, {ProgramID: "p2"}},
 		current:    []recommendation.Appliance{{ID: applID, Category: "washer", Fuel: "electricity", Identity: "unresolved"}},
 		answers:    []questions.Answer{{AnswerCreate: questions.AnswerCreate{QuestionID: "washer.cycles_per_week"}}},
-		fp:         "v1",
+		eff: &householdenergy.MeasuredEfficiency{
+			AwaySource:  "default_schedule",
+			NightWindow: householdenergy.EfficiencyNightWindow{StartLocal: "22:00", EndLocal: "06:00", Timezone: "UTC"},
+			Devices: []householdenergy.DeviceEfficiency{
+				{ApplianceID: otherID},
+				{ApplianceID: applID, Basis: householdenergy.DeviceEfficiencyBasis{Night: "measured", Away: "measured", Peak: "measured", Habits: "estimated"}},
+			},
+		},
+		fp: "v1",
 	}
 }
 
@@ -132,8 +146,10 @@ func TestFactsAllSections(t *testing.T) {
 			t.Fatalf("%s: %v", name, body[name])
 		}
 	}
-	if body["efficiency"]["status"] != "unavailable" || body["efficiency"]["reason"] == nil {
-		t.Fatalf("efficiency: %v", body["efficiency"])
+	eff := body["efficiency"]
+	dev, _ := eff["device"].(map[string]any)
+	if eff["status"] != "ok" || eff["window"] != "trailing_30_days" || eff["away_source"] != "default_schedule" || eff["night_window"] == nil || dev["appliance_id"] != applID {
+		t.Fatalf("efficiency: %v", eff)
 	}
 	if body["programs"]["total"] != float64(2) {
 		t.Fatalf("programs: %v", body["programs"])
@@ -249,5 +265,41 @@ func TestOtherHomesApplianceIs404(t *testing.T) {
 	}
 	if rec := get(h, "/homes/"+homeID+"/appliances/"+applID+"/facts?capability=bogus"); rec.Code != 400 {
 		t.Fatalf("bogus capability: %d", rec.Code)
+	}
+}
+
+func TestEfficiencySectionStates(t *testing.T) {
+	path := "/homes/" + homeID + "/appliances/" + applID + "/facts"
+	s := electric()
+	s.effErr = errors.New("boom")
+	body := decode(t, get(handler(s), path))
+	if body["efficiency"]["status"] != "error" || body["efficiency"]["device"] != nil {
+		t.Fatalf("efficiency: %v", body["efficiency"])
+	}
+	for _, name := range []string{"identity", "catalog_facts", "estimate", "programs", "usage_answers"} {
+		if body[name]["status"] != "ok" {
+			t.Fatalf("%s: %v", name, body[name])
+		}
+	}
+	s = electric()
+	s.eff = nil
+	if e := decode(t, get(handler(s), path))["efficiency"]; e["status"] != "unavailable" || e["device"] != nil {
+		t.Fatalf("no measured efficiency: %v", e)
+	}
+	s = electric()
+	s.eff.Devices = s.eff.Devices[:1]
+	if e := decode(t, get(handler(s), path))["efficiency"]; e["status"] != "unavailable" || e["reason"] != "appliance_not_in_efficiency" {
+		t.Fatalf("missing device: %v", e)
+	}
+}
+
+func TestGasDeviceEfficiencyBasis(t *testing.T) {
+	s := electric()
+	s.appliance.Identity.Fuel = "natural_gas"
+	s.eff.Devices[1].Basis = householdenergy.DeviceEfficiencyBasis{Night: "fuel_not_applicable", Away: "fuel_not_applicable", Peak: "fuel_not_applicable", Habits: "fuel_not_applicable"}
+	e := decode(t, get(handler(s), "/homes/"+homeID+"/appliances/"+applID+"/facts"))["efficiency"]
+	basis := e["device"].(map[string]any)["basis"].(map[string]any)
+	if e["status"] != "ok" || basis["night"] != "fuel_not_applicable" || basis["habits"] != "fuel_not_applicable" {
+		t.Fatalf("gas efficiency: %v", e)
 	}
 }

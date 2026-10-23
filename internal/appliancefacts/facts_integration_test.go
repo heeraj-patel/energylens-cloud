@@ -9,6 +9,7 @@ import (
 
 	"energylens.local/cloud/internal/datawizresolution"
 	"energylens.local/cloud/internal/estimation"
+	"energylens.local/cloud/internal/householdenergy"
 	"energylens.local/cloud/internal/inventory"
 	"energylens.local/cloud/internal/migrate"
 	"energylens.local/cloud/internal/programs"
@@ -80,6 +81,7 @@ func TestFactsAgainstPostgres(t *testing.T) {
 			Programs:        programs.PGOwnerStore{Pool: pool},
 			Recommendations: recommendation.PGStore{Pool: pool},
 			Answers:         questions.PGStore{Pool: pool},
+			Efficiency:      householdenergy.Service{Pool: pool},
 			Revisions:       PGRevisions{Pool: pool},
 		},
 		Auth: func(next http.Handler) http.Handler { return next },
@@ -92,7 +94,7 @@ func TestFactsAgainstPostgres(t *testing.T) {
 
 	rec := get(route(asOwner), path(electricID))
 	body := decode(t, rec)
-	if body["identity"]["status"] != "ok" || body["catalog_facts"]["status"] != "ok" || body["efficiency"]["status"] != "unavailable" {
+	if body["identity"]["status"] != "ok" || body["catalog_facts"]["status"] != "ok" || body["efficiency"]["status"] == "error" {
 		t.Fatalf("electric: %s", rec.Body)
 	}
 	gasBody := decode(t, get(route(asOwner), path(gas)+"?capability=gas_appliance_recommendations_v1"))

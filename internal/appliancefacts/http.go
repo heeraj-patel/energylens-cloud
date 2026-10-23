@@ -115,7 +115,7 @@ func fail(w http.ResponseWriter, status int, code, msg string) {
 }
 
 // PGRevisions reads the stored revisions behind the estimate, catalog, programs,
-// answers and tips sections in one statement.
+// answers, efficiency away schedule and tips sections in one statement.
 type PGRevisions struct{ Pool *pgxpool.Pool }
 
 func (p PGRevisions) Fingerprint(ctx context.Context, home, appliance string, now time.Time) (string, error) {
@@ -128,6 +128,7 @@ func (p PGRevisions) Fingerprint(ctx context.Context, home, appliance string, no
  (SELECT count(*) FROM reviewed_usage_fact_revisions),
  (SELECT COALESCE(max(revision),0)||'/'||count(*) FROM question_answers WHERE home_id=$1 AND appliance_id=$2::uuid),
  (SELECT COALESCE(revision,0) FROM metered_summary_revision WHERE home_id=$1),
+ (SELECT COALESCE(md5(away_schedule::text),'') FROM home_preferences WHERE home_id=$1),
  (SELECT count(*)||'/'||COALESCE(max(created_at)::text,'') FROM recommendation_events WHERE home_id=$1 AND appliance_id=$2::uuid),
  $3::text)`, home, appliance, now.Format("2006-01-02")).Scan(&fp)
 	return fp, err
