@@ -113,6 +113,10 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 		}
 		return rec
 	}
+	post(path, map[string]string{"email": "short@example.test", "password": "ééééééé"}, 400)
+	post(path, map[string]string{"email": "unicode@example.test", "password": "éééééééé"}, 201)
+	post("/v1/auth/local/login", map[string]string{"email": "unicode@example.test", "password": "éééééééé"}, 200)
+	post("/v1/auth/local/login", map[string]string{"email": "unicode@example.test", "password": "ééééééé"}, 401)
 	created := post(path, map[string]string{"email": "person@example.test", "password": "original long password"}, 201)
 	if !strings.Contains(created.Body.String(), `"access_token"`) || len(sender.verification) != 0 {
 		t.Fatal("registration did not return an immediate session without verification")
@@ -196,9 +200,10 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 	if len(sender.recovery) != 1 {
 		t.Fatal("recovery did not deliver fake challenge")
 	}
-	post("/v1/auth/local/reset-password", map[string]string{"token": sender.recovery[0], "password": "replacement long password"}, 204)
+	post("/v1/auth/local/reset-password", map[string]string{"token": sender.recovery[0], "password": "🔐🔐🔐🔐🔐🔐🔐"}, 401)
+	post("/v1/auth/local/reset-password", map[string]string{"token": sender.recovery[0], "password": "🔐🔐🔐🔐🔐🔐🔐🔐"}, 204)
 	post("/v1/auth/local/login", map[string]string{"email": "person@example.test", "password": "original long password"}, 401)
-	post("/v1/auth/local/login", map[string]string{"email": "person@example.test", "password": "replacement long password"}, 200)
+	post("/v1/auth/local/login", map[string]string{"email": "person@example.test", "password": "🔐🔐🔐🔐🔐🔐🔐🔐"}, 200)
 	post("/v1/auth/local/recovery", map[string]string{"email": "unknown@example.test"}, 202)
 	if len(sender.recovery) != 1 {
 		t.Fatal("unknown recovery sent email")

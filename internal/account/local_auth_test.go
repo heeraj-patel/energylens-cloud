@@ -3,6 +3,7 @@ package account
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,17 @@ import (
 )
 
 func TestLocalPasswordHashAndBounds(t *testing.T) {
+	for _, password := range []string{"12345678", "éééééééé", "🔐🔐🔐🔐🔐🔐🔐🔐"} {
+		stored, err := HashLocalPassword(password)
+		if err != nil || !VerifyLocalPassword(stored, password) {
+			t.Fatalf("eight-character password rejected: %v", err)
+		}
+	}
+	for _, password := range []string{"1234567", "ééééééé", "🔐🔐🔐🔐🔐🔐🔐"} {
+		if _, err := HashLocalPassword(password); !errors.Is(err, ErrInvalidCredential) {
+			t.Fatalf("seven-character password accepted: %v", err)
+		}
+	}
 	stored, err := HashLocalPassword("correct long password")
 	if err != nil || !strings.HasPrefix(stored, "$argon2id$v=19$m=65536,t=3,p=1$") || !VerifyLocalPassword(stored, "correct long password") || VerifyLocalPassword(stored, "wrong long password") {
 		t.Fatalf("password hash/verify failed: %v", err)
