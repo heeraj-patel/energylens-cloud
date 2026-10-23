@@ -56,7 +56,7 @@ func (p LocalAuthProfile) eligible(verified, activated *time.Time, emailVerified
 		// credential's activation and session-family checks.
 		return activated != nil && verified == nil
 	}
-	return verified != nil && emailVerified && activated == nil
+	return (verified != nil && emailVerified) || activated != nil
 }
 
 const (
@@ -311,7 +311,7 @@ func (v LocalAccessVerifier) Verify(ctx context.Context, raw string) (Identity, 
 	if current != version || !v.Codec.Profile.eligible(verified, activated, emailVerified) {
 		return Identity{}, ErrInvalidCredential
 	}
-	return Identity{Issuer: v.Codec.Profile.issuer(), Subject: userID, EmailVerified: v.Codec.Profile != LocalUsernameProfile, AuthTime: authTime, SessionID: sessionID}, nil
+	return Identity{Issuer: v.Codec.Profile.issuer(), Subject: userID, EmailVerified: emailVerified, AuthTime: authTime, SessionID: sessionID}, nil
 }
 
 func nullableSessionID(id string) any {

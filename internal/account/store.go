@@ -37,14 +37,15 @@ type Location struct {
 	Source      string  `json:"source"`
 }
 type Home struct {
-	ID                 string    `json:"id"`
-	Name               string    `json:"name"`
-	Timezone           string    `json:"timezone"`
-	Location           Location  `json:"location"`
-	TimezoneResolution string    `json:"timezone_resolution,omitempty"`
-	Version            int64     `json:"version"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Timezone           string     `json:"timezone"`
+	Location           Location   `json:"location"`
+	FirstDeviceAddedAt *time.Time `json:"first_device_added_at"`
+	TimezoneResolution string     `json:"timezone_resolution,omitempty"`
+	Version            int64      `json:"version"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 type HomeCreate struct {
 	Name     string   `json:"name"`
@@ -137,13 +138,13 @@ func nullableEmail(id Identity) any {
 	return nil
 }
 
-const homeSelect = `SELECT h.id,h.name,h.timezone,h.version,h.created_at,h.updated_at,l.country_code,l.postal_code,l.city,l.county,l.precision,l.source FROM homes h JOIN LATERAL (SELECT * FROM home_location_revisions WHERE home_id=h.id ORDER BY revision DESC LIMIT 1) l ON true`
+const homeSelect = `SELECT h.id,h.name,h.timezone,h.version,h.created_at,h.updated_at,h.first_device_added_at,l.country_code,l.postal_code,l.city,l.county,l.precision,l.source FROM homes h JOIN LATERAL (SELECT * FROM home_location_revisions WHERE home_id=h.id ORDER BY revision DESC LIMIT 1) l ON true`
 
 type row interface{ Scan(...any) error }
 
 func scanHome(r row) (Home, error) {
 	var h Home
-	err := r.Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt, &h.Location.CountryCode, &h.Location.PostalCode, &h.Location.City, &h.Location.County, &h.Location.Precision, &h.Location.Source)
+	err := r.Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt, &h.FirstDeviceAddedAt, &h.Location.CountryCode, &h.Location.PostalCode, &h.Location.City, &h.Location.County, &h.Location.Precision, &h.Location.Source)
 	return h, err
 }
 func (s PGStore) List(ctx context.Context, owner string) ([]Home, error) {
@@ -213,7 +214,7 @@ func (s PGStore) Create(ctx context.Context, owner string, in HomeCreate, key st
 		return h, e
 	}
 	var h Home
-	err = tx.QueryRow(ctx, `INSERT INTO homes(owner_user_id,name,timezone) VALUES($1,$2,$3) RETURNING id,name,timezone,version,created_at,updated_at`, owner, in.Name, in.Timezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO homes(owner_user_id,name,timezone) VALUES($1,$2,$3) RETURNING id,name,timezone,version,created_at,updated_at,first_device_added_at`, owner, in.Name, in.Timezone).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt, &h.FirstDeviceAddedAt)
 	if err != nil {
 		return Home{}, err
 	}
@@ -287,7 +288,7 @@ func (s PGStore) Patch(ctx context.Context, owner, home string, in HomePatch, ve
 	var h Home
 	err = tx.QueryRow(ctx, `UPDATE homes SET name=COALESCE($3,name),timezone=COALESCE($4,timezone),
 		demo_cost_snapshot=$5::jsonb,
-		version=version+1,updated_at=now() WHERE id=$1 AND owner_user_id=$2 RETURNING id,name,timezone,version,created_at,updated_at`, home, owner, in.Name, effectiveTimezone, demoParam).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt)
+		version=version+1,updated_at=now() WHERE id=$1 AND owner_user_id=$2 RETURNING id,name,timezone,version,created_at,updated_at,first_device_added_at`, home, owner, in.Name, effectiveTimezone, demoParam).Scan(&h.ID, &h.Name, &h.Timezone, &h.Version, &h.CreatedAt, &h.UpdatedAt, &h.FirstDeviceAddedAt)
 	if err != nil {
 		return Home{}, err
 	}

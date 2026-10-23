@@ -402,6 +402,12 @@ func (s PGStore) Create(ctx context.Context, owner, home string, in CreateInput,
 	if err != nil {
 		return Appliance{}, err
 	}
+	// The owned home is locked above. Set the milestone only after a real row
+	// exists, in the same transaction as the appliance and its replay record.
+	if _, err = tx.Exec(ctx, `UPDATE homes SET first_device_added_at=$2
+		WHERE id=$1 AND first_device_added_at IS NULL`, home, a.CreatedAt); err != nil {
+		return Appliance{}, err
+	}
 	if err = snapshot(ctx, tx, a); err != nil {
 		return Appliance{}, err
 	}

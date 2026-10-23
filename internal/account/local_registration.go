@@ -54,6 +54,96 @@ func registrationRate(ctx context.Context, tx pgx.Tx, scope string, key []byte, 
 	return attempts <= limit, err
 }
 
+// RegisterEmail creates only a new account and issues its first session in one
+// transaction. Existing addresses receive a generic response without tokens.
+// The caller must never repeat an uncertain signup automatically.
+func (s LocalRegistrationService) RegisterEmail(ctx context.Context, login LocalLoginService, email, password, source string, now time.Time) (LocalLoginTokens, bool, error) {
+	if !s.configured() || s.Profile == LocalUsernameProfile || !login.configured() || login.DB != s.DB || login.Codec.Profile == LocalUsernameProfile {
+		return LocalLoginTokens{}, false, errors.New("email registration is not configured")
+	}
+	normalized, err := NormalizeLocalEmail(email)
+	if err != nil || !validPassword(password) || !validLocalAuthSource(source) || now.IsZero() {
+		return LocalLoginTokens{}, false, ErrInvalidCredential
+	}
+	// Persist rate attempts even when account creation fails or collides.
+	rateTx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	defer rateTx.Rollback(ctx)
+	allowedSource, err := registrationRate(ctx, rateTx, "source_hour", s.rateHash("source", source), now, time.Hour, 10)
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	allowedEmail, err := registrationRate(ctx, rateTx, "email_day", s.rateHash("email", normalized), now, 24*time.Hour, 3)
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	if err = rateTx.Commit(ctx); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	// Hash on duplicate and throttled paths too.
+	hash, err := HashLocalPassword(password)
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	if !allowedSource || !allowedEmail {
+		return LocalLoginTokens{}, false, nil
+	}
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	// Serialize concurrent signups for one normalized address, including the
+	// no-row case. The credential unique index remains the final race guard.
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))`, "signup:"+normalized); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	var exists bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM auth_password_credentials WHERE email_normalized=$1
+		UNION ALL SELECT 1 FROM users WHERE lower(email)=$1
+	)`, normalized).Scan(&exists); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	if exists {
+		return LocalLoginTokens{}, false, nil
+	}
+	userID := uuid.NewString()
+	if _, err = tx.Exec(ctx, `INSERT INTO users(id,email,email_verified) VALUES($1,$2,false)`, userID, normalized); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO auth_password_credentials(user_id,email_normalized,password_hash,activated_at)
+		VALUES($1,$2,$3,$4)`, userID, normalized, hash, now.UTC()); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return LocalLoginTokens{}, false, nil
+		}
+		return LocalLoginTokens{}, false, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO auth_identities(user_id,issuer,subject) VALUES($1,$2,$3)`, userID, LocalIssuer, userID); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	refresh, refreshHash, err := NewLocalOpaqueToken("refresh")
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	access, err := login.Codec.signVerifiedSessionAt(userID, 1, "", now, now)
+	if err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	expiry := now.UTC().Add(localRefreshLifetime)
+	if _, err = tx.Exec(ctx, `INSERT INTO auth_refresh_sessions(user_id,family_id,token_hash,created_at,expires_at)
+		VALUES($1,$2,$3,$4,$5)`, userID, uuid.NewString(), refreshHash[:], now.UTC(), expiry); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return LocalLoginTokens{}, false, err
+	}
+	return LocalLoginTokens{AccessToken: access, AccessExpiresAt: now.UTC().Add(localAccessLifetime), RefreshToken: refresh, RefreshExpiresAt: expiry}, true, nil
+}
+
 // RequestRegistration records a private verification challenge and sends it
 // only after commit. Every valid request returns the same public outcome. The
 // source must be the trusted client address selected by the future HTTP edge.

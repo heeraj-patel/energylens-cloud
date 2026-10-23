@@ -78,11 +78,17 @@ func TestRoutesRequireBearerAndHideOtherOwners(t *testing.T) {
 	if w := call("GET", "/v1/homes/"+h.ID, "other", "", nil); w.Code != 404 {
 		t.Fatalf("other get = %d", w.Code)
 	}
-	if w := call("GET", "/v1/homes/"+h.ID, "owner", "", nil); w.Code != 200 || w.Header().Get("ETag") != `"1"` {
-		t.Fatalf("owner get = %d %s", w.Code, w.Header().Get("ETag"))
+	if w := call("GET", "/v1/homes/"+h.ID, "owner", "", nil); w.Code != 200 || w.Header().Get("ETag") != `"1"` || !strings.Contains(w.Body.String(), `"first_device_added_at":null`) {
+		t.Fatalf("owner get = %d %s", w.Code, w.Body.String())
+	}
+	if w := call("GET", "/v1/homes", "owner", "", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"first_device_added_at":null`) {
+		t.Fatalf("owner list missing incomplete state: %d %s", w.Code, w.Body.String())
 	}
 	patch := `{"name":"Renamed"}`
 	headers := map[string]string{"Content-Type": "application/json", "Idempotency-Key": uuid.NewString(), "If-Match": `"1"`}
+	if w := call("PATCH", "/v1/homes/"+h.ID, "owner", `{"first_device_added_at":"2026-10-22T00:00:00Z"}`, headers); w.Code != 400 {
+		t.Fatalf("client milestone write accepted: %d %s", w.Code, w.Body.String())
+	}
 	if w := call("PATCH", "/v1/homes/"+h.ID, "other", patch, headers); w.Code != 404 {
 		t.Fatalf("other patch = %d", w.Code)
 	}
