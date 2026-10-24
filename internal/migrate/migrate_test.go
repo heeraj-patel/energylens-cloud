@@ -18,10 +18,18 @@ func TestEmbeddedMigrationIDsPreserveExistingFiles(t *testing.T) {
 		t.Fatalf("account/home migration missing or out of order: %v", names)
 	}
 	seen := map[string]bool{}
+	ids := map[string]int{}
 	for _, name := range names {
-		if seen[name[:4]] {
+		if seen[name] {
 			t.Fatalf("duplicate migration ID: %s", name)
 		}
-		seen[name[:4]] = true
+		seen[name] = true
+		ids[name[:4]]++
+		if ids[name[:4]] > 1 && name[:4] != "0098" {
+			t.Fatalf("unexpected duplicate migration ID: %s", name)
+		}
+	}
+	if ids["0098"] != 2 || !seen["0098_hub_pairing_codes.sql"] || !seen["0098_weather_days.sql"] {
+		t.Fatalf("the two existing 0098 migrations changed: %v", names)
 	}
 }
