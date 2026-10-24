@@ -39,17 +39,44 @@ func TestGasRulesNeedTheAppliancesCapability(t *testing.T) {
 	}
 }
 
-func TestHeldGasRulesAreAbsent(t *testing.T) {
-	held := map[string]bool{"furnace.gas_filter_care": true, "boiler.gas_service_care": true, "water_heater.gas_temperature": true, "range.gas_cooking": true}
-	for _, r := range gasRules {
-		if held[r.id] {
-			t.Fatalf("held rule present: %s", r.id)
+func TestGasCareRules(t *testing.T) {
+	cases := []struct {
+		rule, category, title, text string
+		tip                         TipCategory
+		usOnly                      bool
+	}{
+		{"furnace.gas_filter_care", "furnace", "Check the furnace filter", "Check it monthly and change it when dirty. A dirty filter raises energy costs.", TipCare, false},
+		{"boiler.gas_service_care", "boiler", "Boiler check-up", "Have a qualified technician service the boiler on the schedule in your manual.", TipCare, false},
+		{"water_heater.gas_temperature", "water_heater", "Check the water temperature", "A lower setting can cut gas use and scald risk. Use the setting your manual recommends.", TipCare, true},
+		{"range.gas_cooking", "range", "Cook with lids on", "Lids and a pot that fits the burner help food heat faster on less energy.", TipGeneral, false},
+	}
+	for _, c := range cases {
+		for _, fuel := range []string{"natural_gas", "propane"} {
+			for _, country := range []string{"US", "CA", ""} {
+				a := Appliance{ID: "c", Category: c.category, Fuel: fuel, Country: country}
+				var found *Action
+				for _, act := range EvaluateGasAppliances(a) {
+					if act.RuleID == c.rule {
+						act := act
+						found = &act
+					}
+				}
+				if c.usOnly && country != "US" {
+					if found != nil {
+						t.Fatalf("%s shown for country %q", c.rule, country)
+					}
+					continue
+				}
+				if found == nil || found.State != "active" || found.NextQuestion != "" || found.Title != c.title || found.Explanation != c.text || found.TipCategory != c.tip || len(found.EvidenceRefs) != 0 {
+					t.Fatalf("%s/%s/%s: %+v", c.rule, fuel, country, found)
+				}
+			}
+		}
+		if got := EvaluateGasEnabled(Appliance{ID: "c", Category: c.category, Fuel: "natural_gas", Country: "US"}); len(got) != 1 || got[0].RuleID != "general.gather_information" {
+			t.Fatalf("%s leaked without capability: %+v", c.rule, got)
 		}
 	}
-	if got := EvaluateGasAppliances(Appliance{Category: "range", Fuel: "natural_gas", Identity: "confirmed_exact"}); len(got) != 1 || got[0].RuleID != "general.gather_information" {
-		t.Fatalf("range: %+v", got)
-	}
-	if len(gasRules) != 7 {
+	if len(gasRules) != 11 {
 		t.Fatalf("gas rule count: %d", len(gasRules))
 	}
 }

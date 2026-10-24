@@ -3,8 +3,8 @@ package recommendation
 import (
 	"context"
 	"encoding/json"
-	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/catalog"
+	"energylens.local/cloud/internal/datawizfacts"
 	"energylens.local/cloud/internal/gasestimate"
 	tariffpkg "energylens.local/cloud/internal/tariff"
 	"errors"
@@ -81,6 +81,11 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 	if err != nil {
 		return nil, err
 	}
+	var country string
+	err = tx.QueryRow(ctx, `SELECT country_code FROM home_location_revisions WHERE home_id=$1 ORDER BY revision DESC LIMIT 1`, home).Scan(&country)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 	ruleCategories := make([]string, 0, len(initial)+len(gasRules))
 	seenCategory := map[string]bool{}
 	for _, c := range ruleCategoryNames() {
@@ -142,9 +147,9 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		Appliance
 		hotWaterGPD     *float64
 		householdUnsure bool
-		Version   int64
-		ProductID *string
-		Details   storedIdentity
+		Version         int64
+		ProductID       *string
+		Details         storedIdentity
 	}
 	items := []current{}
 	for rows.Next() {
@@ -163,6 +168,7 @@ func (s PGStore) Current(ctx context.Context, owner, home string, now time.Time)
 		item.Details = identity
 		item.ruleCategoryKeys, item.ruleKeyCounts = ruleKeys, ruleCounts
 		item.Tariff = tariff
+		item.Country = country
 		item.ElectricRate = electricRate
 		item.Answers = map[string]Evidence{}
 		// An inconsistent product link cannot satisfy an exact-source gate.

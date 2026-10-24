@@ -41,6 +41,7 @@ type Appliance struct {
 	ElectricRate     *float64            // USD/kWh of Tariff
 	GasRate          *float64            // USD/therm of GasTariff
 	Weather          *WeatherState       // active weather triggers; nil unless weather_tips_v1
+	Country          string              // home ISO country code; empty when unknown
 }
 
 func (a Appliance) matchesRuleCategory(ruleCategory string) bool {
@@ -213,6 +214,9 @@ func evaluate(a Appliance, gasEnabled, gasAppliances bool) []Action {
 				continue
 			}
 			res := r.eval(a)
+			if res.hidden {
+				continue
+			}
 			out = append(out, Action{RuleID: r.id, RuleVersion: 1, ApplianceID: a.ID, State: res.state,
 				Title: r.title, Explanation: res.explanation, NextQuestion: res.next, BenefitGroup: r.group,
 				TipCategory: r.tip, EvidenceRefs: res.refs, usageFrequency: a.frequencyFor(r.usageKind), usageUnit: r.usageKind})
@@ -427,6 +431,7 @@ type GasValues struct {
 type gasResult struct {
 	state, next, explanation string
 	refs                     []Evidence
+	hidden                   bool
 }
 
 type gasRule struct {
@@ -435,7 +440,7 @@ type gasRule struct {
 	eval                                  func(Appliance) gasResult
 }
 
-// gasRules is the cited gas table (D-2a); held rules are deliberately absent.
+// gasRules is the gas table: cited rules plus owner-approved care tips.
 var gasRules = []gasRule{
 	{"furnace.gas_efficiency_check", "furnace", "Your furnace's efficiency", "heating_efficiency", "", TipUpgrade,
 		afueCheck("furnace", "This furnace is rated %s%% AFUE. ENERGY STAR gas furnaces are 95%% or higher (97%% in northern states).")},
@@ -448,6 +453,24 @@ var gasRules = []gasRule{
 	{"water_heater.gas_cost", "water_heater", "Hot water costs", "water_heating_gas", "", TipGeneral, waterHeaterCost},
 	{"water_heater.gas_efficiency_check", "water_heater", "Your water heater's efficiency", "water_heating_efficiency", "", TipUpgrade, waterHeaterEfficiency},
 	{"space_heater.gas_schedule", "space_heater", "Heat only when needed", "heating_schedule", "", TipGeneral, spaceHeaterSchedule},
+	{"furnace.gas_filter_care", "furnace", "Check the furnace filter", "heating_care", "", TipCare,
+		careTip("Check it monthly and change it when dirty. A dirty filter raises energy costs.", false)},
+	{"boiler.gas_service_care", "boiler", "Boiler check-up", "heating_care", "", TipCare,
+		careTip("Have a qualified technician service the boiler on the schedule in your manual.", false)},
+	{"water_heater.gas_temperature", "water_heater", "Check the water temperature", "water_heating_care", "", TipCare,
+		careTip("A lower setting can cut gas use and scald risk. Use the setting your manual recommends.", true)},
+	{"range.gas_cooking", "range", "Cook with lids on", "cooking_gas", "", TipGeneral,
+		careTip("Lids and a pot that fits the burner help food heat faster on less energy.", false)},
+}
+
+// careTip is an always-active tip with fixed text; usOnly hides it unless the home is in the US.
+func careTip(text string, usOnly bool) func(Appliance) gasResult {
+	return func(a Appliance) gasResult {
+		if usOnly && a.Country != "US" {
+			return gasResult{hidden: true}
+		}
+		return gasResult{state: "active", refs: []Evidence{}, explanation: text}
+	}
 }
 
 func (a Appliance) gasValues() GasValues {
