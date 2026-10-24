@@ -23,9 +23,14 @@ var ErrConflict = errors.New("hub ownership conflict")
 var ErrExpired = errors.New("challenge expired or consumed")
 var ErrNotFound = errors.New("not found")
 var ErrKeyReuse = errors.New("idempotency key reused")
+var ErrClaimed = errors.New("hub is claimed")
+var ErrRateLimited = errors.New("recovery challenges rate limited")
 
 const challengeTTL = 5 * time.Minute
 const enrollTTL = 15 * time.Minute
+const recoveryPurpose = "unclaimed_recovery"
+const recoveryMaxOutstanding = 3
+const challengeMaxAge = 5 * time.Minute
 
 func isPGCode(err error, codes ...string) bool {
 	var pg *pgconn.PgError
@@ -172,6 +177,9 @@ func claimTranscript(id, local, nonce, proof string) []byte {
 }
 func enrollTranscript(hub, local, nonce, signedAt, csrHash string) []byte {
 	return []byte("energylens.hub.enroll.v1\n" + hub + "\n" + local + "\n" + nonce + "\n" + signedAt + "\n" + csrHash + "\n")
+}
+func enrollChallengeTranscript(hub, local, signedAt string) []byte {
+	return []byte("energylens.hub.enroll-challenge.v1\n" + hub + "\n" + local + "\n" + signedAt + "\n")
 }
 func (s Store) Provision(ctx context.Context, local string, key ed25519.PublicKey, actor string) (string, string, error) {
 	if len(key) != ed25519.PublicKeySize || actor == "" || !validLocal(local) {
@@ -396,7 +404,9 @@ func (s Store) Enrollment(ctx context.Context, hubID, local, nonce, signedAt str
 	var key []byte
 	var expiry time.Time
 	var consumed *time.Time
-	e = s.Pool.QueryRow(ctx, `SELECT b.id,b.local_hub_id,b.device_public_key,b.ownership_epoch,b.version,b.revoked_at IS NOT NULL,n.expires_at,n.consumed_at FROM hubs b JOIN hub_enrollment_nonces n ON n.hub_id=b.id AND n.nonce_hash=$2 WHERE b.id=$1`, hubID, h[:]).Scan(&b.ID, &b.LocalID, &key, &b.Epoch, &b.Version, &b.Revoked, &expiry, &consumed)
+	var purpose string
+	var nonceEpoch *int64
+	e = s.Pool.QueryRow(ctx, `SELECT b.id,b.local_hub_id,b.device_public_key,b.ownership_epoch,b.version,b.revoked_at IS NOT NULL,b.home_id,n.expires_at,n.consumed_at,n.purpose,n.ownership_epoch FROM hubs b JOIN hub_enrollment_nonces n ON n.hub_id=b.id AND n.nonce_hash=$2 WHERE b.id=$1`, hubID, h[:]).Scan(&b.ID, &b.LocalID, &key, &b.Epoch, &b.Version, &b.Revoked, &b.HomeID, &expiry, &consumed, &purpose, &nonceEpoch)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return Hub{}, ErrDenied
 	}
@@ -404,6 +414,9 @@ func (s Store) Enrollment(ctx context.Context, hubID, local, nonce, signedAt str
 		return Hub{}, e
 	}
 	if b.Revoked || b.LocalID != local || !time.Now().Before(expiry) {
+		return Hub{}, ErrDenied
+	}
+	if purpose == recoveryPurpose && (b.HomeID != nil || nonceEpoch == nil || *nonceEpoch != b.Epoch) {
 		return Hub{}, ErrDenied
 	}
 	ts, e := time.Parse(time.RFC3339, signedAt)
@@ -471,7 +484,10 @@ func (s Store) SaveEnrollmentCertificate(ctx context.Context, nonce, serial, hub
 	var current int64
 	var exp time.Time
 	var consumed *time.Time
-	e = tx.QueryRow(ctx, `SELECT b.ownership_epoch,n.expires_at,n.consumed_at FROM hubs b JOIN hub_enrollment_nonces n ON n.hub_id=b.id AND n.nonce_hash=$2 WHERE b.id=$1 AND b.revoked_at IS NULL FOR UPDATE OF b,n`, hub, hash[:]).Scan(&current, &exp, &consumed)
+	var home *string
+	var purpose string
+	var nonceEpoch *int64
+	e = tx.QueryRow(ctx, `SELECT b.ownership_epoch,b.home_id,n.expires_at,n.consumed_at,n.purpose,n.ownership_epoch FROM hubs b JOIN hub_enrollment_nonces n ON n.hub_id=b.id AND n.nonce_hash=$2 WHERE b.id=$1 AND b.revoked_at IS NULL FOR UPDATE OF b,n`, hub, hash[:]).Scan(&current, &home, &exp, &consumed, &purpose, &nonceEpoch)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return ErrDenied
 	}
@@ -479,6 +495,9 @@ func (s Store) SaveEnrollmentCertificate(ctx context.Context, nonce, serial, hub
 		return e
 	}
 	if consumed != nil || !time.Now().Before(exp) || current != epoch {
+		return ErrDenied
+	}
+	if purpose == recoveryPurpose && (home != nil || nonceEpoch == nil || *nonceEpoch != current) {
 		return ErrDenied
 	}
 	_, e = tx.Exec(ctx, `INSERT INTO hub_certificates(serial,hub_id,ownership_epoch,expires_at,certificate_pem) VALUES($1,$2,$3,$4,$5)`, serial, hub, epoch, expiry, pem)

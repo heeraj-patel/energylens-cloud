@@ -11,7 +11,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
   `householdenergy` (dashboard, trends), `catalog`, `usagefact*`, `ratedinput*`, `inventory`, `tariff`,
   `estimation`, `questions`, `faq`, `recommendation`, `outcomes`, `cyclecomparison`, `programs`,
   `reports`, `energyrate`, `energyrating`, `energycategories`, `weather`, `datawiz*`, `democost`, `devicestate`, `designfixture`, `helpexport`, `migrate`, `apierror`.
-- `migrations/` embedded SQL 0016..0096 (0055 unused; 0091 reserved) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
+- `migrations/` embedded SQL 0016..0099 (0055 unused; 0091 reserved; 0098 used twice) (`embed.go`); `docs/cloud-api.md` route index; `runbooks/`; `scripts/` (zip timezone builder).
 - `.env-example` documents every env var (template for `.env-local`).
 
 ## Build / test (verified 2026-10-16)
@@ -59,7 +59,7 @@ plus a worker role and operator subcommands. Postgres via pgx. Chi router.
 - Bearer: `/v1/me`, `/me/preferences`, `/me/profile`, `/homes[/{home}]`, appliances, sensors, attachments, tariffs, questions,
   estimates, recommendations, programs (`GET /programs?appliance_id`, `POST /programs/discovery-refresh`), dashboard, energy-trends,
   metered-history|summaries|export, reports, catalog, usage-facts, hub-claims (`POST /homes/{home}/hub-claims`, `POST /hubs/claim`).
-- Hub (mTLS or enroll proof): `/v1/hubs/{hub}/{enroll,certificate,ownership,sensors,attachments,sync/batches,kasa-runtime/snapshots,
+- Hub (mTLS or enroll proof): `/v1/hubs/{hub}/{enroll,enroll-challenges,certificate,ownership,sensors,attachments,sync/batches,kasa-runtime/snapshots,
   catalog/*,usage-facts,owner-authorizations}`.
 - Mutations need UUID `Idempotency-Key`; versioned PATCH/DELETE need `If-Match`. Error body `{code,message,request_id,details}`.
 - Canonical contract: `../energylens-common-contracts/api/cloud-openapi.yaml`; `docs/cloud-api.md` is the index.

@@ -97,7 +97,10 @@ func (s Service) listOwner(w http.ResponseWriter, r *http.Request) {
 		out(w, 200, map[string]any{"hubs": hubs})
 	}
 }
-func (s Service) EnrollmentRoutes(r chi.Router) { r.Post("/hubs/{hub}/enroll", s.enroll) }
+func (s Service) EnrollmentRoutes(r chi.Router) {
+	r.Post("/hubs/{hub}/enroll-challenges", s.enrollChallenge)
+	r.Post("/hubs/{hub}/enroll", s.enroll)
+}
 func (s Service) HubRoutes(r chi.Router) {
 	r.Put("/hubs/{hub}/pairing-code", s.publishPairingCode)
 	r.Post("/hubs/{hub}/certificate", s.renew)
@@ -410,6 +413,40 @@ func (s Service) issue(w http.ResponseWriter, r *http.Request, hub Hub, csr *x50
 		return
 	}
 	out(w, 200, map[string]any{"certificate_pem": certPEM, "expires_at": expiry, "ownership_epoch": hub.Epoch})
+}
+func (s Service) enrollChallenge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	hubID := chi.URLParam(r, "hub")
+	if !uuidOK(hubID) {
+		fail(w, 404, "not_found")
+		return
+	}
+	var in struct {
+		LocalHubID      string `json:"local_hub_id"`
+		SignedAt        string `json:"signed_at"`
+		DeviceSignature string `json:"device_signature"`
+	}
+	if !read(w, r, &in) {
+		return
+	}
+	sig, e := decode64(in.DeviceSignature, 64)
+	if e != nil {
+		fail(w, 403, "forbidden")
+		return
+	}
+	nonce, epoch, expires, e := s.Store.IssueRecoveryNonce(r.Context(), hubID, in.LocalHubID, in.SignedAt, sig)
+	switch {
+	case errors.Is(e, ErrDenied):
+		fail(w, 403, "forbidden")
+	case errors.Is(e, ErrClaimed):
+		fail(w, 409, "hub_claimed")
+	case errors.Is(e, ErrRateLimited):
+		fail(w, 429, "rate_limited")
+	case e != nil:
+		internal(w, e)
+	default:
+		out(w, 200, map[string]any{"enrollment_nonce": nonce, "ownership_epoch": epoch, "expires_at": expires})
+	}
 }
 func (s Service) enroll(w http.ResponseWriter, r *http.Request) {
 	hubID := chi.URLParam(r, "hub")
