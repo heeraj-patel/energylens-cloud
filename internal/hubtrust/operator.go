@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// IssueEnrollmentNonce is an operator-only action: its caller must connect with
-// the dedicated migration/provisioning database credential, never the API role.
+// IssueEnrollmentNonce issues operator nonces and must use the operator
+// (migration/provisioning) credential; recovery nonces are issued by the API.
 func (s Store) IssueEnrollmentNonce(ctx context.Context, hubID string) (string, error) {
 	nonce, e := random32()
 	if e != nil {
@@ -40,17 +40,13 @@ func PublicKey(s string) (ed25519.PublicKey, error) {
 // IssueRecoveryNonce lets an unclaimed hub prove its device key and receive a
 // one-use enrollment nonce bound to the current ownership epoch.
 func (s Store) IssueRecoveryNonce(ctx context.Context, hubID, local, signedAt string, sig []byte) (string, int64, time.Time, error) {
-	tx, e := s.Pool.Begin(ctx)
-	if e != nil {
-		return "", 0, time.Time{}, e
-	}
-	defer tx.Rollback(ctx)
 	var key []byte
 	var storedLocal string
 	var epoch int64
 	var home *string
 	var revoked bool
-	e = tx.QueryRow(ctx, `SELECT local_hub_id,device_public_key,ownership_epoch,home_id,revoked_at IS NOT NULL FROM hubs WHERE id=$1 FOR UPDATE`, hubID).Scan(&storedLocal, &key, &epoch, &home, &revoked)
+	const sel = `SELECT local_hub_id,device_public_key,ownership_epoch,home_id,revoked_at IS NOT NULL FROM hubs WHERE id=$1`
+	e := s.Pool.QueryRow(ctx, sel, hubID).Scan(&storedLocal, &key, &epoch, &home, &revoked)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return "", 0, time.Time{}, ErrDenied
 	}
@@ -62,6 +58,22 @@ func (s Store) IssueRecoveryNonce(ctx context.Context, hubID, local, signedAt st
 		return "", 0, time.Time{}, ErrDenied
 	}
 	if !ed25519.Verify(key, enrollChallengeTranscript(hubID, local, signedAt), sig) {
+		return "", 0, time.Time{}, ErrDenied
+	}
+	tx, e := s.Pool.Begin(ctx)
+	if e != nil {
+		return "", 0, time.Time{}, e
+	}
+	defer tx.Rollback(ctx)
+	var curEpoch int64
+	e = tx.QueryRow(ctx, `SELECT ownership_epoch,home_id,revoked_at IS NOT NULL FROM hubs WHERE id=$1 FOR UPDATE`, hubID).Scan(&curEpoch, &home, &revoked)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return "", 0, time.Time{}, ErrDenied
+	}
+	if e != nil {
+		return "", 0, time.Time{}, e
+	}
+	if revoked || curEpoch != epoch {
 		return "", 0, time.Time{}, ErrDenied
 	}
 	if home != nil {
