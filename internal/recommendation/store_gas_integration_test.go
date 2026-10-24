@@ -126,4 +126,17 @@ func TestCurrentLoadsGasFactsAndCostForGasRules(t *testing.T) {
 	if a := read()["water_heater.gas_cost"]; a.State != "candidate" || a.NextQuestion != "find_reviewed_energy_source" {
 		t.Fatalf("propane with mismatched catalog fuel: %+v", a)
 	}
+	// Country gate: the water temperature tip needs a US location revision.
+	exec(`UPDATE appliances SET identity='{"brand":"Acme","full_model":"W1","fuel":"natural_gas","match_quality":"confirmed_exact"}' WHERE id=$1`, heater)
+	if _, ok := read()["water_heater.gas_temperature"]; ok {
+		t.Fatal("gas_temperature shown with no home location")
+	}
+	exec(`INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,1,'US','60601','postal_code','user_entered')`, home)
+	if a, ok := read()["water_heater.gas_temperature"]; !ok || a.State != "active" {
+		t.Fatalf("gas_temperature for US home: %+v %v", a, ok)
+	}
+	exec(`INSERT INTO home_location_revisions(home_id,revision,country_code,postal_code,precision,source) VALUES($1,2,'CA','M5V','postal_code','user_entered')`, home)
+	if _, ok := read()["water_heater.gas_temperature"]; ok {
+		t.Fatal("gas_temperature shown for CA home")
+	}
 }
