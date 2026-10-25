@@ -1,4 +1,5 @@
 -- Unclaimed hubs prove their device key to obtain a recovery enrollment nonce.
+-- No migration in this repo issues GRANTs; role privileges are managed outside it.
 ALTER TABLE hub_enrollment_nonces
   ADD COLUMN purpose text NOT NULL DEFAULT 'operator' CHECK (purpose IN ('operator','unclaimed_recovery')),
   ADD COLUMN ownership_epoch bigint,
