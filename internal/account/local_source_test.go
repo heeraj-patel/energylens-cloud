@@ -1,7 +1,9 @@
 package account
 
 import (
+	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +47,34 @@ func TestLocalAuthSourcePolicyRejectsBroadOrNoncanonicalTrust(t *testing.T) {
 	}
 	if p, err := ParseLocalAuthSourcePolicy(""); err != nil || len(p.trusted) != 0 {
 		t.Fatalf("default direct-peer policy: %+v %v", p, err)
+	}
+}
+
+func TestLocalRegistrationUnusableSourceIsBadRequest(t *testing.T) {
+	p, err := ParseLocalAuthSourcePolicy("10.20.0.0/16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		profile LocalAuthProfile
+		body    string
+	}{
+		"username": {LocalUsernameProfile, `{"username":"alice","password":"correct long password"}`},
+		"email":    {LocalEmailProfile, `{"email":"alice@example.test","password":"correct long password"}`},
+	} {
+		h := LocalAuthHTTP{SourcePolicy: p}
+		h.Login.Codec.Profile = tc.profile
+		r := httptest.NewRequest("POST", "/v1/auth/local/registration", strings.NewReader(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		r.RemoteAddr = "10.20.3.4:1234"
+		w := httptest.NewRecorder()
+		h.registration(w, r)
+		var body apiError
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 400 || body.Code != "invalid_request" || body.Message != "client address could not be determined" {
+			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
+		}
 	}
 }

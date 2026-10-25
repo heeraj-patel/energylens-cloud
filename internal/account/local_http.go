@@ -111,6 +111,17 @@ func localAuthError(w http.ResponseWriter, err error) {
 	fail(w, 503, "auth_unavailable", "authentication temporarily unavailable")
 }
 
+// localRegistrationSource rejects an unusable client address as a bad request;
+// signup carries no credential, so 401 invalid_credential would mislead clients.
+func localRegistrationSource(w http.ResponseWriter, r *http.Request, policy LocalAuthSourcePolicy) (string, bool) {
+	source, err := policy.Source(r)
+	if err != nil {
+		fail(w, http.StatusBadRequest, "invalid_request", "client address could not be determined")
+		return "", false
+	}
+	return source, true
+}
+
 func (h LocalAuthHTTP) registration(w http.ResponseWriter, r *http.Request) {
 	if h.Login.Codec.Profile == LocalUsernameProfile {
 		var in struct {
@@ -124,9 +135,8 @@ func (h LocalAuthHTTP) registration(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "invalid_request", "invalid username or password")
 			return
 		}
-		source, err := h.SourcePolicy.Source(r)
-		if err != nil {
-			localAuthError(w, err)
+		source, ok := localRegistrationSource(w, r, h.SourcePolicy)
+		if !ok {
 			return
 		}
 		out, err := h.Registration.RegisterUsername(r.Context(), in.Username, in.Password, source, time.Now().UTC())
@@ -148,9 +158,8 @@ func (h LocalAuthHTTP) registration(w http.ResponseWriter, r *http.Request) {
 	if !localAuthDecode(w, r, &in) {
 		return
 	}
-	source, err := h.SourcePolicy.Source(r)
-	if err != nil {
-		localAuthError(w, err)
+	source, ok := localRegistrationSource(w, r, h.SourcePolicy)
+	if !ok {
 		return
 	}
 	tokens, created, err := h.Registration.RegisterEmail(r.Context(), h.Login, in.Email, in.Password, source, time.Now().UTC())

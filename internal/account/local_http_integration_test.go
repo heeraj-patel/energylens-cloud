@@ -175,7 +175,7 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 	chainReq.RemoteAddr = "10.20.1.2:1000"
 	chainRec := httptest.NewRecorder()
 	proxiedAPI.ServeHTTP(chainRec, chainReq)
-	if chainRec.Code != 401 {
+	if chainRec.Code != 400 || !strings.Contains(chainRec.Body.String(), "client address could not be determined") {
 		t.Fatalf("prepopulated proxy chain accepted: %d", chainRec.Code)
 	}
 	login := post("/v1/auth/local/login", map[string]string{"email": "person@example.test", "password": "original long password"}, 200)
@@ -216,7 +216,7 @@ func TestLocalHTTPInactiveAndFullPrivateRoundTrip(t *testing.T) {
 	if rec.Code != 400 || strings.Contains(rec.Body.String(), "person@example.test") {
 		t.Fatalf("unknown field leaked or accepted: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec = request(api, path, map[string]string{"email": "other@example.test", "password": "replacement long password"}, "not-a-peer"); rec.Code != 401 {
+	if rec = request(api, path, map[string]string{"email": "other@example.test", "password": "replacement long password"}, "not-a-peer"); rec.Code != 400 {
 		t.Fatalf("untrusted source accepted: %d", rec.Code)
 	}
 }
