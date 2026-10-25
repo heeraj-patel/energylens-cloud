@@ -36,6 +36,24 @@ func (s *stubStore) Current(_ context.Context, owner, home string, _ time.Time) 
 	return s.appliances, s.err
 }
 
+func TestRecommendationsRouteReturnsEmptyActionsArray(t *testing.T) {
+	store := &stubStore{appliances: []Appliance{}}
+	r := chi.NewRouter()
+	Service{Store: store, Auth: func(next http.Handler) http.Handler { return next }, UserID: func(*http.Request) string { return "owner" }}.Routes(r)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/homes/"+uuid.NewString()+"/recommendations", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("response: %d", w.Code)
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(body["actions"]); got != "[]" {
+		t.Fatalf("actions must be an empty array, got %s", got)
+	}
+}
+
 func TestRecommendationsRouteCapsEachApplianceAndKeepsResearchFacts(t *testing.T) {
 	contexts := []string{"night", "away", "peak_usage", "habits", "appliance_type", "upgrades", "maintenance"}
 	tips := make([]datawizfacts.Fact, len(contexts))

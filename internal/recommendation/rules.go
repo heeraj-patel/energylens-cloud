@@ -339,7 +339,9 @@ func tipApplies(context, category, ruleID string, applicable, excluded []string)
 // period, currency, and benefit basis. Actions without comparable values keep
 // their position and remain visible.
 func rankActions(actions []Action) []Action {
-	ranked := append([]Action(nil), actions...)
+	// Keep an empty input as a non-nil slice so API responses encode the
+	// collection as [] rather than null.
+	ranked := append(make([]Action, 0, len(actions)), actions...)
 	sort.SliceStable(ranked, func(i, j int) bool {
 		a, b := ranked[i], ranked[j]
 		if a.State != b.State {
